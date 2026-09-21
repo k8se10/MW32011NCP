@@ -271,12 +271,14 @@ void UnlockHandle(IwdHandleSlot* slot)
 {
     if (slot != nullptr) ReleaseSRWLockExclusive(&slot->lock);
 }
+BOOL RealSetFilePointerExNoHook(HANDLE file, LARGE_INTEGER distance, PLARGE_INTEGER newPos, DWORD method); // defined below the hook pointers
+BOOL CloseMappingNoHook(HANDLE h); // bypasses Hook_CloseHandle (which takes g_iwdTableLock) -- see below
 bool SyncKernelPointerLocked(HANDLE file, IwdHandleSlot& slot)
 {
     if (!slot.positionValid) return true;
     LARGE_INTEGER position{};
     position.QuadPart = static_cast<LONGLONG>(slot.virtualPosition);
-    return SetFilePointerEx(file, position, nullptr, FILE_BEGIN) != FALSE;
+    return RealSetFilePointerExNoHook(file, position, nullptr, FILE_BEGIN) != FALSE;
 }
 
 IwdHandleSlot* LockOrCreateHandle(HANDLE file)
@@ -325,7 +327,7 @@ IwdHandleSlot* LockOrCreateHandle(HANDLE file)
             }
         }
         if (view == nullptr) {
-            if (mapping != nullptr) CloseHandle(mapping);
+            if (mapping != nullptr) CloseMappingNoHook(mapping);
             ReleaseSRWLockExclusive(&slot->lock);
             ReleaseSRWLockExclusive(&g_iwdTableLock);
             return nullptr;
@@ -346,7 +348,7 @@ IwdHandleSlot* LockOrCreateHandle(HANDLE file)
     IwdArchiveMapping& archive = g_archives[static_cast<size_t>(archiveIndex)];
     LARGE_INTEGER zero{};
     LARGE_INTEGER current{};
-    const BOOL havePosition = SetFilePointerEx(file, zero, &current, FILE_CURRENT);
+    const BOOL havePosition = RealSetFilePointerExNoHook(file, zero, &current, FILE_CURRENT);
 
     slot->handle = key;
     slot->view = archive.view;
@@ -431,6 +433,17 @@ CreateFileWFn g_realCreateFileW = nullptr;
 CloseHandleFn g_realCloseHandle = nullptr;
 SetFilePointerFn g_realSetFilePointer = nullptr;
 SetFilePointerExFn g_realSetFilePointerEx = nullptr;
+// Calls made while holding g_iwdTableLock or a slot lock MUST bypass our own SetFilePointerEx hook: the hook
+// re-acquires those (non-recursive SRW) locks and deadlocked the game at launch (2026-09-21).
+BOOL CloseMappingNoHook(HANDLE h)
+{
+    return g_realCloseHandle ? g_realCloseHandle(h) : CloseHandle(h);
+}
+BOOL RealSetFilePointerExNoHook(HANDLE file, LARGE_INTEGER distance, PLARGE_INTEGER newPos, DWORD method)
+{
+    return g_realSetFilePointerEx ? g_realSetFilePointerEx(file, distance, newPos, method)
+                                  : SetFilePointerEx(file, distance, newPos, method);
+}
 
 BOOL WINAPI Hook_ReadFile(HANDLE file, LPVOID buffer, DWORD bytesToRead, LPDWORD bytesRead, LPOVERLAPPED overlapped)
 {

@@ -730,6 +730,8 @@ item below.
 
 31. **Removed the obsolete 2-second activation nudge for SP.** The periodic `WM_ACTIVATE`/`SetForegroundWindow` workaround for the "needs an initial click" gate was superseded by the native stuck-kbutton release (2026-09-16) and was live-reported as making the game pause itself intermittently. Pending live confirmation that self-pausing stops.
 
+32. **`.iwd` read cache deadlocked the game at launch (`IwdReadAccelEnabled=1` = stuck on splash).** While holding the non-recursive table/slot locks, the cache called `SetFilePointerEx` and `CloseHandle`, which are its own hooked APIs and re-acquire those same locks, so the calling thread deadlocked itself right after logging the first archive view. Those calls now go through the un-hooked originals. Build-verified; not yet live-confirmed.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
