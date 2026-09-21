@@ -5490,6 +5490,9 @@ void ConvertRealScreenPosToDesignSpaceX64(float realX, float realY, float& outDe
     outDesignY = (scaleY > 0.0001f) ? (realY / scaleY) : realY;
 }
 
+extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t prefixSize, char* suffix, size_t suffixSize,
+                                    char* asset, size_t assetSize);
+
 void Hook_DrawTextX64(
     unsigned __int64 dcHandle, const char* text, int maxChars, void* fontArg,
     float x, float y, unsigned color1, unsigned color2, float scale,
@@ -6231,7 +6234,17 @@ void Hook_DrawTextX64(
                         // suppressRealDraw above still hides the native legend text
                         // either way, matching x86's own unconditional suppressRealDraw
                         // assignment.
-                        if (!(isFriendsCornerHint && (IsInsideSpecOpsNestedModalX64() || IsFriendsListOpenX64()))) {
+                        // While the hardcoded Back glyph is active (pause menu / buy-station popup) it is the ONLY Back
+                        // request: a native-driven one at another row (the parent menu's corner instance, the offscreen
+                        // blur-pass ones) fought it for the single Back slot and flickered in the corner. The native
+                        // text is still suppressed above.
+                        bool hardcodedBackActive = false;
+                        if (isBackCornerHint) {
+                            float hbx = 0.0f, hby = 0.0f;
+                            char hbp[16] = {}, hbs[16] = {}, hba[32] = {};
+                            hardcodedBackActive = GetPausedBackHintX64(&hbx, &hby, hbp, sizeof(hbp), hbs, sizeof(hbs), hba, sizeof(hba));
+                        }
+                        if (!hardcodedBackActive && !(isFriendsCornerHint && (IsInsideSpecOpsNestedModalX64() || IsFriendsListOpenX64()))) {
                             RequestMenuHintOverlay(designX, designY, prefixText, suffixText, assetName,
                                                      0xFFFFFFFFu, /*isBackShortcut=*/isBackCornerHint);
                         }
@@ -6463,8 +6476,11 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
     {
         char focusGroup[64] = {};
         int focusIndex = -1, focusSiblings = -1;
-        if (!TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings)) return false;
-        if (strstr(focusGroup, "POPUP") != nullptr) {
+        const bool haveFocus = TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings);
+        // The pause menu always opens with focus (PAUSE_LIST item 0); a buy-station popup opens with NO focus until an
+        // item is hovered (live: the glyph only reached the box after hovering) -- so "in a level, menu up, nothing
+        // focused" is the popup, same box position.
+        if (!haveFocus || focusGroup[0] == '\0' || strstr(focusGroup, "POPUP") != nullptr) {
             // Centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
             useX = 1208.0f;
             useY = 827.0f;
