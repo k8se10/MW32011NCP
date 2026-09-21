@@ -582,6 +582,15 @@ static volatile bool g_readyUpPromptShowing = false;
 static volatile float g_readyUpCountdownSecs = 0.0f;
 static DWORD g_readyUpLastScanMs = 0;
 
+// Gameplay-tick liveness: Hook_MovementTick halts while the game is paused (pause menu), so a stale
+// timestamp is a cheap, RE-free "paused" signal used to hide the ready-up overlay over the pause screen.
+static volatile DWORD g_lastGameplayTickMsX64 = 0;
+static bool IsGameplayPausedX64()
+{
+    const DWORD last = g_lastGameplayTickMsX64;
+    return last != 0 && (GetTickCount() - last) > 250;
+}
+
 static bool EnsureReadyUpTables()
 {
     if (g_readyUpHudArray && g_readyUpCsTable) return true;
@@ -670,7 +679,7 @@ extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize)
                   overlayOn, menuActive, showing, static_cast<double>(g_readyUpCountdownSecs));
         LogFromController(b);
     }
-    if (!showing) return false;
+    if (!showing || IsGameplayPausedX64()) return false;
     return TryGetGlyphAssetNameForKeyName("F5", assetOut, assetOutSize);
 }
 
@@ -3393,6 +3402,7 @@ extern "C" float GetDvarFloatX64_Exported(const char* name)
 
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
+    g_lastGameplayTickMsX64 = GetTickCount();
     // Rate-limited (~1s) diagnostic heartbeat -- real data for the "needs a
     // click for input" investigation (see kMenuActiveGateInsnOffset's own
     // comment), so the NEXT test run shows what these candidate gate values
@@ -6185,7 +6195,7 @@ void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, vo
                 // "Hold [glyph] to ready up: NN" instead. Only when a glyph asset exists, so a
                 // player without a resolvable glyph keeps the native text.
                 char asset[32] = {};
-                if (IsInSurvivalModeX64() && TryGetGlyphAssetNameForKeyName("F5", asset, sizeof(asset))) {
+                if (!IsGameplayPausedX64() && IsInSurvivalModeX64() && TryGetGlyphAssetNameForKeyName("F5", asset, sizeof(asset))) {
                     const char* to = strstr(text, "to ready up");
                     if (!to) to = strstr(text, "ready up");
                     if (to) {
