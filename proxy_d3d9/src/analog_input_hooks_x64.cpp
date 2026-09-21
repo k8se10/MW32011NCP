@@ -3041,24 +3041,7 @@ extern "C" void InjectControllerMenuNavX64()
         if (downHeld != g_menuNavDownHeldX64) ForwardKeyToMenuX64(kKeyNextItemX64, downHeld ? 1 : 0);
         if (leftHeld != g_menuNavLeftHeldX64) ForwardKeyToMenuX64(kKeyLeftNavX64, leftHeld ? 1 : 0);
         if (rightHeld != g_menuNavRightHeldX64) ForwardKeyToMenuX64(kKeyRightNavX64, rightHeld ? 1 : 0);
-        if (selectHeld != g_menuNavSelectHeldX64) {
-            // "Resume Game" on the pause menu (2026-09-21, live-reported): forwarding Enter to that item runs only part
-            // of the native close -- the UI is cleared but the blur and pause state stay (Esc / pausing again fixes it).
-            // Close it the way Esc does (the full native path) instead of forwarding the item's own action.
-            static bool s_selectSwallowedForResume = false;
-            if (selectHeld) {
-                char focusGroup[64] = {};
-                int focusIndex = -1, focusSiblings = -1;
-                s_selectSwallowedForResume =
-                    TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings) &&
-                    strcmp(focusGroup, "PAUSE_LIST") == 0 && focusIndex == 0;
-                if (s_selectSwallowedForResume) SendSyntheticEscX64();
-                else ForwardKeyToMenuX64(kKeyEnterX64, 1);
-            } else {
-                if (!s_selectSwallowedForResume) ForwardKeyToMenuX64(kKeyEnterX64, 0);
-                s_selectSwallowedForResume = false;
-            }
-        }
+        if (selectHeld != g_menuNavSelectHeldX64) ForwardKeyToMenuX64(kKeyEnterX64, selectHeld ? 1 : 0);
     }
     g_menuNavUpHeldX64 = upHeld;
     g_menuNavDownHeldX64 = downHeld;
@@ -3260,14 +3243,7 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
                 // of the two direct-call fixes above can satisfy no matter how
                 // correct they are individually -- kept both (they fix real, distinct
                 // native bugs of their own) and added this as the missing piece.
-                // 2026-09-21: the ESC this used to post (commit 9cd3007e) paused the level, but with NO message-queue
-                // event at all the launch "needs a click" bug returned (live-confirmed). Post an UNBOUND key (F24) as the
-                // message-queue-routed input event instead -- nothing binds it, so nothing pauses. If this alone does not
-                // clear the gate, the gate needs a different harmless event (mouse move / click), not ESC.
-                if (HWND hwndSweep = GetGameWindow()) {
-                    PostMessageA(hwndSweep, WM_KEYDOWN, VK_F24, 0x00000001);
-                    PostMessageA(hwndSweep, WM_KEYUP, VK_F24, 0xC0000001);
-                }
+                SendSyntheticEscX64();
                 g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
                 // Real fix for the native "camera jumps on first real input" bug --
                 // see g_seedMouseBaseline's own declaration comment for the full trail.
