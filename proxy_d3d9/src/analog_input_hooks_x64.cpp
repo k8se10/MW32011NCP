@@ -6170,7 +6170,9 @@ void Hook_DrawTextX64(
             char backMenuName[96] = {};
             GetTopmostMenuNameX64(backMenuName, sizeof(backMenuName));
             const bool backIsPauseMenu = strcmp(backMenuName, "pausedmenu") == 0;
-            bool isBackCornerHint = backContentMatches && (backIsPauseMenu || backOnKnownRowX64);
+            // x86 behaviour for every menu (commit 5e5fd2b7: buy stations worked): the Back hint is matched by its exact
+            // template text at ANY row and drawn where the native draw put it. Only the pause menu is special-cased below.
+            bool isBackCornerHint = backContentMatches;
             if (backContentMatches) {
                 // Menu-aware capture (2026-09-22): which native Back draw positions exist under which open menu.
                 static uint32_t s_seenBackNative[128];
@@ -6279,7 +6281,7 @@ void Hook_DrawTextX64(
                                               designX, designY, prefixText, suffixText, assetName);
                                     LogFromController(bp);
                                 }
-                            } else if (g_backHintValidX64) {
+                            } else if (backIsPauseMenu && g_backHintValidX64) {
                                 designX = g_backHintXX64; designY = g_backHintYX64;
                             }
                         }
