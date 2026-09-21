@@ -6034,14 +6034,16 @@ void Hook_DrawTextX64(
             // instance in the middle of the screen (live screenshot: glyph jumped to mid-screen and flickered), and the
             // role-based "last request wins" slot collapse then let it override the real corner one. Accept only the
             // bottom band of the screen (design y > 800); log any accepted non-standard row for calibration.
-            bool isBackCornerHint = backContentMatches && designRowY > 800.0f;
+            // Real rows seen live (2026-09-21 capture): 995 = standard corner, ~700 = Survival buy-station popup Back,
+            // ~498 = the mid-screen phantom instance (rejected).
+            bool isBackCornerHint = backContentMatches && (looksLikeCornerHintRowX64 || fabsf(designRowY - 700.0f) < 25.0f);
             if (backContentMatches && !looksLikeCornerHintRowX64) {
                 static int s_backOffRowLogged = 0;
                 if (s_backOffRowLogged < 12) {
                     ++s_backOffRowLogged;
                     char bo[160];
                     sprintf_s(bo, "[x64-back-diag] Back text off the standard row: designRowY=%.1f -> %s", designRowY,
-                              isBackCornerHint ? "accepted (bottom band)" : "REJECTED (not bottom band)");
+                              isBackCornerHint ? "accepted (buy-station row)" : "REJECTED (unknown row)");
                     LogFromController(bo);
                 }
             }
