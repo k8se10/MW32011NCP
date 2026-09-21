@@ -6102,9 +6102,16 @@ void Hook_DrawTextX64(
     // regardless of whether this hook already recognized the text.
     if (g_modConfig.hudFontIdLoggingX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text))) {
         __try {
-            static char s_lastLoggedTextX64[256] = "";
-            if (strncmp(text, s_lastLoggedTextX64, sizeof(s_lastLoggedTextX64) - 1) != 0) {
-                strncpy_s(s_lastLoggedTextX64, text, _TRUNCATE);
+            // Distinct-string set with a hard cap: alternating strings used to defeat a
+            // last-string dedup and grow the log without bound (perf issue, 55k lines).
+            static uint32_t s_seenFontDiag[300];
+            static LONG s_seenFontDiagCount = 0;
+            uint32_t fh = 2166136261u;
+            for (size_t i = 0; i < 100 && text[i]; ++i) fh = (fh ^ static_cast<unsigned char>(text[i])) * 16777619u;
+            bool fontDiagNew = s_seenFontDiagCount < 300;
+            for (LONG i = 0; fontDiagNew && i < s_seenFontDiagCount; ++i) if (s_seenFontDiag[i] == fh) fontDiagNew = false;
+            if (fontDiagNew) {
+                s_seenFontDiag[s_seenFontDiagCount++] = fh;
 
                 char hexBuf[3 * 32 + 1] = "";
                 auto fontAddr = reinterpret_cast<uintptr_t>(fontArg);
@@ -6189,7 +6196,7 @@ void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, vo
             for (size_t i = 0; i < 96 && text[i]; ++i) h = (h ^ static_cast<unsigned char>(text[i])) * 16777619u;
             bool isNew = true;
             for (LONG i = 0; i < s_logged; ++i) if (s_seen[i] == h) { isNew = false; break; }
-            if (isNew && s_logged < 512) {
+            if (isNew && s_logged < 512 && g_modConfig.hudFontIdLoggingX64) {
                 s_seen[s_logged++] = h;
                 char buf[256];
                 sprintf_s(buf, "[x64-hudelem-draw] client=%u elem=%p text=\"%.90s\"", clientNum, elem, text);
