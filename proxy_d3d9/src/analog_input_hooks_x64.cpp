@@ -3199,6 +3199,8 @@ constexpr DWORD kLevelSettleDelayMs = 1250;
 constexpr DWORD kLevelIdleResetMs = 2000; // Pmove silent this long -- treat as "back at a menu"
 }  // namespace
 
+extern "C" DWORD GetLastMouseMoveTickMs(); // d3d9_hook.cpp
+
 extern "C" void ForceReleaseStuckKbuttonsX64()
 {
     if (!g_releaseAllKbuttons) return;
@@ -3224,7 +3226,11 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
             break;
 
         case AutoUnstickState::WaitingToSettle:
-            if (nowMs - g_levelActiveSinceMs >= kLevelSettleDelayMs) {
+            // 2026-09-21: this injects input (a synthetic ESC among other things), so it must only ever run for a
+            // controller session -- never for keyboard/mouse play (alt-tab / resume gave odd behaviour there). Needs a
+            // connected controller AND no mouse activity in the last 3 s; otherwise it keeps waiting.
+            const bool controllerSession = Controller_IsConnected() && (nowMs - GetLastMouseMoveTickMs()) > 3000;
+            if (controllerSession && nowMs - g_levelActiveSinceMs >= kLevelSettleDelayMs) {
                 // 2026-09-17, direct live-test finding: neither the kbutton-release
                 // sweep nor the mouse-baseline seed (both real, both direct native-
                 // function calls, neither routed through the actual Windows message

@@ -748,6 +748,8 @@ item below.
 
 38. **Pause-menu Back glyph flicker (`-x64`).** The pause menu renders its blur/tint through offscreen 2048x2048 targets and EndScene fires for those passes too; the menu-hint requests were consumed on one of them, so the visible pass could have no glyph. Menu hints are now drawn only when the current render target is the real back buffer; Back instances on unknown rows reuse the last good position and every Back instance is suppressed. Build-verified; not yet live-tested.
 
+39. **Level-entry input sweep no longer fires for keyboard/mouse play (`-x64`).** The sweep (kbutton release, mouse-baseline seed, synthetic ESC) now runs only when a controller is connected and there has been no mouse activity for 3 s; otherwise it keeps waiting. Alt-tab, resume and K+M sessions no longer get injected input. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
