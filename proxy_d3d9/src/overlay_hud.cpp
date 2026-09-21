@@ -3680,9 +3680,26 @@ void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texel
 // times the engine hook itself fires.
 bool g_motionBlurRanThisFrame = false;
 
+// Scene-only passes (run BEFORE the HUD/menus/our overlay are drawn, so FXAA never touches UI text):
+// FXAA first, then motion blur. 2026-09-21: FXAA moved here from the final-frame pass -- running it on the
+// composited frame smeared the UI and stacked with RCAS + blur.
+bool RunPreOverlayScenePasses(void* device)
+{
+    bool any = false;
+    if (g_modConfig.fxaaEnabled && EnsureFxaaShader(device)) {
+        DrawFullScreenPass(device, g_fxaaPixelShader, FxaaShaderSetupCallback);
+        any = true;
+    }
+    if (g_modConfig.motionBlurEnabled && EnsureMotionBlurShader(device)) {
+        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        any = true;
+    }
+    return any;
+}
+
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
-    if (!g_modConfig.motionBlurEnabled) return;
+    if (!g_modConfig.motionBlurEnabled && !g_modConfig.fxaaEnabled) return;
 
 #if defined(_M_X64) || defined(_WIN64)
     // x64 gating (2026-09-12) -- real gates now wired, replacing the prior
@@ -3701,8 +3718,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
         int clcState = 0;
         if (!TryGetClcStateX64(&clcState) || clcState != g_modConfig.visualFxClcStateTestValue) return;
         if (g_motionBlurRanThisFrame) return;
-        if (!EnsureMotionBlurShader(device)) return;
-        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        if (!RunPreOverlayScenePasses(device)) return;
         g_motionBlurRanThisFrame = true;
         return;
     }
@@ -3729,8 +3745,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
             return;
         }
         if (g_motionBlurRanThisFrame) return;
-        if (!EnsureMotionBlurShader(device)) return;
-        DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        if (!RunPreOverlayScenePasses(device)) return;
         g_motionBlurRanThisFrame = true;
         return;
     }
@@ -3785,8 +3800,7 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
         // FUN_00497210 (this pass's real trigger) can fire more than once per
         // frame when a splitscreen/PIP exclusion zone is active, see this
         // function's own header comment
-    if (!EnsureMotionBlurShader(device)) return;
-    DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+    if (!RunPreOverlayScenePasses(device)) return;
     g_motionBlurRanThisFrame = true;
 }
 
@@ -3901,16 +3915,10 @@ void RunFullScreenPostProcessIfEnabled(void* device)
     }
 #endif
 
-    bool fxaaDrawn = false;
-    if (g_modConfig.fxaaEnabled && EnsureFxaaShader(device)) {
-        DrawFullScreenPass(device, g_fxaaPixelShader, FxaaShaderSetupCallback);
-        fxaaDrawn = true;
-    }
     if (g_modConfig.fsrSharpenEnabled && EnsureRcasShader(device)) {
         DrawFullScreenPass(device, g_fsrRcasPixelShader, RcasShaderSetupCallback);
         return;
     }
-    if (fxaaDrawn) return;
     if (!g_modConfig.fullScreenPassthroughTest) return;
     if (!EnsureFullscreenPassthroughShader(device)) return;
     DrawFullScreenPass(device, g_fullscreenPassthroughPixelShader);
