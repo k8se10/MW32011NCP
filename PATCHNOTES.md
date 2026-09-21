@@ -405,6 +405,8 @@ item below.
     through the game's own `Cvar_SetInt` (`FUN_1402c5b30`, resolved by
     signature) since the x86 command-buffer address doesn't exist here.
     Build-verified, **not yet live-tested**.
+24. **Survival ready-up prompt fully replaced with a controller glyph (`-x64`).** A new hook on the client hudelem text draw (`FUN_140046a30`) hides the native "Press F5 to ready up: NN" text and the overlay draws "Hold [glyph] to ready up: NN" in its place. Applies only in Survival and only when a glyph asset resolves; otherwise the native text is untouched. Live-confirmed drawing correctly.
+
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
@@ -720,6 +722,9 @@ item below.
     trigger detects any transition into live gameplay, not specifically
     "process just launched." See `re_notes/known_issues_x64.md`.
 
+28. **Unbounded diagnostic log growth (perf).** `[x64-fontid-diag]` deduped only against the previous string, so alternating HUD text grew the log without limit (55,842 lines in one session); it now uses a capped distinct-string set. `[overlay-hud][res-scale]` and `[automantle-diag-x64]` are capped, `[x64-video-scale]` is change-only, and the new hudelem-draw log is gated on `HudFontIdLoggingX64`.
+
+
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
    tracker.
@@ -993,6 +998,8 @@ item below.
     finding in `known_issues_x64.md` — the "ported" framing overclaimed
     what shipping it achieved in practice. Full trail:
     `known_issues_x64.md`'s newest round.
+
+17. **Full text draw-path enumeration (2026-09-21).** Every on-screen string reaches the real text renderer `FUN_140080840`/`FUN_140080920` through a small set of callers; only `FUN_14029a2b0` was hooked. Client script hudelems are drawn by `FUN_140046a30` (via the HUD tick, `FUN_1400455b0` and `FUN_140046c00`), which is why the ready-up prompt never reached the text hook. Full table in `re_notes/x64_migration/ui_text_flow_map.md` §9.
 
 ### Investigated, Not Yet Resolved
 1. ~~**Fire and/or ADS fails — first live playtest of the x64 build,
