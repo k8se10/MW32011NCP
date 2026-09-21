@@ -11,6 +11,9 @@ float4 rtMetrics : register(c0);   // (1/w, 1/h, w, h)
 #define SMAA_RT_METRICS rtMetrics
 #define SMAA_HLSL_3 1
 #define SMAA_PRESET_HIGH 1
+// SMAA_HLSL_3 defaults to `.ra` (A8L8 area texture); this pipeline uploads the area texture as A8R8G8B8 with
+// the two channels in R and G, so select `.rg`.
+#define SMAA_AREATEX_SELECT(sample) sample.rg
 #include "SMAA.hlsl"
 
 sampler2D tex0 : register(s0);
