@@ -2440,7 +2440,8 @@ bool IsRenderingToBackBuffer(void* device)
 // stale ones.
 void DrawMenuHintsIfRequested(void* device)
 {
-    if (!IsRenderingToBackBuffer(device)) return; // keep the requests for the real presentation pass
+    // (No render-target gate here: it made the glyph flicker on EVERY screen -- the hint is now requested from hardcoded
+    // positions each call while paused, so drawing on an offscreen EndScene is harmless.)
 #if defined(_M_X64) || defined(_WIN64)
     // Pause-menu Back glyph: drawn from the last known-good position every rendered frame while paused, NOT from
     // whether the native Back text happened to draw this frame (that draw runs on offscreen blur passes as well and

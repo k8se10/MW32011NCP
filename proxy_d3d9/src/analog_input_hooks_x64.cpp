@@ -6455,17 +6455,27 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
     // blur-pass instances (design X 2042.8 > 1920 and a mid-screen 817,491), which is what made the glyph jump/flicker.
     constexpr float kPausedBackXX64 = 1634.2f;
     constexpr float kPausedBackYX64 = 981.7f;
-    // ONLY the pause menu: the Survival buy stations also read as "paused" (their gameplay tick goes stale) but their
-    // Back hint lives in its own box, which the native-draw path positions correctly -- do not override it (live
-    // screenshot 2026-09-21: the hardcoded corner position was being applied at the buy station).
+    // Two hardcoded positions (user direction 2026-09-21, after the native-draw-driven glyph flickered on every
+    // screen): the pause menu's bottom-right corner, and the Survival buy-station popups' white "Back" box.
+    // The buy station also reads as "paused" (its gameplay tick goes stale), so it is told apart by the focused
+    // menu group: WEAPON_POPUP / *POPUP* = buy-station popups, PAUSE* / OPTIONS_LIST = pause menu.
+    float useX = kPausedBackXX64, useY = kPausedBackYX64;
     {
         char focusGroup[64] = {};
         int focusIndex = -1, focusSiblings = -1;
         if (!TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings)) return false;
-        if (strncmp(focusGroup, "PAUSE", 5) != 0) return false;
+        if (strstr(focusGroup, "POPUP") != nullptr) {
+            // Centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
+            useX = 1208.0f;
+            useY = 827.0f;
+        } else if (strncmp(focusGroup, "PAUSE", 5) == 0 || strcmp(focusGroup, "OPTIONS_LIST") == 0) {
+            // pause menu: bottom-right corner (defaults above)
+        } else {
+            return false;
+        }
     }
     if (!TryGetMenuGlyphAssetNameForKeyName("ESC", asset, assetSize)) return false;
-    *x = kPausedBackXX64; *y = kPausedBackYX64;
+    *x = useX; *y = useY;
     strcpy_s(prefix, prefixSize, "Back ");
     suffix[0] = 0;
     return true;
