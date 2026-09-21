@@ -3991,10 +3991,11 @@ bool RunPreOverlayScenePasses(void* device)
         blurActiveNow = (fabsf(yawDeg) + fabsf(pitchDeg)) * g_modConfig.motionBlurStrength > 0.05f;
     }
 #endif
-    if (g_modConfig.smaaEnabled && !g_smaaFailed) {
-        // SMAA (shape-aware) runs only when blur is idle -- never two chained passes.
-        if (!blurActiveNow && RunSmaa(device)) any = true;
-    }
+    // SMAA is PARKED (2026-09-21) -- commented out; see known_issues_x64.md issue #2. Re-enable by restoring:
+    //   if (g_modConfig.smaaEnabled && !g_smaaFailed) {
+    //       if (!blurActiveNow && RunSmaa(device)) any = true;
+    //   }
+    (void)blurActiveNow;
     if (g_modConfig.motionBlurEnabled && EnsureMotionBlurShader(device)) {
         g_fullScreenPassLinear = true;
         DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
@@ -4006,7 +4007,7 @@ bool RunPreOverlayScenePasses(void* device)
 
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
-    if (!g_modConfig.motionBlurEnabled && !g_modConfig.smaaEnabled) return;
+    if (!g_modConfig.motionBlurEnabled) return; // (SMAA parked -- was: && !g_modConfig.smaaEnabled)
 
 #if defined(_M_X64) || defined(_WIN64)
     // x64 gating (2026-09-12) -- real gates now wired, replacing the prior
