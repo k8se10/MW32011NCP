@@ -1,0 +1,263 @@
+Callers of 140080780 (3):
+  FUN_1400346a0 @ 1400346a0
+  FUN_140034980 @ 140034980
+  FUN_140035740 @ 140035740
+
+================================================================
+Function: FUN_1400346a0 @ 1400346a0
+----------------------------------------------------------------
+
+void FUN_1400346a0(ulonglong param_1,undefined4 param_2,undefined8 param_3,longlong param_4,
+                  undefined8 param_5,undefined8 param_6,undefined8 param_7,undefined4 param_8)
+
+{
+  byte bVar1;
+  byte bVar2;
+  longlong lVar3;
+  undefined4 uVar4;
+  int iVar5;
+  undefined8 uVar6;
+  undefined8 uVar7;
+  int iVar8;
+  float fVar9;
+  float fVar10;
+  float fVar11;
+  float fVar12;
+  float fVar13;
+  undefined4 uVar15;
+  float *pfVar14;
+  undefined4 uVar17;
+  float *pfVar16;
+  undefined4 uVar19;
+  float *pfVar18;
+  undefined4 uVar21;
+  undefined8 *puVar20;
+  float local_88;
+  float local_84;
+  float local_80 [22];
+  
+  fVar9 = (float)FUN_1400379b0(param_1,DAT_14053b084,param_2);
+  lVar3 = CONCAT44(param_7._4_4_,(float)param_7);
+  *(float *)(lVar3 + 0xc) = fVar9;
+  if (fVar9 != 0.0) {
+    puVar20 = &param_7;
+    pfVar18 = &local_88;
+    pfVar16 = local_80;
+    pfVar14 = &local_84;
+    FUN_140033730(param_2,&DAT_140514580,param_3,param_4,pfVar14,pfVar16,pfVar18,puVar20);
+    fVar9 = *(float *)(DAT_1404f7a00 + 0x18);
+    fVar10 = ((DAT_140534e60 * DAT_14053b05c - DAT_140534e64 * DAT_14053b058) / fVar9 +
+             *(float *)(DAT_1404f7a00 + 0x10)) -
+             (*(float *)(DAT_1404f7938 + 0x10) * DAT_1403e3e68) / fVar9;
+    fVar12 = (fVar9 * local_88) / *(float *)(DAT_1404f7938 + 0x10);
+    iVar8 = (int)fVar10;
+    fVar9 = local_84 - (fVar10 - (float)iVar8) * fVar12;
+    iVar5 = FUN_1401b7cd0(param_5);
+    fVar10 = (float)param_7 / (float)iVar5;
+    iVar5 = FUN_1401b8020(&DAT_1403eb7c8,2,param_5);
+    uVar4 = param_8;
+    for (; fVar9 < *(float *)(DAT_1404f7930 + 0x10) * *(float *)(DAT_1404f7a08 + 0x10) + local_84;
+        fVar9 = fVar9 + fVar12) {
+      iVar8 = iVar8 + 1;
+    }
+    fVar11 = (local_84 + local_88) - (float)iVar5 * fVar10;
+    if (fVar9 < fVar11) {
+      fVar13 = local_80[0] + (float)param_7;
+      do {
+        uVar15 = (undefined4)((ulonglong)pfVar14 >> 0x20);
+        uVar17 = (undefined4)((ulonglong)pfVar16 >> 0x20);
+        uVar19 = (undefined4)((ulonglong)pfVar18 >> 0x20);
+        uVar21 = (undefined4)((ulonglong)puVar20 >> 0x20);
+        uVar6 = FUN_1402cb690(&DAT_1403eb7cc,iVar8 % 100);
+        bVar1 = *(byte *)(param_4 + 0x11);
+        bVar2 = *(byte *)(param_4 + 0x10);
+        uVar7 = FUN_14008d8f0(param_1 & 0xffffffff);
+        puVar20 = (undefined8 *)CONCAT44(uVar21,(uint)bVar1);
+        pfVar18 = (float *)CONCAT44(uVar19,(uint)bVar2);
+        pfVar16 = (float *)CONCAT44(uVar17,fVar13);
+        pfVar14 = (float *)CONCAT44(uVar15,fVar9);
+        FUN_140080780(uVar7,uVar6,0x28,param_5,pfVar14,pfVar16,pfVar18,puVar20,fVar10,fVar10,lVar3,
+                      uVar4);
+        fVar9 = fVar9 + fVar12;
+        iVar8 = iVar8 + 1;
+      } while (fVar9 < fVar11);
+    }
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140034980 @ 140034980
+----------------------------------------------------------------
+
+void FUN_140034980(ulonglong param_1,undefined4 param_2,undefined8 param_3,longlong param_4,
+                  undefined8 param_5,undefined8 param_6,undefined8 param_7,undefined4 param_8)
+
+{
+  longlong lVar1;
+  undefined4 uVar2;
+  int iVar3;
+  undefined8 uVar4;
+  undefined8 uVar5;
+  longlong lVar6;
+  int iVar7;
+  float fVar8;
+  float fVar9;
+  float fVar10;
+  float fVar11;
+  float fVar12;
+  float *pfVar13;
+  undefined4 uVar15;
+  undefined8 uVar14;
+  float *pfVar16;
+  undefined4 uVar18;
+  undefined8 uVar17;
+  undefined1 *puVar19;
+  undefined4 uVar21;
+  undefined8 uVar20;
+  undefined8 *puVar22;
+  undefined4 uVar24;
+  undefined8 uVar23;
+  float local_98;
+  float local_94;
+  undefined1 local_90 [104];
+  
+  fVar8 = (float)FUN_1400379b0(param_1,DAT_14053b084,param_2);
+  lVar1 = CONCAT44(param_7._4_4_,(float)param_7);
+  *(float *)(lVar1 + 0xc) = fVar8;
+  if (fVar8 != 0.0) {
+    puVar22 = &param_7;
+    puVar19 = local_90;
+    pfVar16 = &local_98;
+    pfVar13 = &local_94;
+    FUN_140033730(param_2,&DAT_140514580,param_3,param_4,pfVar13,pfVar16,puVar19,puVar22);
+    uVar15 = (undefined4)((ulonglong)pfVar13 >> 0x20);
+    uVar18 = (undefined4)((ulonglong)pfVar16 >> 0x20);
+    uVar21 = (undefined4)((ulonglong)puVar19 >> 0x20);
+    uVar24 = (undefined4)((ulonglong)puVar22 >> 0x20);
+    fVar12 = (DAT_140534e60 * DAT_14053b05c - DAT_140534e64 * DAT_14053b058) *
+             (DAT_1403e3e6c / *(float *)(DAT_1404f7a00 + 0x18)) + *(float *)(DAT_1404f7a00 + 0x10);
+    uVar4 = FUN_14008d8f0(param_1 & 0xffffffff);
+    iVar3 = FUN_1401b7cd0(param_5);
+    iVar7 = (int)fVar12;
+    fVar9 = (float)param_7 / (float)iVar3;
+    fVar11 = fVar9 * DAT_1403e9dfc;
+    uVar5 = FUN_1402cb690(&DAT_1403eb7bc,iVar7 / 100);
+    iVar3 = FUN_1401b8020(uVar5,10,param_5);
+    uVar2 = param_8;
+    uVar23 = CONCAT44(uVar24,(uint)*(byte *)(param_4 + 0x11));
+    uVar20 = CONCAT44(uVar21,(uint)*(byte *)(param_4 + 0x10));
+    uVar17 = CONCAT44(uVar18,(float)param_7 * DAT_1403e9dfc + local_98);
+    uVar14 = CONCAT44(uVar15,local_94);
+    FUN_140080780(uVar4,uVar5,0x28,param_5,uVar14,uVar17,uVar20,uVar23,fVar11,fVar11,lVar1,param_8);
+    uVar15 = (undefined4)((ulonglong)uVar14 >> 0x20);
+    uVar18 = (undefined4)((ulonglong)uVar17 >> 0x20);
+    uVar21 = (undefined4)((ulonglong)uVar20 >> 0x20);
+    uVar24 = (undefined4)((ulonglong)uVar23 >> 0x20);
+    fVar10 = (float)iVar3 * fVar11 + local_94;
+    uVar5 = FUN_1402cb690(&DAT_1403eb7bc,iVar7 % 100);
+    iVar3 = FUN_1401b8020(uVar5,10,param_5);
+    fVar8 = local_98 + (float)param_7;
+    uVar23 = CONCAT44(uVar24,(uint)*(byte *)(param_4 + 0x11));
+    uVar20 = CONCAT44(uVar21,(uint)*(byte *)(param_4 + 0x10));
+    uVar17 = CONCAT44(uVar18,fVar8);
+    uVar14 = CONCAT44(uVar15,fVar10);
+    FUN_140080780(uVar4,uVar5,0x28,param_5,uVar14,uVar17,uVar20,uVar23,fVar9,fVar9,lVar1,uVar2);
+    uVar15 = (undefined4)((ulonglong)uVar14 >> 0x20);
+    uVar18 = (undefined4)((ulonglong)uVar17 >> 0x20);
+    uVar21 = (undefined4)((ulonglong)uVar20 >> 0x20);
+    uVar24 = (undefined4)((ulonglong)uVar23 >> 0x20);
+    lVar6 = FUN_1402cb690(&DAT_1403eb7c0,(double)(fVar12 - (float)iVar7));
+    FUN_140080780(uVar4,lVar6 + 2,0x28,param_5,CONCAT44(uVar15,fVar10 + (float)iVar3 * fVar9),
+                  CONCAT44(uVar18,fVar8),CONCAT44(uVar21,(uint)*(byte *)(param_4 + 0x10)),
+                  CONCAT44(uVar24,(uint)*(byte *)(param_4 + 0x11)),fVar11,fVar11,lVar1,uVar2);
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140035740 @ 140035740
+----------------------------------------------------------------
+
+void FUN_140035740(ulonglong param_1,undefined4 param_2,undefined8 param_3,longlong param_4,
+                  undefined8 param_5,undefined8 param_6,undefined8 param_7,undefined4 param_8)
+
+{
+  byte bVar1;
+  byte bVar2;
+  longlong lVar3;
+  float fVar4;
+  float fVar5;
+  undefined4 uVar6;
+  int iVar7;
+  int iVar8;
+  undefined8 uVar9;
+  undefined8 uVar10;
+  float fVar11;
+  float fVar12;
+  float fVar13;
+  undefined4 uVar15;
+  undefined4 *puVar14;
+  undefined4 uVar17;
+  float *pfVar16;
+  undefined4 uVar19;
+  float *pfVar18;
+  undefined4 uVar21;
+  undefined8 *puVar20;
+  float local_b8;
+  float local_b4;
+  undefined4 local_b0 [34];
+  
+  fVar11 = (float)FUN_1400379b0(param_1,DAT_14053b084,param_2);
+  lVar3 = CONCAT44(param_7._4_4_,(float)param_7);
+  *(float *)(lVar3 + 0xc) = fVar11;
+  if (fVar11 != 0.0) {
+    puVar20 = &param_7;
+    pfVar18 = &local_b4;
+    pfVar16 = &local_b8;
+    puVar14 = local_b0;
+    FUN_140033730(param_2,&DAT_140514580,param_3,param_4,puVar14,pfVar16,pfVar18,puVar20);
+    fVar5 = (float)param_7;
+    fVar11 = *(float *)(DAT_1404f7a00 + 0x18);
+    fVar12 = (DAT_14053b058 * DAT_140534e60 + DAT_140534e64 * DAT_14053b05c) / fVar11 +
+             *(float *)(DAT_1404f7a00 + 0x14) +
+             (*(float *)(DAT_1404f7938 + 0x10) * DAT_1403e3e68) / fVar11;
+    fVar13 = (fVar11 * (float)param_7) / *(float *)(DAT_1404f7938 + 0x10);
+    fVar11 = DAT_1403e3e6c - (fVar12 - (float)(int)fVar12);
+    fVar12 = fVar12 + fVar11;
+    fVar11 = local_b8 - fVar11 * fVar13;
+    iVar7 = FUN_1401b8020(&DAT_1403eb7c8,2,param_5);
+    iVar8 = FUN_1401b7cd0(param_5);
+    uVar6 = param_8;
+    fVar4 = DAT_1403e416c;
+    for (; fVar11 < (float)iVar8 * (local_b4 / (float)iVar7) + local_b8; fVar11 = fVar11 + fVar13) {
+      fVar12 = fVar12 + DAT_1403e416c;
+    }
+    for (; fVar11 < local_b8 + fVar5; fVar11 = fVar11 + fVar13) {
+      uVar15 = (undefined4)((ulonglong)puVar14 >> 0x20);
+      uVar17 = (undefined4)((ulonglong)pfVar16 >> 0x20);
+      uVar19 = (undefined4)((ulonglong)pfVar18 >> 0x20);
+      uVar21 = (undefined4)((ulonglong)puVar20 >> 0x20);
+      uVar9 = FUN_1402cb690(&DAT_1403eb7cc,(int)fVar12 % 100);
+      iVar7 = FUN_1401b8020(uVar9,10,param_5);
+      bVar1 = *(byte *)(param_4 + 0x11);
+      bVar2 = *(byte *)(param_4 + 0x10);
+      uVar10 = FUN_14008d8f0(param_1 & 0xffffffff);
+      puVar20 = (undefined8 *)CONCAT44(uVar21,(uint)bVar1);
+      pfVar18 = (float *)CONCAT44(uVar19,(uint)bVar2);
+      pfVar16 = (float *)CONCAT44(uVar17,fVar11);
+      puVar14 = (undefined4 *)CONCAT44(uVar15,local_b0[0]);
+      FUN_140080780(uVar10,uVar9,0x28,param_5,puVar14,pfVar16,pfVar18,puVar20,
+                    local_b4 / (float)iVar7,local_b4 / (float)iVar7,lVar3,uVar6);
+      fVar12 = fVar12 + fVar4;
+    }
+  }
+  return;
+}
+
+
+

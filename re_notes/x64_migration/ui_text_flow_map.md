@@ -157,3 +157,35 @@ Ghidra scripts (`re_notes/ghidra_scripts/`): `DecompileAt`, `DumpDisasm`,
 `ui_draw_pipeline_map.md`, `drawtext_hook_x64.md`,
 `gsc_vm_native_functions_x64.md`, `../known_issues_x64.md` issue #1 (rounds
 2026-09-16 .. 2026-09-19), `../x64_feature_parity_audit.md`.
+
+## 9. Full draw-path enumeration (2026-09-21, static) — RESOLVES M3/M4 draw half
+
+Real leaf text renderer = `FUN_140080840` (tail-jump to `FUN_1401d2520`); fx variant
+`FUN_140080920`; `FUN_1400808a0`; `FUN_1401d2590`. Every on-screen string reaches one
+of these. Complete caller set (raw output: `draw_enum/`):
+
+| Leaf | Callers | What draws through it | Hooked? |
+|---|---|---|---|
+| `140080840` | `14029a2b0` | menu/HUD dispatcher text (M1/M2/M5) | **yes** (Hook_DrawTextX64) |
+| `140080840` | `14029a3e0` <- `140036720`, `1402a6da0` | chat/say lines; itemDef marquee (scrolling) text | no |
+| `140080840` | `140045730` <- `14003aa90`, `140046c00` | world-space entity name/icon tags | no |
+| `140080840`/`1401d2520` | `140080780` <- `1400346a0`,`140034980`,`140035740`; `1400809e0` <- `140035a80` | unexamined HUD widgets | no |
+| `140080920` (fx) | `14029a610` | fx text variant | no (probe: silent) |
+| `140080920` (fx) | `14003b5e0` <- `140039f40` (HUD tick) | 2-slot HUD text (`DAT_14054ea20`, stride 0x1A8) | no |
+| `140080920` (fx) | **`140046a30`** <- `140046c00` | **client script hudelems** | **yes, log-only (Hook_HudElemTextDrawX64)** |
+| `1400808a0` | `14029a4d0` | sibling variant | no |
+
+**M4 client draw found:** HUD tick `FUN_140039f40` calls `FUN_1400455b0(client, layer 0/1/2)`
+which collects the client hudelem array (`DAT_14052a5cc`, stride 0xA8 = 0x2A ints, 256 max,
+flags at +0xa4: 0x100 layer, 0x2, 0x4), sorts it, and calls `FUN_140046c00(client, elem)`.
+That builds strings with `FUN_140047290`: label = configstring `slot(elem[16]) + 0xb2`
+(via `FUN_140078c20`/`FUN_140289a60`, "hudelem string"), value by type (1 = string slot
+elem[0x21]; 2 = number; 3 = ...; 5-10 = clock `%i:%02i`), and the label's `&&1` is replaced
+by the value text. The final string is drawn by `FUN_140046a30(client, char* text, elem, layout)`.
+So the ready-up prompt is a normal type-2 hudelem drawn here, never through `14029a2b0`.
+`COOP_WAITINGFORPLAYER` is drawn directly from `FUN_140039f40` via `14029a2b0` (hooked).
+The M3 use-hint draw path is still not located (likely one of the unexamined HUD widgets above).
+
+`Hook_HudElemTextDrawX64` logs `[x64-hudelem-draw]` lines (change-only, capped at 400) and
+exposes `IsReadyUpHudElemTextDrawnX64()`; text is always drawn unmodified. Build-verified,
+not yet live-tested.

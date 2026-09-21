@@ -1,0 +1,52 @@
+Callers of 1401d2520 (3):
+  FUN_140080840 @ 140080840
+  FUN_140080780 @ 140080780
+  FUN_1400809e0 @ 1400809e0
+
+================================================================
+Function: FUN_140080840 @ 140080840
+----------------------------------------------------------------
+
+void FUN_140080840(void)
+
+{
+  FUN_1401d2520();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140080780 @ 140080780
+----------------------------------------------------------------
+
+void FUN_140080780(undefined8 param_1,undefined8 param_2,undefined4 param_3,undefined8 param_4,
+                  undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8,
+                  undefined4 param_9,undefined4 param_10,undefined8 param_11,undefined4 param_12)
+
+{
+  thunk_FUN_14008d020(param_1,&param_5,&param_6,&param_9,&param_10,param_7,param_8);
+  FUN_1401d2520(param_2,param_3,param_4,param_5,param_6,param_9,param_10,0,param_11,param_12);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400809e0 @ 1400809e0
+----------------------------------------------------------------
+
+void FUN_1400809e0(undefined8 param_1,undefined8 param_2,undefined4 param_3,undefined8 param_4,
+                  undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8,
+                  undefined4 param_9,undefined4 param_10,undefined4 param_11,undefined8 param_12,
+                  undefined4 param_13)
+
+{
+  thunk_FUN_14008d020(param_1,&param_5,&param_6,&param_10,&param_11,param_8,param_9);
+  FUN_1401d2520(param_2,param_3,param_4,param_5,param_6,param_10,param_11,param_7,param_12,param_13)
+  ;
+  return;
+}
+
+
+

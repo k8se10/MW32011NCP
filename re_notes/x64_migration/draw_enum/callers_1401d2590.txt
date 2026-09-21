@@ -1,0 +1,40 @@
+Callers of 1401d2590 (1):
+  FUN_14029a610 @ 14029a610
+
+================================================================
+Function: FUN_14029a610 @ 14029a610
+----------------------------------------------------------------
+
+void FUN_14029a610(undefined8 param_1,undefined8 param_2,undefined4 param_3,undefined8 param_4,
+                  float param_5,float param_6,undefined4 param_7,undefined4 param_8,
+                  undefined4 param_9,undefined8 param_10,undefined4 param_11,undefined8 param_12,
+                  char param_13,undefined1 param_14,undefined8 param_15,undefined8 param_16,
+                  undefined4 param_17,undefined4 param_18,undefined4 param_19,undefined4 param_20)
+
+{
+  float fVar1;
+  undefined8 in_stack_ffffffffffffff98;
+  undefined4 uVar2;
+  undefined4 local_28;
+  undefined4 local_24 [7];
+  
+  uVar2 = (undefined4)((ulonglong)in_stack_ffffffffffffff98 >> 0x20);
+  local_28 = FUN_1401b7c90(param_4);
+  local_24[0] = local_28;
+  thunk_FUN_14008d020(param_1,&param_5,&param_6,local_24,&local_28,param_7,param_8);
+  fVar1 = floorf(param_5 + DAT_1403e3e68);
+  param_5 = fVar1;
+  param_6 = floorf(param_6 + DAT_1403e3e68);
+  if (param_13 == '\0') {
+    FUN_140080920(param_2,param_3,param_4,fVar1,param_6,local_24[0],local_28,param_10,
+                  CONCAT44(uVar2,param_11),param_12,param_15,param_16,param_17,param_18,param_19,
+                  param_20);
+  }
+  else {
+    FUN_1401d2590();
+  }
+  return;
+}
+
+
+

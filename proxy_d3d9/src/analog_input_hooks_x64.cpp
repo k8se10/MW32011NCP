@@ -6305,7 +6305,58 @@ void Hook_DrawTextX64(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Client script-hudelem text draw (FUN_140046a30) -- 2026-09-21 draw-path enumeration.
+// FUN_1400455b0 walks the client hudelem array (DAT_14052a5cc, stride 0xA8, flags at
+// +0xa4) and calls FUN_140046c00 per element, which builds the FINAL label+value
+// string (FUN_140047290: configstring label with "&&1" replaced by the formatted
+// value) and draws it here -> FUN_140080920 (fx text leaf). This path never touches
+// FUN_14029a2b0/Hook_DrawTextX64, which is why the ready-up / hudelem prompts were
+// invisible to the text hook. Signature is the raw 49-byte prologue (no RIP-relative
+// operands). Args: (clientNum, const char* text, hudelem*, layout*).
+// Read-only here: detection + capped, change-only logging; text is always drawn.
+// See re_notes/x64_migration/draw_enum/ and ui_text_flow_map.md.
+constexpr const char* kHudElemTextDrawSignature =
+    "48 8B C4 48 89 58 08 48 89 68 10 48 89 70 18 57 41 56 41 57 48 81 EC C0 00 00 00 "
+    "0F 29 70 D8 49 8B F1 0F 29 78 C8 49 8B F8 44 0F 29 40 B8 4C 8B F2";
+using HudElemTextDrawFnX64 = void(__fastcall*)(uint32_t, const char*, void*, void*);
+HudElemTextDrawFnX64 g_realHudElemTextDrawX64 = nullptr;
+volatile LONG g_hudElemReadyTextSeenTickX64 = 0;
+
+void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, void* elem, void* layout)
+{
+    if (text && LooksSaneX64(reinterpret_cast<uintptr_t>(text))) {
+        __try {
+            char low[64];
+            size_t n = 0;
+            for (; n < sizeof(low) - 1 && text[n]; ++n)
+                low[n] = static_cast<char>(tolower(static_cast<unsigned char>(text[n])));
+            low[n] = 0;
+            if (strstr(low, "ready up") != nullptr)
+                InterlockedExchange(&g_hudElemReadyTextSeenTickX64, static_cast<LONG>(GetTickCount()));
+
+            static char s_last[96] = "";
+            static LONG s_logged = 0;
+            if (s_logged < 400 && strncmp(text, s_last, sizeof(s_last) - 1) != 0) {
+                strncpy_s(s_last, text, _TRUNCATE);
+                ++s_logged;
+                char buf[256];
+                sprintf_s(buf, "[x64-hudelem-draw] client=%u elem=%p text=\"%.90s\"", clientNum, elem, text);
+                LogFromController(buf);
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+        }
+    }
+    g_realHudElemTextDrawX64(clientNum, text, elem, layout);
+}
+
 }  // namespace
+
+extern "C" bool IsReadyUpHudElemTextDrawnX64()
+{
+    LONG t = g_hudElemReadyTextSeenTickX64;
+    return t != 0 && (GetTickCount() - static_cast<DWORD>(t)) < 500;
+}
 
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
@@ -7066,6 +7117,26 @@ void InstallAnalogInputHooksX64()
     // in this function -- its own success/failure is logged and gated internally by
     // Rumble_Install(), doesn't block or depend on anything else installed above.
     Rumble_Install();
+
+    // Client script-hudelem text draw (FUN_140046a30) -- see Hook_HudElemTextDrawX64.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kHudElemTextDrawSignature);
+        if (!r.found) {
+            LogFromController("[x64-hudelem-draw] signature did not resolve (zero or ambiguous match) -- not hooked");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            if (MH_CreateHook(target, reinterpret_cast<void*>(&Hook_HudElemTextDrawX64),
+                              reinterpret_cast<void**>(&g_realHudElemTextDrawX64)) == MH_OK &&
+                MH_EnableHook(target) == MH_OK) {
+                char buf[128];
+                sprintf_s(buf, "[x64-hudelem-draw] hooked hudelem text draw @ 0x%llX",
+                          static_cast<unsigned long long>(r.address));
+                LogFromController(buf);
+            } else {
+                LogFromController("[x64-hudelem-draw] MH_CreateHook/EnableHook failed");
+            }
+        }
+    }
 
     // Native text-draw hook (2026-09-13 port, x86's Hook_DrawGlyphText) -- see this
     // file's own "Native text-draw hook" section header comment for the full
