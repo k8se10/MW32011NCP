@@ -3260,6 +3260,9 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // native HUD elements) commonly assume state persists from their own last
 // draw call rather than re-setting everything themselves, a completely
 // normal D3D9 pattern.
+// Set by the caller for passes that need bilinear taps (motion blur); everything else stays point-sampled.
+bool g_fullScreenPassLinear = false;
+
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr)
 {
     if (!pixelShader) return;
@@ -3339,8 +3342,8 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
     getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
     getSamplerState(device, 0, kD3DSAMP_MINFILTER, &oldMinFilter);
-    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, kD3DTEXF_POINT);
-    setSamplerState(device, 0, kD3DSAMP_MINFILTER, kD3DTEXF_POINT);
+    setSamplerState(device, 0, kD3DSAMP_MAGFILTER, g_fullScreenPassLinear ? kD3DTEXF_LINEAR : kD3DTEXF_POINT);
+    setSamplerState(device, 0, kD3DSAMP_MINFILTER, g_fullScreenPassLinear ? kD3DTEXF_LINEAR : kD3DTEXF_POINT);
 
     DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldCull = 0;
     getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
@@ -3592,7 +3595,7 @@ void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texel
     // 'looks right first try' expectation"), adjustable via mw3ncp_config.ini's
     // own hot-reload without a rebuild.
     constexpr float kDegreesToUvScale = 0.01f;
-    constexpr float kMaxBlurExtent = 0.10f; // hard safety clamp -- caps how far
+    constexpr float kMaxBlurExtent = 0.06f; // hard safety clamp -- caps how far
         // a single very fast turn or a frame-time hitch can smear, regardless
         // of MotionBlurStrength, so this can never look like a broken/runaway
         // effect even at an aggressive strength setting.
@@ -3686,12 +3689,25 @@ bool g_motionBlurRanThisFrame = false;
 bool RunPreOverlayScenePasses(void* device)
 {
     bool any = false;
-    if (g_modConfig.fxaaEnabled && EnsureFxaaShader(device)) {
+    // Live report (2026-09-21): stacking both full-screen passes in one frame produced ghosting/double images.
+    // While the camera is moving the blur already hides aliasing, so FXAA only runs when blur is idle
+    // (or off) -- never two chained passes at once.
+    bool blurActiveNow = false;
+#if defined(_M_X64) || defined(_WIN64)
+    if (g_modConfig.motionBlurEnabled) {
+        float yawDeg = 0.0f, pitchDeg = 0.0f;
+        GetMotionBlurDeltasX64(&yawDeg, &pitchDeg);
+        blurActiveNow = (fabsf(yawDeg) + fabsf(pitchDeg)) * g_modConfig.motionBlurStrength > 0.05f;
+    }
+#endif
+    if (g_modConfig.fxaaEnabled && !blurActiveNow && EnsureFxaaShader(device)) {
         DrawFullScreenPass(device, g_fxaaPixelShader, FxaaShaderSetupCallback);
         any = true;
     }
     if (g_modConfig.motionBlurEnabled && EnsureMotionBlurShader(device)) {
+        g_fullScreenPassLinear = true;
         DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
+        g_fullScreenPassLinear = false;
         any = true;
     }
     return any;

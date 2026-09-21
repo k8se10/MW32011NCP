@@ -39,7 +39,7 @@ float4 radialParams : register(c1); // .x = center-to-edge falloff strength, 0..
                                       // screen point (a corner). Values in between blend
                                       // linearly between uniform and fully-radial.
 
-static const int kTapCount = 8;
+static const int kTapCount = 24; // 2026-09-21: 8 -> 24 (8 point-sampled taps over a wide extent produced stepped ghost copies)
 
 float4 main(float2 uv : TEXCOORD0) : COLOR0
 {
