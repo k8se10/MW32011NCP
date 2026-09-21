@@ -6163,7 +6163,14 @@ void Hook_DrawTextX64(
             // instance on an unknown row (the ~498 mid-screen one that draws every 1-2 s) reuses the last good
             // position instead of its own, so the glyph stays put and no native "Back ESC" flashes through.
             const bool backOnKnownRowX64 = looksLikeCornerHintRowX64 || fabsf(designRowY - 700.0f) < 25.0f;
-            bool isBackCornerHint = backContentMatches;
+            // Menu-aware (2026-09-22, user: the pause-menu work broke the buy stations' working mechanism): ONLY the pause
+            // menu ("pausedmenu") takes every Back instance and draws a hardcoded glyph. Every other menu -- buy stations
+            // included -- goes back to the original native-driven behaviour: substitute the native Back draw when it is on
+            // the standard corner row or the ~700 popup row, leave anything else untouched.
+            char backMenuName[96] = {};
+            GetTopmostMenuNameX64(backMenuName, sizeof(backMenuName));
+            const bool backIsPauseMenu = strcmp(backMenuName, "pausedmenu") == 0;
+            bool isBackCornerHint = backContentMatches && (backIsPauseMenu || backOnKnownRowX64);
             if (backContentMatches) {
                 // Menu-aware capture (2026-09-22): which native Back draw positions exist under which open menu.
                 static uint32_t s_seenBackNative[128];
@@ -6586,11 +6593,9 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
         // e.g. the restart-mission modal is "all_restart_popmenu" and gets nothing.
         if (strcmp(lower, "pausedmenu") == 0) {
             // pause menu: bottom-right corner (defaults above)
-        } else if (strncmp(lower, "survival_armory", 15) == 0) {
-            // Buy-station popups: centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
-            useX = 1208.0f;
-            useY = 827.0f;
         } else {
+            // Buy stations (survival_armory_*) and every other menu: NOT handled here (2026-09-22) -- they use the
+            // original native-driven Back substitution in Hook_DrawTextX64.
             return false; // any other menu/modal (restart-mission confirm, options, ...): no hardcoded Back
         }
     }
