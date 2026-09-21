@@ -522,7 +522,10 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // symptom under SP itself, so SP keeps the existing, already-proven
     // behavior unchanged; only MP (and any unrecognized executable, as a
     // fail-safe) now skips this call entirely.
-    if (GetDetectedGameExecutable() == GameExecutable::SP) {
+    // 2026-09-21: DISABLED for SP too. The real "needs an initial click" root cause was fixed natively
+    // (ForceReleaseStuckKbuttonsX64, 2026-09-16), so this 2s WM_ACTIVATE/SetForegroundWindow workaround is
+    // obsolete -- and it was live-reported as making the game pause itself intermittently.
+    if (false && GetDetectedGameExecutable() == GameExecutable::SP) {
         static DWORD s_lastPeriodicNudgeMs = 0;
         DWORD nowMs = GetTickCount();
         if (g_gameHwnd && (nowMs - s_lastPeriodicNudgeMs >= 2000)) {
