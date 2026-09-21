@@ -6322,9 +6322,12 @@ constexpr const char* kHudElemTextDrawSignature =
 using HudElemTextDrawFnX64 = void(__fastcall*)(uint32_t, const char*, void*, void*);
 HudElemTextDrawFnX64 g_realHudElemTextDrawX64 = nullptr;
 volatile LONG g_hudElemReadyTextSeenTickX64 = 0;
+char g_readyUpSuffixX64[96] = "";   // "to ready up: NN" tail of the native text (main-thread draw only)
+
 
 void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, void* elem, void* layout)
 {
+    bool suppress = false;
     if (text && LooksSaneX64(reinterpret_cast<uintptr_t>(text))) {
         __try {
             char low[64];
@@ -6333,13 +6336,30 @@ void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, vo
                 low[n] = static_cast<char>(tolower(static_cast<unsigned char>(text[n])));
             low[n] = 0;
             if (strstr(low, "ready up") != nullptr)
+            {
                 InterlockedExchange(&g_hudElemReadyTextSeenTickX64, static_cast<LONG>(GetTickCount()));
+                // Full replacement (2026-09-21): hide the native prompt and let overlay_hud draw
+                // "Hold [glyph] to ready up: NN" instead. Only when a glyph asset exists, so a
+                // player without a resolvable glyph keeps the native text.
+                char asset[32] = {};
+                if (IsInSurvivalModeX64() && TryGetGlyphAssetNameForKeyName("F5", asset, sizeof(asset))) {
+                    const char* to = strstr(text, "to ready up");
+                    if (!to) to = strstr(text, "ready up");
+                    if (to) {
+                        strncpy_s(g_readyUpSuffixX64, to, _TRUNCATE);
+                        suppress = true;
+                    }
+                }
+            }
 
-            static char s_last[96] = "";
+            static uint32_t s_seen[512];
             static LONG s_logged = 0;
-            if (s_logged < 400 && strncmp(text, s_last, sizeof(s_last) - 1) != 0) {
-                strncpy_s(s_last, text, _TRUNCATE);
-                ++s_logged;
+            uint32_t h = 2166136261u;
+            for (size_t i = 0; i < 96 && text[i]; ++i) h = (h ^ static_cast<unsigned char>(text[i])) * 16777619u;
+            bool isNew = true;
+            for (LONG i = 0; i < s_logged; ++i) if (s_seen[i] == h) { isNew = false; break; }
+            if (isNew && s_logged < 512) {
+                s_seen[s_logged++] = h;
                 char buf[256];
                 sprintf_s(buf, "[x64-hudelem-draw] client=%u elem=%p text=\"%.90s\"", clientNum, elem, text);
                 LogFromController(buf);
@@ -6347,10 +6367,22 @@ void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, vo
         } __except (EXCEPTION_EXECUTE_HANDLER) {
         }
     }
-    g_realHudElemTextDrawX64(clientNum, text, elem, layout);
+    if (!suppress) g_realHudElemTextDrawX64(clientNum, text, elem, layout);
 }
 
 }  // namespace
+
+extern "C" bool IsReadyUpHudElemTextDrawnX64();
+extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize)
+{
+    if (!IsReadyUpHudElemTextDrawnX64()) return false;
+    strcpy_s(prefixOut, prefixSize, "Hold ");
+    char tmp[96];
+    tmp[0] = ' ';
+    strncpy_s(tmp + 1, sizeof(tmp) - 1, g_readyUpSuffixX64, _TRUNCATE);
+    strcpy_s(suffixOut, suffixSize, tmp);
+    return true;
+}
 
 extern "C" bool IsReadyUpHudElemTextDrawnX64()
 {

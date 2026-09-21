@@ -2227,6 +2227,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
 // now coexist, matching the user's own direct correction.
 #if defined(_M_X64)
 extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize);
+extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize);
+extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize);
 #endif
 
 void DrawGameplayHintSlotsIfRequested(void* device)
@@ -2241,9 +2243,13 @@ void DrawGameplayHintSlotsIfRequested(void* device)
     // x86 native prompt sat near (1322, 329)) -- calibrate with the F2/F3 hint editor.
     {
         char readyAsset[32] = {};
-        if (GetReadyUpPromptGlyphX64(readyAsset, sizeof(readyAsset)))
-            RequestCustomHintOverlay(1285.0f, 329.0f, "", "", readyAsset, /*centerOnScreen=*/false,
+        if (GetReadyUpPromptGlyphX64(readyAsset, sizeof(readyAsset))) {
+            // Full replacement: the hudelem draw hook suppresses the native text and supplies ours.
+            char pre[16] = "", suf[128] = "";
+            GetReadyUpHintTextX64(pre, sizeof(pre), suf, sizeof(suf));
+            RequestCustomHintOverlay(1285.0f, 329.0f, pre, suf, readyAsset, /*centerOnScreen=*/false,
                                      /*flashIcon=*/false, GameplayHintSlotId::ReadyUp, "");
+        }
     }
 #endif
     bool anyRequested = false;
