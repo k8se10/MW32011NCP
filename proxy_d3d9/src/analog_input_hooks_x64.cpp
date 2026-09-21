@@ -550,23 +550,54 @@ static void ScanHudElems(const char* tag)
 // types directly or formats other types as a string ("1"/"0" for a bool). Replaces the
 // x86-only CbufAddText path for the F4 `ai_disableSpawn` debug toggle (real_settings.cpp's
 // x64 setters are stubs). Signature verified unique offline (PatternScan, 1 match).
+// The real setter (FUN_1402c5f30) silently returns for flagged dvars unless the CALLING thread
+// is the game's main thread (FUN_14024a250: GetCurrentThreadId() == DAT_142005820). The F4 poll
+// runs on the render/WndProc thread, so a direct write was a silent no-op (2026-09-21 trace).
+// SetDvarIntX64 now only QUEUES the write; Hook_MovementTick (game thread) applies it via
+// ApplyPendingDvarSetX64 and logs a read-back so success is verifiable.
+static char g_pendingDvarName[64] = "";
+static int g_pendingDvarValue = 0;
+static volatile LONG g_pendingDvarSet = 0;
+static void* g_cvarSetIntFnX64 = nullptr;
+
 extern "C" bool SetDvarIntX64(const char* name, int value)
 {
-    using Fn = void(__fastcall*)(const char*, int);
-    static Fn s_fn = nullptr;
     static bool s_tried = false;
-    if (!s_fn && !s_tried) {
+    if (!g_cvarSetIntFnX64 && !s_tried) {
         s_tried = true;
         SigScan::Result r = SigScan::FindPatternInMainModule(
             "48 89 5C 24 08 48 89 74 24 10 57 48 81 EC 80 00 00 00 8B FA 48 8B F1 E8 ?? ?? ?? ?? "
             "48 8B D8 48 85 C0 74 52 0F B6 48 0C 80 E9 05");
-        if (r.found) s_fn = reinterpret_cast<Fn>(r.address);
+        if (r.found) g_cvarSetIntFnX64 = reinterpret_cast<void*>(r.address);
         LogFromController(r.found ? "[x64-dvarset] Cvar_SetInt resolved -- F4 AI-spawn toggle available"
                                   : "[x64-dvarset] FATAL: Cvar_SetInt signature did not resolve -- F4 toggle unavailable");
     }
-    if (!s_fn) return false;
-    __try { s_fn(name, value); return true; }
-    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!g_cvarSetIntFnX64 || !name) return false;
+    strncpy_s(g_pendingDvarName, name, _TRUNCATE);
+    g_pendingDvarValue = value;
+    InterlockedExchange(&g_pendingDvarSet, 1);
+    return true;
+}
+
+// Called at the top of Hook_MovementTick (game thread).
+static void ApplyPendingDvarSetX64()
+{
+    if (!InterlockedCompareExchange(&g_pendingDvarSet, 0, 1)) return;
+    using SetFn = void(__fastcall*)(const char*, int);
+    using FindFn = void*(*)(const char*);
+    const DWORD mainTid = *reinterpret_cast<volatile DWORD*>(0x142005820ULL);
+    bool ok = false;
+    int readBack = -1;
+    __try {
+        reinterpret_cast<SetFn>(g_cvarSetIntFnX64)(g_pendingDvarName, g_pendingDvarValue);
+        void* dv = reinterpret_cast<FindFn>(0x1402c3890ULL)(g_pendingDvarName);
+        if (dv) { readBack = *reinterpret_cast<unsigned char*>(reinterpret_cast<uintptr_t>(dv) + 0x10); ok = true; }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    char b[192];
+    sprintf_s(b, "[x64-dvarset] applied %.40s=%d on tid=%lu (mainTid=%lu) readBack=%d %s",
+              g_pendingDvarName, g_pendingDvarValue, GetCurrentThreadId(), mainTid, readBack,
+              (ok && readBack == g_pendingDvarValue) ? "OK" : "MISMATCH");
+    LogFromController(b);
 }
 
 // ---- Ready-up prompt detection (2026-09-19) -------------------------------------------
@@ -3403,6 +3434,7 @@ extern "C" float GetDvarFloatX64_Exported(const char* name)
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
     g_lastGameplayTickMsX64 = GetTickCount();
+    ApplyPendingDvarSetX64();
     // Rate-limited (~1s) diagnostic heartbeat -- real data for the "needs a
     // click for input" investigation (see kMenuActiveGateInsnOffset's own
     // comment), so the NEXT test run shows what these candidate gate values
