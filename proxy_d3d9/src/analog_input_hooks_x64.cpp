@@ -6513,7 +6513,46 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
             sprintf_s(mb, "[x64-menuname] topmost menu=\"%s\" (paused-tick=1, in level)", menuName);
             LogFromController(mb);
         }
-        if (!haveName) return false;
+        if (!haveName) {
+            // Could not read a name at menu+0x0: dump the first qwords (and any printable string they point at) once
+            // per distinct menu pointer so the real name field can be located from the log.
+            static void* s_lastRawMenu = nullptr;
+            static int s_rawLogs = 0;
+            void* menuPtr = GetTopmostActiveMenuX64();
+            if (menuPtr && menuPtr != s_lastRawMenu && s_rawLogs < 40) {
+                s_lastRawMenu = menuPtr;
+                ++s_rawLogs;
+                __try {
+                    const uintptr_t* q = reinterpret_cast<const uintptr_t*>(menuPtr);
+                    char line[900];
+                    int w = sprintf_s(line, "[x64-menuname-raw] menu=%p:", menuPtr);
+                    for (int i = 0; i < 16 && w > 0 && w < 700; ++i) {
+                        char str[28] = "";
+                        const uintptr_t v = q[i];
+                        if (LooksSaneX64(v)) {
+                            __try {
+                                const char* s = reinterpret_cast<const char*>(v);
+                                size_t n = 0;
+                                for (; n < 24; ++n) {
+                                    const unsigned char c = static_cast<unsigned char>(s[n]);
+                                    if (c == 0) break;
+                                    if (c < 0x20 || c > 0x7E) { n = 0; break; }
+                                    str[n] = static_cast<char>(c);
+                                }
+                                str[n] = '\0';
+                                if (n < 3) str[0] = '\0';
+                            } __except (EXCEPTION_EXECUTE_HANDLER) { str[0] = '\0'; }
+                        }
+                        w += sprintf_s(line + w, sizeof(line) - w, " [%d]=%llx%s%s%s", i * 8, static_cast<unsigned long long>(v),
+                                       str[0] ? "(\"" : "", str, str[0] ? "\")" : "");
+                    }
+                    LogFromController(line);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    LogFromController("[x64-menuname-raw] read faulted");
+                }
+            }
+            return false;
+        }
         char lower[96] = {};
         for (size_t i = 0; menuName[i] && i + 1 < sizeof(lower); ++i) lower[i] = static_cast<char>(tolower(static_cast<unsigned char>(menuName[i])));
         auto has = [&](const char* s) { return strstr(lower, s) != nullptr; };
