@@ -6455,6 +6455,15 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
     // blur-pass instances (design X 2042.8 > 1920 and a mid-screen 817,491), which is what made the glyph jump/flicker.
     constexpr float kPausedBackXX64 = 1634.2f;
     constexpr float kPausedBackYX64 = 981.7f;
+    // ONLY the pause menu: the Survival buy stations also read as "paused" (their gameplay tick goes stale) but their
+    // Back hint lives in its own box, which the native-draw path positions correctly -- do not override it (live
+    // screenshot 2026-09-21: the hardcoded corner position was being applied at the buy station).
+    {
+        char focusGroup[64] = {};
+        int focusIndex = -1, focusSiblings = -1;
+        if (!TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings)) return false;
+        if (strncmp(focusGroup, "PAUSE", 5) != 0) return false;
+    }
     if (!TryGetMenuGlyphAssetNameForKeyName("ESC", asset, assetSize)) return false;
     *x = kPausedBackXX64; *y = kPausedBackYX64;
     strcpy_s(prefix, prefixSize, "Back ");
