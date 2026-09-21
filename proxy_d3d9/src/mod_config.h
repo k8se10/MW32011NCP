@@ -481,6 +481,10 @@ struct ModConfig
         // trampoline completely unmodified regardless of this toggle; only controls
         // whether it logs.
     bool hudFontIdLoggingX64 = false; // 2026-09-16 -- x64 equivalent of hudFontIdLogging
+    // 2026-09-21: dev-only. Lifts the caps/filters on the diagnostic logs (fontid-diag logs EVERY distinct
+    // string; hudelem-draw, res-scale and automantle logs uncapped) so a capture session cannot miss data.
+    // The log file is still truncated at every boot; leave off for normal play.
+    bool unboundedDevLog = false;
         // above, same purpose: a live-data-gathering toggle for exactly the two known,
         // genuinely-blocked-on-RE gaps this project has on x64 -- buy-station's own
         // glyph substitution (needs Font_s.fontName's real x64 offset, which a dedicated

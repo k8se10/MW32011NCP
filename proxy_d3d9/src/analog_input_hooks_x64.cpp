@@ -3784,7 +3784,7 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 bool sprintActiveDiag = IsSprintActiveX64();
                 bool mantleHintDiag = IsMantleHintCurrentlyShowingX64();
                 static int s_autoMantleDiagLines = 0;
-                if ((nowMsDiag - s_lastAutoMantleDiagLogMsX64) >= 500 && s_autoMantleDiagLines++ < 60) {
+                if ((nowMsDiag - s_lastAutoMantleDiagLogMsX64) >= 500 && (g_modConfig.unboundedDevLog || s_autoMantleDiagLines++ < 60)) {
                     s_lastAutoMantleDiagLogMsX64 = nowMsDiag;
                     char amDiagBuf[128];
                     sprintf_s(amDiagBuf, "[automantle-diag-x64] sprintActive=%d mantleHintShowing=%d",
@@ -6153,17 +6153,18 @@ void Hook_DrawTextX64(
             // strings are logged -- anything with a color code (^), or key words used by interact/use
             // prompts -- because the first version's 300-entry cap was consumed entirely by main-menu text
             // before gameplay prompts ever appeared (2026-09-21 buy-station capture).
-            static uint32_t s_seenFontDiag[8192];
+            static uint32_t s_seenFontDiag[65536];
             static LONG s_seenFontDiagCount = 0;
             uint32_t fh = 2166136261u;
             for (size_t i = 0; i < 100 && text[i]; ++i) fh = (fh ^ static_cast<unsigned char>(text[i])) * 16777619u;
             if (fh == 0) fh = 1;
             bool fontDiagNew = false;
-            if (s_seenFontDiagCount < 600 && (strchr(text, '^') || strstr(text, "Press") || strstr(text, "Hold") ||
+            const bool unb = g_modConfig.unboundedDevLog;
+            if (unb ? (s_seenFontDiagCount < 50000) : (s_seenFontDiagCount < 600 && (strchr(text, '^') || strstr(text, "Press") || strstr(text, "Hold") ||
                                               strstr(text, " use") || strstr(text, "Armory") || strstr(text, "[{") ||
-                                              strstr(text, "Sentry") || strstr(text, "place"))) {
-                uint32_t slot = fh & 8191u;
-                while (s_seenFontDiag[slot] != 0 && s_seenFontDiag[slot] != fh) slot = (slot + 1) & 8191u;
+                                              strstr(text, "Sentry") || strstr(text, "place")))) {
+                uint32_t slot = fh & 65535u;
+                while (s_seenFontDiag[slot] != 0 && s_seenFontDiag[slot] != fh) slot = (slot + 1) & 65535u;
                 if (s_seenFontDiag[slot] == 0) { s_seenFontDiag[slot] = fh; fontDiagNew = true; }
             }
             if (fontDiagNew) {
@@ -6246,13 +6247,13 @@ void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, vo
                 }
             }
 
-            static uint32_t s_seen[512];
+            static uint32_t s_seen[8192];
             static LONG s_logged = 0;
             uint32_t h = 2166136261u;
             for (size_t i = 0; i < 96 && text[i]; ++i) h = (h ^ static_cast<unsigned char>(text[i])) * 16777619u;
             bool isNew = true;
             for (LONG i = 0; i < s_logged; ++i) if (s_seen[i] == h) { isNew = false; break; }
-            if (isNew && s_logged < 512 && g_modConfig.hudFontIdLoggingX64) {
+            if (isNew && s_logged < (g_modConfig.unboundedDevLog ? 8192 : 512) && g_modConfig.hudFontIdLoggingX64) {
                 s_seen[s_logged++] = h;
                 char buf[256];
                 sprintf_s(buf, "[x64-hudelem-draw] client=%u elem=%p text=\"%.90s\"", clientNum, elem, text);

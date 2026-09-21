@@ -833,6 +833,8 @@ void WriteDefaultConfig(const char* path)
         "; investigation toggle, not meant to stay on during normal play. Always\n"
         "; forwards unmodified regardless of this toggle. 0 = off, 1 = on.\n"
         "HudFontIdLoggingX64=%d\n"
+        "; Dev only: removes the caps and filters on the diagnostic logs (log is still truncated at every boot).\n"
+        "UnboundedDevLog=%d\n"
         "; Issue #48: read-only diagnostic, same hook site as HudFontIdLogging above but\n"
         "; dedup'd by drawn text changing and logs the full raw position/scale/color\n"
         "; parameter set instead of just the font name. Investigation-only toggle for\n"
@@ -999,6 +1001,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.bindResolverGlyphSubstitution ? 1 : 0,
         g_modConfig.hudFontIdLogging ? 1 : 0,
         g_modConfig.hudFontIdLoggingX64 ? 1 : 0,
+        g_modConfig.unboundedDevLog ? 1 : 0,
         g_modConfig.hudGlyphPositionLogging ? 1 : 0,
         g_modConfig.listItemPositionLogging ? 1 : 0,
         g_modConfig.armorFieldScanLogging ? 1 : 0,
@@ -1263,6 +1266,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudFontIdLoggingX64", g_modConfig.hudFontIdLoggingX64);
+    ReadBool(path, "Experimental", "UnboundedDevLog", g_modConfig.unboundedDevLog);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
     ReadBool(path, "Experimental", "ArmorFieldScanLogging", g_modConfig.armorFieldScanLogging);

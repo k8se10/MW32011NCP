@@ -409,6 +409,8 @@ item below.
 
 25. **SMAA 1x edge anti-aliasing (`-x64`), scene-only.** The game ships no working AA. `[Video] SmaaEnabled` adds SMAA 1x (edge detection, blend-weight and neighborhood-blend passes with the area/search lookup textures) before the HUD and menus are drawn, so UI is never filtered; it is skipped while the camera is turning fast enough for motion blur to be active. `SmaaDebugView` 1/2/3 shows the edge pass, blend-weight pass, or a plain capture-redraw test. Off by default; not yet live-tested. An FXAA-style pass was tried the same day and removed: it blurred the whole frame at every setting. SMAA is by Jorge Jimenez, Jose I. Echevarria, Belen Masia, Fernando Navarro and Diego Gutierrez (MIT), credited in `LICENSE` and `README.md`.
 
+26. **`[Experimental] UnboundedDevLog` dev toggle.** Removes the caps and filters on the diagnostic logs (`[x64-fontid-diag]` logs every distinct string, `[x64-hudelem-draw]`, res-scale and auto-mantle diagnostics uncapped) so a capture session can't miss data. The log file is still truncated at every boot. Dev-only; off by default.
+
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The
