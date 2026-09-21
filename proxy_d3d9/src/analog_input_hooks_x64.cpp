@@ -6517,10 +6517,12 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
         char lower[96] = {};
         for (size_t i = 0; menuName[i] && i + 1 < sizeof(lower); ++i) lower[i] = static_cast<char>(tolower(static_cast<unsigned char>(menuName[i])));
         auto has = [&](const char* s) { return strstr(lower, s) != nullptr; };
-        if (has("pause")) {
+        // Menu names from the static zone scan (re_notes/x64_migration/menu_name_table.md): pause = "pausedmenu";
+        // buy stations = "armory", "armoryweapon", "armoryweaponupgrade", "armoryequipment", "armoryairsupport";
+        // e.g. the restart-mission modal is "all_restart_popmenu" and gets nothing.
+        if (strcmp(lower, "pausedmenu") == 0) {
             // pause menu: bottom-right corner (defaults above)
-        } else if (has("weapon") || has("armory") || has("equip") || has("airsupport") || has("air_support") ||
-                   has("killstreak") || has("perk")) {
+        } else if (strncmp(lower, "armory", 6) == 0 && !has("hint")) {
             // Buy-station popups: centre of the white Back box measured from a live screenshot (design ~1183-1350 x 814-861).
             useX = 1208.0f;
             useY = 827.0f;
