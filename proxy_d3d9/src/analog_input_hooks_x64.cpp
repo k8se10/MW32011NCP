@@ -3243,13 +3243,9 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
                 // of the two direct-call fixes above can satisfy no matter how
                 // correct they are individually -- kept both (they fix real, distinct
                 // native bugs of their own) and added this as the missing piece.
-                // 2026-09-21: was SendSyntheticEscX64() (commit 9cd3007e's "message-queue-routed input event" piece), but
-                // a real ESC opens the pause menu whenever the level is already live (live log: PAUSE_LIST focus right
-                // after the sweep). Keep the message-queue-routed event, but use an unbound key (F24) so nothing pauses.
-                if (HWND hwndSweep = GetGameWindow()) {
-                    PostMessageA(hwndSweep, WM_KEYDOWN, VK_F24, 0x00000001);
-                    PostMessageA(hwndSweep, WM_KEYUP, VK_F24, 0xC0000001);
-                }
+                // 2026-09-21: NO synthetic key here any more. This used to post ESC (commit 9cd3007e), which opens the
+                // pause menu whenever the level is already live; the native kbutton release + mouse-baseline seed below
+                // are the real fix on their own (direct instruction: the mod must not input ESC for this).
                 g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
                 // Real fix for the native "camera jumps on first real input" bug --
                 // see g_seedMouseBaseline's own declaration comment for the full trail.
