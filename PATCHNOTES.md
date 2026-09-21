@@ -742,6 +742,8 @@ item below.
 
 34. **Unreleased config-template bug (caught before release).** The `mw3ncp_config.ini` writer received the new Fxaa values as arguments before their template lines existed, shifting every later value (motion-blur falloff, quality toggles, vibration settings) when the file was rewritten. Template and arguments now match.
 
+35. **Menu "Back" glyph missing on the Survival buy-station popups, and flickering on the pause menu (`-x64`).** The Back corner hint was only substituted when it sat on the standard corner-hint row (y about 995); the buy-station popups draw their own "Back ^2ESC^7" on a different row, so the native text stayed. It now matches on the exact resolved `PLATFORM_BACK_SHORTCUT` text alone, like x86. Separately, menu corner-hint glyphs now re-draw for up to 120 ms on a frame with no fresh request, which removes the flicker where the glyph (and the already-hidden native text) vanished for a frame. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

@@ -6029,7 +6029,11 @@ void Hook_DrawTextX64(
                     LogFromController(buf);
                 }
             }
-            bool isBackCornerHint = looksLikeCornerHintRowX64 && backContentMatches;
+            // 2026-09-21: NOT gated on the standard corner-hint row (y~995). x86 matches Back purely by its exact template text;
+            // the Survival buy-station popups draw their own "Back ^2ESC^7" at a different row, which this gate rejected
+            // (native text left unsubstituted = "back glyph missing on buy stations"). Exact-equality on the resolved
+            // PLATFORM_BACK_SHORTCUT template is already a tight match.
+            bool isBackCornerHint = backContentMatches;
             const char* friendsTmpl = g_getLocalizedStringX64("PLATFORM_FRIENDS_SHORTCUT");
             bool isFriendsCornerHint = looksLikeCornerHintRowX64 && friendsTmpl &&
                 LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) && strcmp(text, friendsTmpl) == 0;
