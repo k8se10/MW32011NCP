@@ -3243,7 +3243,7 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
                 // of the two direct-call fixes above can satisfy no matter how
                 // correct they are individually -- kept both (they fix real, distinct
                 // native bugs of their own) and added this as the missing piece.
-                SendSyntheticEscX64();
+                SendSyntheticEscX64(); // deliberate "third piece" for the launch-input bug (commit 9cd3007e) -- fires once per REAL level entry only
                 g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
                 // Real fix for the native "camera jumps on first real input" bug --
                 // see g_seedMouseBaseline's own declaration comment for the full trail.

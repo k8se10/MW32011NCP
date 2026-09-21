@@ -744,6 +744,8 @@ item below.
 
 35. **Menu "Back" glyph missing on the Survival buy-station popups, and flickering on the pause menu (`-x64`).** The Back corner hint was only substituted when it sat on the standard corner-hint row (y about 995); the buy-station popups draw their own "Back ^2ESC^7" on a different row, so the native text stayed. It now matches the exact resolved `PLATFORM_BACK_SHORTCUT` text anywhere in the bottom band of the screen (design y > 800); matching it anywhere let a second, mid-screen Back-text instance on the pause menu override the real corner one. Separately, menu corner-hint glyphs now re-draw for up to 120 ms on a frame with no fresh request, which removes the flicker where the glyph (and the already-hidden native text) vanished for a frame. Build-verified; not yet live-tested.
 
+36. **The level-entry "unstick" sweep re-fired on every resume from pause / alt-tab (`-x64`).** `ForceReleaseStuckKbuttonsX64` treated more than 2 s of silent Pmove as "back at the menu" and re-armed itself, but Pmove is also silent while paused. Every resume then re-ran the native kbutton release, re-seeded the mouse baseline and sent a synthetic ESC, which reads as the game pausing itself and odd K+M input right after unpausing. It now re-arms only when the client state reports menu/disconnected (`clcState` 0). The once-per-level sweep and its ESC are unchanged.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
