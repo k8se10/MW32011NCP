@@ -608,7 +608,7 @@ extern "C" bool IsPhysicalHeld_Exported(PhysicalInput p, unsigned short buttons,
 {
 #if defined(_M_X64) || defined(_WIN64)
     // Post-menu grace: A/B read as released for a moment after a menu closes (see PostMenuInputBlockedX64).
-    if ((p == PhysicalInput::A || p == PhysicalInput::B) && PostMenuInputBlockedX64()) return false;
+    if (PostMenuInputBlockedX64()) return false;
 #endif
     return IsPhysicalHeld(p, buttons, leftTrigger, rightTrigger);
 }

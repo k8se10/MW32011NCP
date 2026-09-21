@@ -1086,8 +1086,18 @@ bool g_holdBreathKbuttonActiveX64 = false; // mirrors g_sprintKbuttonActiveX64
                                              // activate/deactivate calls
                                              // exactly once per transition.
 
+// Set for the duration of the gameplay hooks (Hook_MovementTick / Hook_SprintTick). Only calls made from inside those
+// hooks are blocked by PostMenuInputBlockedX64; the menu code's own reads of the same buttons are never affected.
+static thread_local bool g_inGameplayHookCtxX64 = false;
+struct GameplayHookCtxScopeX64 {
+    bool prev;
+    GameplayHookCtxScopeX64() : prev(g_inGameplayHookCtxX64) { g_inGameplayHookCtxX64 = true; }
+    ~GameplayHookCtxScopeX64() { g_inGameplayHookCtxX64 = prev; }
+};
+
 void __fastcall Hook_SprintTick(void* param1, void* param2)
 {
+    GameplayHookCtxScopeX64 gameplayCtx;
     // Let native logic run to completion first, untouched -- same ordering
     // this hook always used, just no longer followed by a raw pm_flags write:
     // driving the real kbutton below lets the native engine own that bit (and
@@ -3108,10 +3118,14 @@ extern "C" void InjectControllerMenuNavX64()
 // For a short window after a menu closes, A and B read as not pressed to the gameplay code.
 static bool g_postMenuPrevActiveX64 = false;
 static DWORD g_postMenuBlockUntilMsX64 = 0;
-constexpr DWORD kPostMenuInputGraceMsX64 = 300;
+constexpr DWORD kPostMenuInputGraceMsX64 = 400;
 extern "C" bool PostMenuInputBlockedX64()
 {
-    if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) return false; // a menu is up: menu code owns A/B
+    if (!g_inGameplayHookCtxX64) return false;
+    // Gameplay controls always no-op while a menu is up (paused or not), and for a short grace after it closes: the
+    // unpause can resume the gameplay tick a frame BEFORE the menu-active flag drops, and the closing press is often
+    // still down (live-reported 2026-09-21: A/B closing a menu also jumped/crouched).
+    if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) return true;
     return GetTickCount() < g_postMenuBlockUntilMsX64;
 }
 
@@ -3506,6 +3520,7 @@ extern "C" float GetDvarFloatX64_Exported(const char* name)
 
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
+    GameplayHookCtxScopeX64 gameplayCtx;
     g_lastGameplayTickMsX64 = GetTickCount();
     ApplyPendingDvarSetX64();
     // Rate-limited (~1s) diagnostic heartbeat -- real data for the "needs a
