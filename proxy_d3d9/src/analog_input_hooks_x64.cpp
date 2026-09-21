@@ -3741,7 +3741,8 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 DWORD nowMsDiag = GetTickCount();
                 bool sprintActiveDiag = IsSprintActiveX64();
                 bool mantleHintDiag = IsMantleHintCurrentlyShowingX64();
-                if (mantleHintDiag || (nowMsDiag - s_lastAutoMantleDiagLogMsX64) >= 500) {
+                static int s_autoMantleDiagLines = 0;
+                if ((nowMsDiag - s_lastAutoMantleDiagLogMsX64) >= 500 && s_autoMantleDiagLines++ < 60) {
                     s_lastAutoMantleDiagLogMsX64 = nowMsDiag;
                     char amDiagBuf[128];
                     sprintf_s(amDiagBuf, "[automantle-diag-x64] sprintActive=%d mantleHintShowing=%d",
@@ -4381,12 +4382,16 @@ void __fastcall Hook_RenderResCompute(void* self)
                 // (iw5sp.exe.14364.dmp), same bug class as the 2026-09-05 sprintf_s sweep. Sized
                 // generously above the real worst case rather than trimmed to the exact minimum,
                 // per this project's own established fix convention for this bug class.
+                // Change-only: this hook fires per scene render; an unguarded log grows without bound.
+                static int s_lastScaleW = 0, s_lastScaleH = 0;
+                const bool scaleChanged = (targetW != s_lastScaleW || targetH != s_lastScaleH);
+                s_lastScaleW = targetW; s_lastScaleH = targetH;
                 char buf[320];
-                sprintf_s(buf, "[x64-video-scale] InternalRenderScalePercent -> native=%dx%d target=%dx%d -- "
+                if (scaleChanged) sprintf_s(buf, "[x64-video-scale] InternalRenderScalePercent -> native=%dx%d target=%dx%d -- "
                     "overriding requested scene render resolution before FUN_1401bd1d0 runs (feeds the real "
                     "unclamped scene render-target driver, no r_mode, no vid_restart)",
                     static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
-                LogFromController(buf);
+                if (scaleChanged) LogFromController(buf);
 
                 // Port of x86's high-render-scale safety warning (2026-09-13, x64
                 // feature-parity audit item #7; x86 original: analog_input_hooks.cpp

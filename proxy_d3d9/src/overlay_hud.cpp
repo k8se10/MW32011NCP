@@ -6986,8 +6986,10 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
     // precedent (already burned several rounds on the manual-position glyph tables).
     static int s_lastLoggedWidth = -1, s_lastLoggedHeight = -1;
     static DWORD s_lastLoggedVpX = 0xFFFFFFFFu, s_lastLoggedVpY = 0xFFFFFFFFu;
-    if (outWidth != s_lastLoggedWidth || outHeight != s_lastLoggedHeight ||
-        vpX != s_lastLoggedVpX || vpY != s_lastLoggedVpY) {
+    static int s_resScaleLogLines = 0; // cap: viewport size alternates between render targets and thrashed the change-only check
+    if (s_resScaleLogLines < 20 && (outWidth != s_lastLoggedWidth || outHeight != s_lastLoggedHeight ||
+        vpX != s_lastLoggedVpX || vpY != s_lastLoggedVpY)) {
+        ++s_resScaleLogLines;
         s_lastLoggedWidth = outWidth;
         s_lastLoggedHeight = outHeight;
         s_lastLoggedVpX = vpX;
