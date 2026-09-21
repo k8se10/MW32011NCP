@@ -2240,6 +2240,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
 #if defined(_M_X64)
 extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize);
 extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize);
+extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t prefixSize, char* suffix, size_t suffixSize,
+                                    char* asset, size_t assetSize);
 extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize);
 #endif
 
@@ -2439,6 +2441,18 @@ bool IsRenderingToBackBuffer(void* device)
 void DrawMenuHintsIfRequested(void* device)
 {
     if (!IsRenderingToBackBuffer(device)) return; // keep the requests for the real presentation pass
+#if defined(_M_X64) || defined(_WIN64)
+    // Pause-menu Back glyph: drawn from the last known-good position every rendered frame while paused, NOT from
+    // whether the native Back text happened to draw this frame (that draw runs on offscreen blur passes as well and
+    // was the flicker). A native request this frame simply overwrites the same role slot.
+    {
+        float backX = 0.0f, backY = 0.0f;
+        char backPrefix[128] = {}, backSuffix[128] = {}, backAsset[32] = {};
+        if (GetPausedBackHintX64(&backX, &backY, backPrefix, sizeof(backPrefix), backSuffix, sizeof(backSuffix),
+                                 backAsset, sizeof(backAsset)))
+            RequestMenuHintOverlay(backX, backY, backPrefix, backSuffix, backAsset, 0xFFFFFFFFu, /*isBackShortcut=*/true);
+    }
+#endif
     int count = g_menuHintSlotCountThisFrame;
     g_menuHintSlotCountThisFrame = 0;
     // Flicker guard (2026-09-21, live-reported: menu corner-hint glyph flickers on the pause menu and is

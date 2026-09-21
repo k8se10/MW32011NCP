@@ -622,6 +622,16 @@ static bool IsGameplayPausedX64()
     return last != 0 && (GetTickCount() - last) > 250;
 }
 
+// Last good "Back ^2ESC^7" corner hint as seen from the native text draw (design-space position + text/asset).
+// The pause-menu Back glyph is drawn from THIS while paused, independent of whether the native draw ran this
+// frame -- the native draw is what flickered (it runs on the offscreen blur passes too); suppression of the
+// native text stays tied to the native draw, which was already consistent (2026-09-21, user direction).
+static bool g_backHintValidX64 = false;
+static float g_backHintXX64 = 0.0f, g_backHintYX64 = 0.0f;
+static char g_backHintPrefixX64[128] = "";
+static char g_backHintSuffixX64[128] = "";
+static char g_backHintAssetX64[32] = "";
+
 static bool EnsureReadyUpTables()
 {
     if (g_readyUpHudArray && g_readyUpCsTable) return true;
@@ -6117,13 +6127,14 @@ void Hook_DrawTextX64(
                         float designX = 0.0f, designY = 0.0f;
                         ConvertRealScreenPosToDesignSpaceX64(startX, startY + kMenuHintVerticalNudgeX64, designX, designY);
                         if (isBackCornerHint) {
-                            static float s_lastBackDesignX = 0.0f, s_lastBackDesignY = 0.0f;
-                            static DWORD s_lastBackTick = 0;
-                            const DWORD nowBack = GetTickCount();
                             if (backOnKnownRowX64) {
-                                s_lastBackDesignX = designX; s_lastBackDesignY = designY; s_lastBackTick = nowBack;
-                            } else if (s_lastBackTick != 0 && (nowBack - s_lastBackTick) < 3000) {
-                                designX = s_lastBackDesignX; designY = s_lastBackDesignY;
+                                g_backHintXX64 = designX; g_backHintYX64 = designY;
+                                strncpy_s(g_backHintPrefixX64, prefixText, _TRUNCATE);
+                                strncpy_s(g_backHintSuffixX64, suffixText, _TRUNCATE);
+                                strncpy_s(g_backHintAssetX64, assetName, _TRUNCATE);
+                                g_backHintValidX64 = true;
+                            } else if (g_backHintValidX64) {
+                                designX = g_backHintXX64; designY = g_backHintYX64;
                             }
                         }
                         suppressRealDraw = true;
@@ -6342,6 +6353,23 @@ extern "C" bool IsReadyUpHudElemTextDrawnX64()
 {
     LONG t = g_hudElemReadyTextSeenTickX64;
     return t != 0 && (GetTickCount() - static_cast<DWORD>(t)) < 500;
+}
+
+// Pause-menu Back hint, drawn by overlay_hud every rendered frame while the pause menu is up (see g_backHintValidX64).
+// "Paused menu" = a menu is active, the gameplay tick has gone stale, and the client is in a level (clcState != 0),
+// which excludes the main menu.
+extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t prefixSize, char* suffix, size_t suffixSize,
+                                    char* asset, size_t assetSize)
+{
+    if (!g_backHintValidX64 || !IsGameplayPausedX64()) return false;
+    if (!IsMenuActiveX64_Exported()) return false;
+    int clc = -1;
+    if (!TryGetClcStateX64(&clc) || clc == 0) return false;
+    *x = g_backHintXX64; *y = g_backHintYX64;
+    strcpy_s(prefix, prefixSize, g_backHintPrefixX64);
+    strcpy_s(suffix, suffixSize, g_backHintSuffixX64);
+    strcpy_s(asset, assetSize, g_backHintAssetX64);
+    return true;
 }
 
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
