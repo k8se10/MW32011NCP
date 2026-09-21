@@ -53,7 +53,8 @@
 #include "../resource.h"
 #include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
 #include "fullscreen_passthrough_ps.h" // Phase A visual-suite foundation -- see that file's own header comment
-#include "fsr_rcas_ps.h" // Phase B visual-suite -- see that file's own header comment
+#include "fsr_rcas_ps.h"
+#include "fxaa_ps.h" // Phase B visual-suite -- see that file's own header comment
 #include "motion_blur_ps.h" // Phase E visual-suite -- see that file's own header comment
 #include "mw3ncp_plugin_api.h" // MW3NCP_ColorOverrideFn -- see this file's own g_pluginTextGlyphColorOverride comment
 
@@ -3524,6 +3525,38 @@ void RcasShaderSetupCallback(void* device, float texelW, float texelH)
     setPixelShaderConstantF(device, 1, sharpness, 1);
 }
 
+// FXAA-style AA pass (2026-09-21) -- see fxaa.hlsl. ps_3_0, same caps gating as RCAS.
+void* g_fxaaPixelShader = nullptr;
+
+bool EnsureFxaaShader(void* device)
+{
+    if (g_fxaaPixelShader) return true;
+    if (!g_fsrRcasDeviceCapsChecked) {
+        // Reuse RCAS's one-time caps check (same ps_3_0 requirement) by calling it; it also compiles RCAS,
+        // which is harmless and keeps the caps state in one place.
+        EnsureRcasShader(device);
+    }
+    if (!g_fsrRcasDeviceSupportsPS3) return false;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createPixelShader = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
+    HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_fxaaPixelShaderBytecode), &g_fxaaPixelShader);
+    if (FAILED(hr) || !g_fxaaPixelShader) {
+        g_fxaaPixelShader = nullptr;
+        return false;
+    }
+    return true;
+}
+
+void FxaaShaderSetupCallback(void* device, float texelW, float texelH)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
+    const float texelSize[4] = { texelW, texelH, 0.0f, 0.0f };
+    setPixelShaderConstantF(device, 0, texelSize, 1);
+    const float params[4] = { g_modConfig.fxaaSpanMax, g_modConfig.fxaaEdgeThreshold, 0.0f, 0.0f };
+    setPixelShaderConstantF(device, 1, params, 1);
+}
+
 // Phase E -- camera-only (view-angle-delta-based) directional motion blur. See
 // motion_blur.hlsl (re_notes/shaders/) for the full design rationale. Plain
 // ps_2_0, no device-caps check needed (unlike RCAS) -- this simple 8-tap
@@ -3868,10 +3901,16 @@ void RunFullScreenPostProcessIfEnabled(void* device)
     }
 #endif
 
+    bool fxaaDrawn = false;
+    if (g_modConfig.fxaaEnabled && EnsureFxaaShader(device)) {
+        DrawFullScreenPass(device, g_fxaaPixelShader, FxaaShaderSetupCallback);
+        fxaaDrawn = true;
+    }
     if (g_modConfig.fsrSharpenEnabled && EnsureRcasShader(device)) {
         DrawFullScreenPass(device, g_fsrRcasPixelShader, RcasShaderSetupCallback);
         return;
     }
+    if (fxaaDrawn) return;
     if (!g_modConfig.fullScreenPassthroughTest) return;
     if (!EnsureFullscreenPassthroughShader(device)) return;
     DrawFullScreenPass(device, g_fullscreenPassthroughPixelShader);

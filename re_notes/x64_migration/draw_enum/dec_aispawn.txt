@@ -1,0 +1,405 @@
+================================================================
+Function: FUN_1401167c0 @ 1401167c0
+----------------------------------------------------------------
+
+longlong FUN_1401167c0(longlong param_1,undefined4 param_2,int param_3,int param_4)
+
+{
+  longlong lVar1;
+  int iVar2;
+  longlong lVar3;
+  longlong lVar4;
+  uint uVar5;
+  
+  if (((*(char *)(DAT_14114aa98 + 0x10) == '\0') && (*(int *)(param_1 + 0x188) != 0)) &&
+     (((param_3 != 0 || (DAT_1411418a8 != 0)) ||
+      ((iVar2 = FUN_140116460(&DAT_140f57cf0,param_1), iVar2 == 0 &&
+       (((DAT_140f58044 == '\0' || (DAT_140f57f90 != '\x01')) ||
+        (iVar2 = FUN_140116460(&DAT_140f57f90,param_1), iVar2 == 0)))))))) {
+    lVar3 = FUN_14016b9c0();
+    FUN_140164250(lVar3,param_1);
+    FUN_140164350(lVar3,param_1);
+    FUN_140256360(lVar3 + 0x14e,param_2);
+    *(uint *)(lVar3 + 0x154) = *(uint *)(lVar3 + 0x154) & 0xfffffffe;
+    iVar2 = FUN_1400f0e20(lVar3);
+    if (iVar2 != 0) {
+      lVar1 = *(longlong *)(lVar3 + 0x118);
+      if ((*(byte *)(param_1 + 0x154) & 8) != 0) {
+        for (lVar4 = FUN_14017ca70(0xffffffff); lVar4 != 0; lVar4 = FUN_14017d1c0(lVar4,0xffffffff))
+        {
+          FUN_1401152b0(*(undefined8 *)(lVar3 + 0x118),lVar4);
+        }
+      }
+      FUN_1400ea5b0(lVar1);
+      if ((param_4 == 0) && ((*(byte *)(param_1 + 0x154) & 0x10) == 0)) {
+        iVar2 = 1 << ((byte)*(undefined4 *)(*(longlong *)(lVar3 + 0x120) + 8) & 0x1f);
+        for (lVar4 = FUN_1400ea840(iVar2); lVar4 != 0; lVar4 = FUN_1400ec430(lVar4,iVar2)) {
+          if (lVar1 != lVar4) {
+            uVar5 = 0;
+            do {
+              FUN_1400f1470(lVar1,lVar4,uVar5);
+              uVar5 = uVar5 + 1;
+            } while (uVar5 < 0x32);
+          }
+        }
+      }
+      FUN_140115aa0(lVar1);
+      FUN_14011a790(lVar1);
+      FUN_1400eb9b0(lVar1);
+      FUN_140164d60(lVar3);
+      FUN_1401654b0(param_1,DAT_1413b8330,1);
+      if (0 < *(int *)(param_1 + 0x188)) {
+        *(int *)(param_1 + 0x188) = *(int *)(param_1 + 0x188) + -1;
+      }
+      return lVar3;
+    }
+  }
+  return 0;
+}
+
+
+
+================================================================
+Function: FUN_1401366b0 @ 1401366b0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1401366b0(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  undefined4 uVar4;
+  undefined4 uVar5;
+  undefined4 uVar6;
+  undefined4 uVar7;
+  undefined4 uVar8;
+  undefined4 uVar9;
+  
+  FUN_1402c49e0("gamedate","Aug  6 2026",0x2080,"The date compiled");
+  FUN_1402c49e0("ui_campaign","american",0x40,"The current campaign");
+  uVar4 = DAT_1403e5618;
+  DAT_1404f7938 =
+       FUN_1402c4650("compassMaxRange",DAT_1403eb850,0,DAT_1403e5618,0x40,
+                     "The maximum range from the player that objects will show on the compass");
+  DAT_140f57ce8 = FUN_1402c46d0("g_reloading",0,0,4,0x2000,"True if the game is reloading");
+  DAT_14114a9b0 = FUN_1402c43f0("arcademode",0,0x80,"arcade mode");
+  DAT_14114a9b8 = FUN_1402c46d0("arcademode_lives",0,0x80000000,0x7fffffff,0x80,"arcade mode lives")
+  ;
+  DAT_14114add0 = FUN_1402c46d0("g_player_maxhealth",100,10,2000,0x80,"Player\'s maximum health");
+  uVar5 = DAT_1403e5284;
+  uVar1 = DAT_1403e3e6c;
+  DAT_14114ad88 =
+       FUN_1402c4650("player_damageMultiplier",DAT_1403e3e6c,0,DAT_1403e5284,0xc4,
+                     "Player damage is scaled by this amount; used by script for setting difficulty level"
+                    );
+  DAT_14114ad90 =
+       FUN_1402c4650("player_radiusDamageMultiplier",uVar1,0,uVar5,0xc4,
+                     "Radius damage to the player is scaled by this amount; used by script for setting difficulty level"
+                    );
+  DAT_14114ad98 =
+       FUN_1402c4650("player_meleeDamageMultiplier",uVar1,0,uVar5,0xc4,
+                     "Melee damage to the player is scaled by this amount; used by script for setting difficulty level"
+                    );
+  uVar2 = DAT_1403ea254;
+  DAT_14114ada0 =
+       FUN_1402c4650("player_throwbackInnerRadius",DAT_1403ea254,0,uVar4,0x84,
+                     "The radius to a live grenade player must be within initially to do a throwback"
+                    );
+  DAT_14114ada8 =
+       FUN_1402c4650("player_throwbackOuterRadius",DAT_1403ff914,0,uVar4,0x84,
+                     "The radius player is allow to throwback a grenade once the player has been in the inner radius"
+                    );
+  DAT_14114adb0 =
+       FUN_1402c4650("player_useRadius",uVar2,0,uVar4,0xc4,
+                     "The radius within which a player can use things");
+  uVar2 = DAT_1403e4154;
+  DAT_14114adb8 =
+       FUN_1402c4650("player_MGUseRadius",DAT_1403e4154,0,uVar4,0x84,
+                     "The radius within which a player can mount a machine gun");
+  DAT_14114adc0 =
+       FUN_1402c4650("g_minGrenadeDamageSpeed",DAT_1403e8e84,0,uVar4,0x84,
+                     "Minimum speed at which getting hit be a grenade will do damage (not the grenade explosion damage)"
+                    );
+  DAT_14114adc8 =
+       FUN_1402c4650("g_grenadeDamageMaxHeight",DAT_1403ef934,0,uVar4,0x84,
+                     "Maximum vertical distance at which a grenade will do damage when exploding");
+  DAT_14114a9c0 = FUN_1402c46d0("g_speed",0xbe,0x80000000,0x7fffffff,0xc0,"Maximum player speed");
+  DAT_14114a9c8 =
+       FUN_1402c4650("g_knockback",uVar5,DAT_1403e8ed8,uVar4,0x80,"Maximum player knockback");
+  DAT_14114a9d8 = FUN_1402c43f0(&DAT_14040316c,1,0x84,"Enable AI");
+  DAT_14114a9e0 = FUN_1402c43f0("g_aiAnimscript",1,0x84,"Enable AI animscript");
+  DAT_14114a9e8 = FUN_1402c43f0("g_spawnai",1,0x86,"Enable AI spawning");
+  DAT_14114aa00 = FUN_1402c46d0("ai_corpseCount",5,0,0x40,0x81,"Maximum number of AI corpses");
+  DAT_14114aa08 = FUN_1402c46d0("ai_count",0x20,0,0x20,0xc4,"Maximum number of AI");
+  DAT_14114aad0 = FUN_1402c43f0("ai_noDodge",0,0x84,"AI won\'t dodge to the side");
+  uVar8 = DAT_1403e9e5c;
+  DAT_14114aad8 =
+       FUN_1402c4650("ai_pathMomentum",DAT_1404060c8,0,DAT_1403e9e5c,0x84,
+                     "Momentum factor for continuing motion in previous direction. 0 for no momentum carry over"
+                    );
+  DAT_14114aae0 =
+       FUN_1402c4650("ai_pathNegotiationOverlapCost",DAT_1403e9e3c,0,uVar5,0x84,
+                     "The distance AI would travel around to avoid going to a negotiation being used. Multiplied by number of users of the negotiation"
+                    );
+  uVar7 = DAT_1403e8e90;
+  DAT_14114aae8 =
+       FUN_1402c4650("ai_pathChokePointCost",DAT_1403e8e90,0,uVar4,0x84,
+                     "The distance AI would travel around to randomly avoid going through a choke point."
+                    );
+  DAT_14114aaf0 =
+       FUN_1402c46d0("ai_pathRandomPercent",0x32,0,200,0x84,
+                     "Amount of random cost percent to add to each path node so AI always take slightly different routes"
+                    );
+  uVar6 = DAT_1403e9e44;
+  uVar3 = DAT_1403e527c;
+  DAT_14114ac58 =
+       FUN_1402c4650("ai_playerADS_LOSRange",DAT_1403e527c,0,DAT_1403e9e44,0xc0,
+                     "Friendly AI will not get in front of player in ADS pointing at enemy");
+  DAT_14114ac60 =
+       FUN_1402c4650("ai_playerLOSRange",uVar3,0,uVar6,0xc0,
+                     "Friendly AI will try not to claim cover nodes in this range of player\'s line of sight. They will also try not to get in front of player throwing grenade in this range."
+                    );
+  DAT_14114ac68 =
+       FUN_1402c4650("ai_playerLOSHalfWidth",DAT_1403e9e14,0,DAT_1403e8e6c,0x84,
+                     "Friendly AI will try not to claim cover nodes in this width of player\'s line of sight"
+                    );
+  DAT_14114ac70 =
+       FUN_1402c46d0("ai_playerLOSMinTime",0x2ee,0,0x7fffffff,0x84,
+                     "Player line of sight effect will take effect after player is almost stationary for this time (millisec)"
+                    );
+  DAT_14114ac78 =
+       FUN_1402c46d0("ai_playerADSTargetTime",10000,0,0x7fffffff,0x84,
+                     "Duration which the AI will not step in front of the player ADS\'ing at a target (millisec)"
+                    );
+  DAT_14114ac88 =
+       FUN_1402c43f0("ai_friendlySuppression",1,0xc4,
+                     "Whether AI fire will suppression teammates or not.");
+  DAT_14114ac90 =
+       FUN_1402c4650("ai_friendlySuppressionDist",uVar2,0,DAT_1403eb84c,0xc4,
+                     "Max distance at which AI suppress teammates");
+  DAT_14114ac98 =
+       FUN_1402c46d0("ai_friendlyFireBlockDuration",2000,0,0x7fffffff,0xc4,
+                     "Friendly fire movement block duration");
+  DAT_14114aca0 =
+       FUN_1402c4650("ai_playerNearAccuracy",DAT_1403e3e68,0,uVar1,0x80,
+                     "Accuracy for an AI near to a player");
+  DAT_14114aca8 =
+       FUN_1402c4650("ai_playerNearRange",DAT_1403e8e8c,0,uVar4,0x80,
+                     "Maximum range for AI to use \'near\' accuracy");
+  uVar3 = DAT_1403e5240;
+  DAT_14114acb0 =
+       FUN_1402c4650("ai_playerFarAccuracy",DAT_1403e5240,0,uVar1,0x80,
+                     "Accuracy for AI far away from the player");
+  DAT_14114acb8 =
+       FUN_1402c4650("ai_playerFarRange",DAT_1403ef93c,0,uVar4,0x80,
+                     "Minimum range for AI to use \'far\' accuracy");
+  DAT_14114acc0 =
+       FUN_1402c46d0("ai_threatUpdateInterval",500,0,0x7fffffff,0x84,
+                     "AI target threat update interval in milliseconds");
+  DAT_14114acc8 =
+       FUN_1402c4650("ai_foliageSeeThroughDist",uVar2,0,uVar4,0xc4,
+                     "Maximum distance AI ignore foliage for sight trace to targets");
+  DAT_14114acd0 =
+       FUN_1402c4650("ai_maxGrenadeThrowSpeed",DAT_1404060d0,0,uVar4,0xc4,
+                     "Maximum AI grenade throw speed");
+  DAT_14114acd8 =
+       FUN_1402c46d0("ai_coverSearchInterval",2000,0,0x7fffffff,0x84,
+                     "AI cover search interval when the don\'t have cover, in milliseconds");
+  uVar9 = DAT_1403ea7b4;
+  DAT_14114ace0 =
+       FUN_1402c4650("ai_dangerReactGoalRadius",DAT_1403ea7b4,0,uVar4,0x84,
+                     "Goal radius to use when reacting to danger");
+  DAT_14114ace8 =
+       FUN_1402c46d0("ai_dropAkimboChance",0xf,0,100,0xc4,
+                     "Chance that an AI will drop akimbo weapons if available for the weapon");
+  DAT_14114acf0 =
+       FUN_1402c4650("ai_frontShieldDamageReduction",uVar8,0,DAT_1403e3e6c,0x84,
+                     "Non bullet damage reduction for AI with front shield getting hit within shield angle. (bullets do 0 damage if blocked by shield)"
+                    );
+  uVar6 = DAT_1403e5618;
+  DAT_14114acf8 =
+       FUN_1402c4650("ai_coverScore_dangerousNode",DAT_1403ea250,0,DAT_1403e5618,0x84,
+                     "Cover node score used for nodes that are dangerous to use (someone died there). This value is subtracted"
+                    );
+  DAT_14114ad18 =
+       FUN_1402c4650("ai_coverScore_coverType",DAT_1403e5264,0,uVar6,0x84,
+                     "Cover node score used when weighting based on concelament vs. cover nodes");
+  DAT_14114ad00 =
+       FUN_1402c4650("ai_coverScore_distance",DAT_1403e560c,0,uVar6,0x84,
+                     "Cover node score used when weighting based on distance to node");
+  uVar4 = DAT_1403e526c;
+  DAT_14114ad08 =
+       FUN_1402c4650("ai_coverScore_engagement",DAT_1403e526c,0,uVar6,0x84,
+                     "How much AI prefer cover nodes that are within the engagement distance ranges"
+                    );
+  DAT_14114ad20 =
+       FUN_1402c4650("ai_coverScore_nodeAngle",uVar4,0,uVar6,0x84,
+                     "Cover node score used when weighting based on node angles to enemy");
+  uVar1 = DAT_1403e8e48;
+  DAT_14114ad30 =
+       FUN_1402c4650("ai_coverScore_playerLos",DAT_1403e8e48,0,uVar6,0x84,
+                     "Cover node score used when weighting based on blocking the player\'s LOS");
+  DAT_14114ad38 =
+       FUN_1402c4650("ai_coverScore_priority",uVar1,0,uVar6,0x84,
+                     "Cover node score used when weighting based on node priority flag");
+  DAT_14114ad28 =
+       FUN_1402c4650("ai_coverScore_targetDir",uVar1,0,uVar6,0x84,
+                     "How strongly an AI will want to move to correct engagement distance");
+  DAT_14114ad10 =
+       FUN_1402c4650("ai_coverScore_visibility",uVar1,0,uVar6,0x84,
+                     "Cover node score used when weighting based on visibilty to enemy node");
+  uVar1 = DAT_1403e3e6c;
+  DAT_14114ad40 =
+       FUN_1402c4650("ai_accuracyDistScale",DAT_1403e3e6c,DAT_1403e9b10,uVar6,0xc4,
+                     "Distance scale for AI accuracy calculations. Higher = less accurate");
+  DAT_14114ad48 =
+       FUN_1402c4650("ai_accuracy_attackerCountDecrease",DAT_1403e413c,uVar3,uVar1,0xc4,
+                     "Accuracy multiplied by this number for each additional attacker upto ai_accuracy_attackerCountMax"
+                    );
+  DAT_14114ad50 =
+       FUN_1402c46d0("ai_accuracy_attackerCountMax",4,0,0x7fffffff,0xc4,
+                     "Accuracy multiplied by ai_accuracy_attackerCountDecrease for each additional attacker upto this"
+                    );
+  DAT_14114aa98 = FUN_1402c43f0("ai_disableSpawn",0,0x84,"Do not spawn AI");
+  uVar3 = DAT_1403e5618;
+  DAT_14114add8 =
+       FUN_1402c4650("g_changelevel_time",uVar4,0,DAT_1403e5618,0x80,
+                     "Time for change level fade out");
+  uVar4 = DAT_1404060d4;
+  DAT_14114ade0 =
+       FUN_1402c4650("g_friendlyNameDist",DAT_1404060d4,0,DAT_1404060d4,0xc4,
+                     "Maximum distance at which a friendly name shows when the crosshairs is over them"
+                    );
+  DAT_14114ade8 =
+       FUN_1402c4650("g_friendlyfireDist",DAT_1404060cc,0,uVar4,0xc4,
+                     "Maximum distance at which the player channot shoot while the crosshair is over a friendly"
+                    );
+  DAT_14114adf0 =
+       FUN_1402c4650("g_friendlyfireDamageScale",uVar1,0,uVar5,0xc4,
+                     "Scales player damage from other players");
+  DAT_14114a9d0 =
+       FUN_1402c46d0("g_useholdtime",0,0,0x7fffffff,0x80,
+                     "The time to hold down the \'use\' button to activate a \'use\' command");
+  DAT_14114ad78 =
+       FUN_1402c43f0("player_deathInvulnerableToMelee",0,0xc4,
+                     "The player is invulnerable to melee attacks during death invulnerability");
+  DAT_14114ad80 =
+       FUN_1402c43f0("player_deathInvulnerableToProjectile",1,0xc4,
+                     "The player is invulnerable to projectile attacks during death invulnerability"
+                    );
+  FUN_1402c43f0("hud_drawHUD",1,0x40,"Draw the HUD. Controlled from non-UI script");
+  DAT_14114ae10 =
+       FUN_1402c4650("turretPlayerAvoidScale",DAT_1403f068c,0,uVar3,0x84,
+                     "Auto turrets will try to avoid the player.  They will not choose a target that is within a cone around the player.  The diameter of the cone is the player\'s height, so the cone is smaller, the farther the player is from the turret.  Use this dvar to scale the cone size."
+                    );
+  DAT_14114ae18 =
+       FUN_1402c43f0("turretSentryRestrictUsageToOwner",1,0x44,
+                     "When true, only players that own the sentry turret are allowed to interact with it."
+                    );
+  uVar4 = DAT_1403eba94;
+  _DAT_14114ab68 =
+       FUN_1402c4650("ai_eventDistFootstep",DAT_1403eba94,0,uVar3,0xc4,"Distance used for AI event")
+  ;
+  _DAT_14114ab70 =
+       FUN_1402c4650("ai_eventDistFootstepWalk",uVar2,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ab78 =
+       FUN_1402c4650("ai_eventDistFootstepSprint",DAT_1403e8e84,0,uVar3,0xc4,
+                     "Distance used for AI event");
+  _DAT_14114ab80 =
+       FUN_1402c4650("ai_eventDistNewEnemy",uVar7,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ab88 = FUN_1402c4650("ai_eventDistPain",uVar9,0,uVar3,0xc4,"Distance used for AI event")
+  ;
+  _DAT_14114ab90 =
+       FUN_1402c4650("ai_eventDistDeath",uVar7,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ab98 =
+       FUN_1402c4650("ai_eventDistExplosion",uVar7,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114aba0 =
+       FUN_1402c4650("ai_eventDistGrenadePing",uVar9,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114aba8 =
+       FUN_1402c4650("ai_eventDistProjPing",uVar2,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abb0 =
+       FUN_1402c4650("ai_eventDistGunShot",DAT_1403eb84c,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abb8 =
+       FUN_1402c4650("ai_eventDistGunShotTeam",DAT_1403eb84c,0,uVar3,0xc4,
+                     "Distance used for AI event");
+  _DAT_14114abc0 =
+       FUN_1402c4650("ai_eventDistSilencedShot",uVar2,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abc8 =
+       FUN_1402c4650("ai_eventDistBullet",uVar2,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abd0 =
+       FUN_1402c4650("ai_eventDistProjImpact",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abd8 =
+       FUN_1402c4650("ai_eventDistBadPlace",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abe0 =
+       FUN_1402c4650("ai_busyEventDistFootstep",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114abe8 =
+       FUN_1402c4650("ai_busyEventDistFootstepWalk",uVar2,0,uVar3,0xc4,"Distance used for AI event")
+  ;
+  _DAT_14114abf0 =
+       FUN_1402c4650("ai_busyEventDistFootstepSprint",uVar4,0,uVar3,0xc4,
+                     "Distance used for AI event");
+  _DAT_14114ac00 =
+       FUN_1402c4650("ai_busyEventDistNewEnemy",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac08 =
+       FUN_1402c4650("ai_busyEventDistPain",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac10 =
+       FUN_1402c4650("ai_busyEventDistDeath",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac18 =
+       FUN_1402c4650("ai_busyEventDistExplosion",uVar7,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac20 =
+       FUN_1402c4650("ai_busyEventDistGrenadePing",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac28 =
+       FUN_1402c4650("ai_busyEventDistProjPing",uVar2,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac30 =
+       FUN_1402c4650("ai_busyEventDistGunShot",DAT_1403e8e84,0,uVar3,0xc4,
+                     "Distance used for AI event");
+  _DAT_14114ac38 =
+       FUN_1402c4650("ai_busyEventDistGunShotTeam",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac40 =
+       FUN_1402c4650("ai_busyEventDistSilencedShot",uVar2,0,uVar3,0xc4,"Distance used for AI event")
+  ;
+  _DAT_14114ac48 =
+       FUN_1402c4650("ai_busyEventDistBullet",uVar2,0,uVar3,0xc4,"Distance used for AI event");
+  _DAT_14114ac50 =
+       FUN_1402c4650("ai_busyEventDistProjImpact",uVar4,0,uVar3,0xc4,"Distance used for AI event");
+  DAT_14114ae08 = FUN_1402c43f0("g_earthquakeEnable",1,0x84,"Enable camera shake");
+  DAT_14114ae20 =
+       FUN_1402c43f0("pickupPrints",0,0x84,
+                     "Print a message to the game window when picking up ammo, etc.");
+  DAT_140f57cb8 =
+       FUN_1402c4650("shieldBlastDamageProtection_30",DAT_1403e8e30,0,uVar1,0x84,
+                     "How much protection a shield has against an explosion.  0.0 is none, 1.0 is full.  For explosions within a 30-degree arc of the shield."
+                    );
+  DAT_140f57cc0 =
+       FUN_1402c4650("shieldBlastDamageProtection_60",DAT_1403e525c,0,uVar1,0x84,
+                     "How much protection a shield has against an explosion.  0.0 is none, 1.0 is full.  For explosions within a 60-degree arc of the shield."
+                    );
+  DAT_140f57cc8 =
+       FUN_1402c4650("shieldBlastDamageProtection_120",DAT_1403ea78c,0,uVar1,0x84,
+                     "How much protection a shield has against an explosion.  0.0 is none, 1.0 is full.  For explosions within a 120-degree arc of the shield."
+                    );
+  DAT_140f57cd0 =
+       FUN_1402c4650("shieldBlastDamageProtection_180",DAT_1403e5244,0,uVar1,0x84,
+                     "How much protection a shield has against an explosion.  0.0 is none, 1.0 is full.  For explosions within a 180-degree arc of the shield."
+                    );
+  DAT_140f57cd8 =
+       FUN_1402c4650("shieldPlayerBulletProtectionDegrees",DAT_1403e5614,0,DAT_1403e5280,0x84,
+                     "Bullets fired at a riotshield-bearing player will be blocked if they are within this many degrees of the player\'s forward direction.  Higher value means wider protection."
+                    );
+  DAT_14114ae88 = FUN_1402c43f0("g_singleplayerAntilag",1,0x84,"Enable singleplayer/co-op antilag");
+  FUN_1402d35d0();
+  FUN_14013bd60();
+  FUN_14000dba0();
+  FUN_14028ba50();
+  DAT_140f57ca0 = FUN_1402c43f0("g_giveAll",0,0x2084,"Give all weapons");
+  DAT_14114ae78 = FUN_1402c43f0("chaplinCheat",0,0xc4,&DAT_1403e6bdb);
+  FUN_1402c43f0("scr_dof_enable",1,0xc4,"enable dof");
+  FUN_14012ec50();
+  return;
+}
+
+
+

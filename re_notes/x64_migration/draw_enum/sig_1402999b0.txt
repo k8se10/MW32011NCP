@@ -1,0 +1,21 @@
+Signature-byte dump of FUN_1402999b0 @ 1402999b0
+(byte offsets relative to function entry point)
+
++0x00  40 53                          PUSH RBX                                 
++0x02  48 83 EC 20                    SUB RSP,0x20                             
++0x06  48 8D 0D 93 B6 36 02           LEA RCX,[0x142605050]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0D  E8 2E 35 01 00                 CALL 0x1402acef0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x12  48 8B D8                       MOV RBX,RAX                              
++0x15  48 85 C0                       TEST RAX,RAX                             
++0x18  74 2E                          JZ 0x1402999f8                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1A  48 8B D0                       MOV RDX,RAX                              
++0x1D  48 8D 0D 7C B6 36 02           LEA RCX,[0x142605050]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24  E8 57 3B 01 00                 CALL 0x1402ad530                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x29  85 C0                          TEST EAX,EAX                             
++0x2B  74 1B                          JZ 0x1402999f8                           [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (45 total): 40 53 48 83 EC 20 48 8D 0D 93 B6 36 02 E8 2E 35 01 00 48 8B D8 48 85 C0 74 2E 48 8B D0 48 8D 0D 7C B6 36 02 E8 57 3B 01 00 85 C0 74 1B
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+40 53 48 83 EC 20 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 8B D8 48 85 C0 ?? ?? 48 8B D0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 85 C0 ?? ??

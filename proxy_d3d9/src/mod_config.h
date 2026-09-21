@@ -773,6 +773,11 @@ struct ModConfig
     // Live-tested 2026-08-26: 0.5 (the original default) was reported "needs more
     // softness" -- lowered to 0.3.
     float fsrSharpenStrength = 0.3f;
+    // 2026-09-21: FXAA-style edge-directed AA at native resolution (DLAA-style: AA at output res,
+    // runs before RCAS). The game ships no working AA (MultiSampleType=0). Off by default until tuned.
+    bool fxaaEnabled = false;
+    float fxaaSpanMax = 8.0f;        // max blur reach in pixels (4-16)
+    float fxaaEdgeThreshold = 0.125f; // relative luma contrast needed to treat a pixel as an edge
 
     // [Video] Phase E, visual-suite plan (2026-08-26) -- camera-only (view-angle-
     // delta-based) directional motion blur, built on the same Phase A pipeline,

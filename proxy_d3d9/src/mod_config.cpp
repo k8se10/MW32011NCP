@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 41; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 42; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -966,6 +966,9 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.internalRenderScalePercent,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
+        g_modConfig.fxaaEnabled ? 1 : 0,
+        static_cast<double>(g_modConfig.fxaaSpanMax),
+        static_cast<double>(g_modConfig.fxaaEdgeThreshold),
         g_modConfig.motionBlurEnabled ? 1 : 0,
         g_modConfig.motionBlurStrength,
         g_modConfig.motionBlurCenterFalloff,
@@ -1278,6 +1281,13 @@ void LoadModConfig()
     }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
+    ReadBool(path, "Video", "FxaaEnabled", g_modConfig.fxaaEnabled);
+    ReadFloat(path, "Video", "FxaaSpanMax", g_modConfig.fxaaSpanMax);
+    ReadFloat(path, "Video", "FxaaEdgeThreshold", g_modConfig.fxaaEdgeThreshold);
+    if (g_modConfig.fxaaSpanMax < 2.0f) g_modConfig.fxaaSpanMax = 2.0f;
+    if (g_modConfig.fxaaSpanMax > 16.0f) g_modConfig.fxaaSpanMax = 16.0f;
+    if (g_modConfig.fxaaEdgeThreshold < 0.03f) g_modConfig.fxaaEdgeThreshold = 0.03f;
+    if (g_modConfig.fxaaEdgeThreshold > 0.5f) g_modConfig.fxaaEdgeThreshold = 0.5f;
     if (g_modConfig.fsrSharpenStrength < 0.0f) g_modConfig.fsrSharpenStrength = 0.0f;
     if (g_modConfig.fsrSharpenStrength > 1.0f) g_modConfig.fsrSharpenStrength = 1.0f;
     ReadBool(path, "Video", "MotionBlurEnabled", g_modConfig.motionBlurEnabled);
