@@ -3117,19 +3117,22 @@ extern "C" void InjectControllerMenuNavX64()
 // often still down for a moment after the menu is gone and would otherwise land in gameplay (jump, crouch/prone).
 // For a short window after a menu closes, A and B read as not pressed to the gameplay code.
 static bool g_postMenuPrevActiveX64 = false;
+static volatile bool g_pauseSeenThisMenuX64 = false; // this menu session included a paused game (pause menu)
 static DWORD g_postMenuBlockUntilMsX64 = 0;
 constexpr DWORD kPostMenuInputGraceMsX64 = 400;
 extern "C" bool PostMenuInputBlockedX64()
 {
     if (!g_inGameplayHookCtxX64) return false;
-    // Gameplay controls always no-op while a menu is up (paused or not), and for a short grace after it closes: the
-    // unpause can resume the gameplay tick a frame BEFORE the menu-active flag drops, and the closing press is often
-    // still down (live-reported 2026-09-21: A/B closing a menu also jumped/crouched).
+    // Gameplay controls no-op while the PAUSE menu is up, and for a short grace after ANY menu closes: the unpause can
+    // resume the gameplay tick a frame BEFORE the menu-active flag drops, and the closing press is often still down
+    // (live-reported 2026-09-21: A/B closing a menu also jumped/crouched). Menus that leave gameplay running (Survival
+    // buy stations) are NOT blocked while open -- only the grace after they close applies.
     const DWORD nowMs = GetTickCount();
     if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) {
         g_postMenuPrevActiveX64 = true;
-        return true;
+        return g_pauseSeenThisMenuX64; // set by the timer-side observer, which can see the stale gameplay tick
     }
+    if (nowMs >= g_postMenuBlockUntilMsX64) g_pauseSeenThisMenuX64 = false;
     // Detect the menu-closed edge HERE too, not only from the WndProc/timer tick: the gameplay tick can run (and see
     // the closing button still down) before the timer observer notices the flag dropped -- that gap was the residual
     // jump/knife on close.
@@ -3147,6 +3150,7 @@ extern "C" void InjectControllerMenuBackX64()
         const bool activeNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
         if (g_postMenuPrevActiveX64 && !activeNow) g_postMenuBlockUntilMsX64 = GetTickCount() + kPostMenuInputGraceMsX64;
         g_postMenuPrevActiveX64 = activeNow;
+        if (activeNow && IsGameplayPausedX64()) g_pauseSeenThisMenuX64 = true; // a real pause, not a buy station
     }
     unsigned short buttons = 0;
     unsigned char leftTrigger = 0, rightTrigger = 0;
