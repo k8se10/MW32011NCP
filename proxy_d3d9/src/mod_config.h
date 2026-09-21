@@ -778,6 +778,11 @@ struct ModConfig
     bool fxaaEnabled = false;
     float fxaaSpanMax = 2.0f;        // max blur reach in pixels (4-16)
     float fxaaEdgeThreshold = 0.2f; // relative luma contrast needed to treat a pixel as an edge
+    // 2026-09-21: SMAA 1x (shape-aware morphological AA; see LICENSE for credit). Replaces FXAA when on.
+    // Off by default until live-tested -- the full-screen pipeline is fragile. SmaaDebugView: 0 off,
+    // 1 = show the edge-detection pass, 2 = show the blend-weight pass.
+    bool smaaEnabled = false;
+    int smaaDebugView = 0;
 
     // [Video] Phase E, visual-suite plan (2026-08-26) -- camera-only (view-angle-
     // delta-based) directional motion blur, built on the same Phase A pipeline,

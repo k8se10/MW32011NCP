@@ -55,6 +55,11 @@
 #include "fullscreen_passthrough_ps.h" // Phase A visual-suite foundation -- see that file's own header comment
 #include "fsr_rcas_ps.h"
 #include "fxaa_ps.h" // Phase B visual-suite -- see that file's own header comment
+#include "smaa_edge_ps.h"
+#include "smaa_weights_ps.h"
+#include "smaa_blend_ps.h"
+#include "smaa_area_tex.h"
+#include "smaa_search_tex.h"
 #include "motion_blur_ps.h" // Phase E visual-suite -- see that file's own header comment
 #include "mw3ncp_plugin_api.h" // MW3NCP_ColorOverrideFn -- see this file's own g_pluginTextGlyphColorOverride comment
 
@@ -242,6 +247,12 @@ constexpr DWORD kD3DTEXF_LINEAR = 2;
 constexpr DWORD kD3DSAMP_MAGFILTER = 5;
 constexpr DWORD kD3DSAMP_MINFILTER = 6;
 constexpr DWORD kD3DSAMP_MIPFILTER = 7;
+constexpr DWORD kD3DSAMP_ADDRESSU = 1;
+constexpr DWORD kD3DSAMP_ADDRESSV = 2;
+constexpr DWORD kD3DTADDRESS_CLAMP = 3;
+constexpr int kSetRenderTargetVtableIndex = 37; // IDirect3DDevice9::SetRenderTarget
+constexpr int kClearVtableIndex = 43;           // IDirect3DDevice9::Clear
+constexpr DWORD kD3DCLEAR_TARGET = 1;
 
 typedef HRESULT(WINAPI* EndScene_t)(void* This);
 typedef HRESULT(WINAPI* CreateTexture_t)(void* This, UINT Width, UINT Height, UINT Levels,
@@ -378,6 +389,8 @@ typedef HRESULT(WINAPI* StretchRect_t)(void* This, void* pSourceSurface, const R
                                          void* pDestSurface, const RECT* pDestRect, DWORD Filter);
 typedef HRESULT(WINAPI* GetSamplerState_t)(void* This, DWORD Sampler, DWORD Type, DWORD* pValue);
 typedef HRESULT(WINAPI* SetSamplerState_t)(void* This, DWORD Sampler, DWORD Type, DWORD Value);
+typedef HRESULT(WINAPI* SetRenderTarget_t)(void* This, DWORD RenderTargetIndex, void* pRenderTarget);
+typedef HRESULT(WINAPI* Clear_t)(void* This, DWORD Count, const void* pRects, DWORD Flags, DWORD Color, float Z, DWORD Stencil);
 typedef HRESULT(WINAPI* CreatePixelShader_t)(void* This, const DWORD* pFunction, void** ppShader);
 typedef HRESULT(WINAPI* SetPixelShaderConstantF_t)(void* This, UINT StartRegister, const float* pConstantData, UINT Vector4fCount);
 
@@ -1632,7 +1645,6 @@ void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, floa
         { x + w - 0.5f, y + h - 0.5f, 0.0f, 1.0f, color, u1, v1 },
     };
     drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
-
     setTexture(device, 0, nullptr);
     setRenderState(device, kD3DRS_ZENABLE, oldZEnable);
     setRenderState(device, kD3DRS_LIGHTING, oldLighting);
@@ -3262,6 +3274,14 @@ using FullScreenShaderSetupFn = void(*)(void* device, float texelW, float texelH
 // normal D3D9 pattern.
 // Set by the caller for passes that need bilinear taps (motion blur); everything else stays point-sampled.
 bool g_fullScreenPassLinear = false;
+// SMAA multi-stage support (2026-09-21). Set by RunSmaa around individual DrawFullScreenPass calls, reset after.
+void* g_fsInputTex = nullptr;      // if set: caller already captured the scene; bind this as s0, skip the capture
+void* g_fsTargetSurf = nullptr;    // if set: render into this surface instead of the current render target
+void* g_fsTex1 = nullptr;          // bound at s1 when set
+void* g_fsTex2 = nullptr;          // bound at s2 when set
+DWORD g_fsFilter1 = 2, g_fsFilter2 = 1; // s1/s2 min/mag filters (2=linear, 1=point)
+bool g_fsClearTarget = false;      // clear g_fsTargetSurf to 0 before drawing
+bool g_fsCaptureOnly = false;      // only capture the scene into g_fullscreenCaptureTexture, then return
 
 void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn onShaderBound = nullptr)
 {
@@ -3298,6 +3318,9 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         return;
     }
 
+    if (g_fsInputTex) {
+        reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
+    } else {
     if (!EnsureFullscreenCaptureTexture(device, static_cast<int>(desc.Width), static_cast<int>(desc.Height))) {
         reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
         return;
@@ -3338,6 +3361,8 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     void** captureSurfaceVtbl = *reinterpret_cast<void***>(captureSurface);
     reinterpret_cast<Release_t>(backSurfaceVtbl[kSurfaceReleaseVtableIndex])(backSurface);
     reinterpret_cast<Release_t>(captureSurfaceVtbl[kSurfaceReleaseVtableIndex])(captureSurface);
+    }
+    if (g_fsCaptureOnly) return;
 
     DWORD oldMagFilter = kD3DTEXF_POINT, oldMinFilter = kD3DTEXF_POINT;
     getSamplerState(device, 0, kD3DSAMP_MAGFILTER, &oldMagFilter);
@@ -3393,7 +3418,45 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         // pass replaces the ENTIRE frame, not a blended overlay element
     setRenderState(device, kD3DRS_CULLMODE, kD3DCULL_NONE);
 
-    setTexture(device, 0, g_fullscreenCaptureTexture);
+    // SMAA multi-stage state (2026-09-21): render-target switch, extra input textures at s1/s2, CLAMP addressing,
+    // all saved here and restored right after the draw so the device is left exactly as found.
+    const bool smaaMode = g_fsInputTex || g_fsTex1 || g_fsTex2 || g_fsTargetSurf;
+    void* smaaOldRT = nullptr;
+    void* smaaOldTex1 = nullptr;
+    void* smaaOldTex2 = nullptr;
+    DWORD smaaOldAddr[3][2] = {};
+    DWORD smaaOldFilt[3][2] = {};
+    if (smaaMode) {
+        auto setRenderTarget = reinterpret_cast<SetRenderTarget_t>(deviceVtbl[kSetRenderTargetVtableIndex]);
+        auto clearFn = reinterpret_cast<Clear_t>(deviceVtbl[kClearVtableIndex]);
+        for (DWORD s = 0; s < 3; ++s) {
+            getSamplerState(device, s, kD3DSAMP_ADDRESSU, &smaaOldAddr[s][0]);
+            getSamplerState(device, s, kD3DSAMP_ADDRESSV, &smaaOldAddr[s][1]);
+            getSamplerState(device, s, kD3DSAMP_MAGFILTER, &smaaOldFilt[s][0]);
+            getSamplerState(device, s, kD3DSAMP_MINFILTER, &smaaOldFilt[s][1]);
+            setSamplerState(device, s, kD3DSAMP_ADDRESSU, kD3DTADDRESS_CLAMP);
+            setSamplerState(device, s, kD3DSAMP_ADDRESSV, kD3DTADDRESS_CLAMP);
+        }
+        getTexture(device, 1, &smaaOldTex1);
+        getTexture(device, 2, &smaaOldTex2);
+        if (g_fsTex1) {
+            setTexture(device, 1, g_fsTex1);
+            setSamplerState(device, 1, kD3DSAMP_MAGFILTER, g_fsFilter1);
+            setSamplerState(device, 1, kD3DSAMP_MINFILTER, g_fsFilter1);
+        }
+        if (g_fsTex2) {
+            setTexture(device, 2, g_fsTex2);
+            setSamplerState(device, 2, kD3DSAMP_MAGFILTER, g_fsFilter2);
+            setSamplerState(device, 2, kD3DSAMP_MINFILTER, g_fsFilter2);
+        }
+        if (g_fsTargetSurf) {
+            getRenderTarget(device, 0, &smaaOldRT);
+            setRenderTarget(device, 0, g_fsTargetSurf);
+            if (g_fsClearTarget) clearFn(device, 0, nullptr, kD3DCLEAR_TARGET, 0, 1.0f, 0);
+        }
+    }
+
+    setTexture(device, 0, g_fsInputTex ? g_fsInputTex : g_fullscreenCaptureTexture);
     // REVERTED 2026-08-28 -- SetVertexDeclaration caused a real, repeatable
     // crash (Event Viewer: iw5sp.exe / d3d9.dll, 0xc0000005, same exact
     // fault offset both times -- confirmed via the deployed DLL's own
@@ -3421,6 +3484,26 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         { w - 0.5f,   h - 0.5f,   0.0f, 1.0f, 0xFFFFFFFFu, 1.0f, 1.0f },
     };
     drawPrimitiveUP(device, kD3DPT_TRIANGLESTRIP, 2, verts, sizeof(ScreenVertex));
+
+    if (smaaMode) {
+        auto setRenderTarget = reinterpret_cast<SetRenderTarget_t>(deviceVtbl[kSetRenderTargetVtableIndex]);
+        if (g_fsTargetSurf && smaaOldRT) {
+            setRenderTarget(device, 0, smaaOldRT);
+        }
+        if (smaaOldRT) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(smaaOldRT))[kSurfaceReleaseVtableIndex])(smaaOldRT);
+        setTexture(device, 1, smaaOldTex1);
+        if (smaaOldTex1) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(smaaOldTex1))[kSurfaceReleaseVtableIndex])(smaaOldTex1);
+        setTexture(device, 2, smaaOldTex2);
+        if (smaaOldTex2) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(smaaOldTex2))[kSurfaceReleaseVtableIndex])(smaaOldTex2);
+        for (DWORD s = 0; s < 3; ++s) {
+            setSamplerState(device, s, kD3DSAMP_ADDRESSU, smaaOldAddr[s][0]);
+            setSamplerState(device, s, kD3DSAMP_ADDRESSV, smaaOldAddr[s][1]);
+            if (s != 0) { // stage 0's filters are restored by the function's own existing epilogue
+                setSamplerState(device, s, kD3DSAMP_MAGFILTER, smaaOldFilt[s][0]);
+                setSamplerState(device, s, kD3DSAMP_MINFILTER, smaaOldFilt[s][1]);
+            }
+        }
+    }
 
     // FIXED 2026-08-28 (issue #100) -- DrawPrimitiveUP leaves the device's
     // stream-0 vertex buffer binding in an OFFICIALLY UNDEFINED state (real,
@@ -3558,6 +3641,236 @@ void FxaaShaderSetupCallback(void* device, float texelW, float texelH)
     setPixelShaderConstantF(device, 0, texelSize, 1);
     const float params[4] = { g_modConfig.fxaaSpanMax, g_modConfig.fxaaEdgeThreshold, 0.0f, 0.0f };
     setPixelShaderConstantF(device, 1, params, 1);
+}
+
+// ---- SMAA 1x (2026-09-21) -- see re_notes/shaders/smaa_passes.hlsl and LICENSE for credit ----
+// Three passes on the captured scene, run pre-overlay so the HUD/menus are never touched:
+//   1) luma edge detection      (scene copy -> edgesTex)
+//   2) blend-weight calculation (edgesTex + area/search lookups -> blendTex)
+//   3) neighborhood blending    (scene copy + blendTex -> the real render target)
+void* g_smaaEdgesTex = nullptr;
+void* g_smaaBlendTex = nullptr;
+void* g_smaaAreaTex = nullptr;
+void* g_smaaSearchTex = nullptr;
+int g_smaaTexW = 0, g_smaaTexH = 0;
+void* g_smaaEdgePS = nullptr;
+void* g_smaaWeightsPS = nullptr;
+void* g_smaaBlendPS = nullptr;
+bool g_smaaFailed = false; // latched: any creation failure disables SMAA until the next device Reset
+
+void ReleaseComObject(void*& obj)
+{
+    if (obj) {
+        reinterpret_cast<Release_t>((*reinterpret_cast<void***>(obj))[kSurfaceReleaseVtableIndex])(obj);
+        obj = nullptr;
+    }
+}
+
+void ReleaseSmaaResources()
+{
+    ReleaseComObject(g_smaaEdgesTex);
+    ReleaseComObject(g_smaaBlendTex);
+    ReleaseComObject(g_smaaAreaTex);
+    ReleaseComObject(g_smaaSearchTex);
+    ReleaseComObject(g_smaaEdgePS);
+    ReleaseComObject(g_smaaWeightsPS);
+    ReleaseComObject(g_smaaBlendPS);
+    g_smaaTexW = g_smaaTexH = 0;
+    g_smaaFailed = false;
+}
+
+// Creates a managed A8R8G8B8 lookup texture and fills it via fill(x, y) -> DWORD ARGB.
+template <typename FillFn>
+void* CreateSmaaLookupTexture(void* device, int w, int h, FillFn fill)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    void* tex = nullptr;
+    if (FAILED(createTexture(device, w, h, 1, 0, kD3DFMT_A8R8G8B8, kD3DPOOL_MANAGED, &tex, nullptr)) || !tex) return nullptr;
+    void** texVtbl = *reinterpret_cast<void***>(tex);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surf = nullptr;
+    if (FAILED(getSurfaceLevel(tex, 0, &surf)) || !surf) {
+        ReleaseComObject(tex);
+        return nullptr;
+    }
+    void** surfVtbl = *reinterpret_cast<void***>(surf);
+    auto lockRect = reinterpret_cast<SurfaceLockRect_t>(surfVtbl[kSurfaceLockRectVtableIndex]);
+    auto unlockRect = reinterpret_cast<SurfaceUnlockRect_t>(surfVtbl[kSurfaceUnlockRectVtableIndex]);
+    LockedRect lr{};
+    if (FAILED(lockRect(surf, &lr, nullptr, 0)) || !lr.pBits) {
+        ReleaseComObject(surf);
+        ReleaseComObject(tex);
+        return nullptr;
+    }
+    for (int y = 0; y < h; ++y) {
+        DWORD* row = reinterpret_cast<DWORD*>(static_cast<unsigned char*>(lr.pBits) + static_cast<size_t>(y) * lr.Pitch);
+        for (int x = 0; x < w; ++x) row[x] = fill(x, y);
+    }
+    unlockRect(surf);
+    ReleaseComObject(surf);
+    return tex;
+}
+
+void* CreateSmaaRenderTargetTex(void* device, int w, int h)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto createTexture = reinterpret_cast<CreateTexture_t>(deviceVtbl[kCreateTextureVtableIndex]);
+    void* tex = nullptr;
+    if (FAILED(createTexture(device, w, h, 1, kD3DUSAGE_RENDERTARGET, kD3DFMT_A8R8G8B8, kD3DPOOL_DEFAULT, &tex, nullptr))) return nullptr;
+    return tex;
+}
+
+bool EnsureSmaaResources(void* device, int w, int h)
+{
+    if (g_smaaFailed) return false;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    if (!g_smaaEdgePS) {
+        // Same ps_3_0 device-caps gate as RCAS/FXAA (EnsureRcasShader performs the one-time check).
+        if (!g_fsrRcasDeviceCapsChecked) EnsureRcasShader(device);
+        if (!g_fsrRcasDeviceSupportsPS3) { g_smaaFailed = true; return false; }
+        auto createPS = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
+        if (FAILED(createPS(device, reinterpret_cast<const DWORD*>(g_smaaEdgePixelShaderBytecode), &g_smaaEdgePS)) ||
+            FAILED(createPS(device, reinterpret_cast<const DWORD*>(g_smaaWeightsPixelShaderBytecode), &g_smaaWeightsPS)) ||
+            FAILED(createPS(device, reinterpret_cast<const DWORD*>(g_smaaBlendPixelShaderBytecode), &g_smaaBlendPS))) {
+            LogFromController("[smaa] pixel shader creation failed -- SMAA disabled");
+            ReleaseSmaaResources();
+            g_smaaFailed = true;
+            return false;
+        }
+    }
+    if (!g_smaaAreaTex) {
+        g_smaaAreaTex = CreateSmaaLookupTexture(device, AREATEX_WIDTH, AREATEX_HEIGHT, [](int x, int y) -> DWORD {
+            const unsigned char* p = &areaTexBytes[static_cast<size_t>(y) * AREATEX_PITCH + static_cast<size_t>(x) * 2];
+            return 0xFF000000u | (static_cast<DWORD>(p[0]) << 16) | (static_cast<DWORD>(p[1]) << 8); // R,G = the two area channels
+        });
+        g_smaaSearchTex = CreateSmaaLookupTexture(device, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, [](int x, int y) -> DWORD {
+            const unsigned char v = searchTexBytes[static_cast<size_t>(y) * SEARCHTEX_PITCH + static_cast<size_t>(x)];
+            return 0xFF000000u | (static_cast<DWORD>(v) << 16); // R = search value
+        });
+        if (!g_smaaAreaTex || !g_smaaSearchTex) {
+            LogFromController("[smaa] lookup texture creation failed -- SMAA disabled");
+            ReleaseSmaaResources();
+            g_smaaFailed = true;
+            return false;
+        }
+    }
+    if (!g_smaaEdgesTex || !g_smaaBlendTex || g_smaaTexW != w || g_smaaTexH != h) {
+        ReleaseComObject(g_smaaEdgesTex);
+        ReleaseComObject(g_smaaBlendTex);
+        g_smaaEdgesTex = CreateSmaaRenderTargetTex(device, w, h);
+        g_smaaBlendTex = CreateSmaaRenderTargetTex(device, w, h);
+        g_smaaTexW = w;
+        g_smaaTexH = h;
+        if (!g_smaaEdgesTex || !g_smaaBlendTex) {
+            LogFromController("[smaa] render target creation failed -- SMAA disabled");
+            ReleaseSmaaResources();
+            g_smaaFailed = true;
+            return false;
+        }
+        char b[96];
+        sprintf_s(b, "[smaa] resources ready at %dx%d", w, h);
+        LogFromController(b);
+    }
+    return true;
+}
+
+// All SMAA shaders read c0 = (1/w, 1/h, w, h).
+void SmaaShaderSetupCallback(void* device, float texelW, float texelH)
+{
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
+    const float metrics[4] = { texelW, texelH, 1.0f / texelW, 1.0f / texelH };
+    setPixelShaderConstantF(device, 0, metrics, 1);
+}
+
+void* SmaaSurfaceOf(void* tex)
+{
+    void** texVtbl = *reinterpret_cast<void***>(tex);
+    auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevel_t>(texVtbl[kGetSurfaceLevelVtableIndex]);
+    void* surf = nullptr;
+    if (FAILED(getSurfaceLevel(tex, 0, &surf))) return nullptr;
+    return surf;
+}
+
+// Returns true if SMAA ran (all three passes, or the requested debug view).
+bool RunSmaa(void* device)
+{
+    if (g_smaaFailed) return false;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getRenderTarget = reinterpret_cast<GetRenderTarget_t>(deviceVtbl[kGetRenderTargetVtableIndex]);
+    void* rt = nullptr;
+    if (FAILED(getRenderTarget(device, 0, &rt)) || !rt) return false;
+    void** rtVtbl = *reinterpret_cast<void***>(rt);
+    SurfaceDesc desc{};
+    const HRESULT dr = reinterpret_cast<SurfaceGetDesc_t>(rtVtbl[kSurfaceGetDescVtableIndex])(rt, &desc);
+    ReleaseComObject(rt);
+    if (FAILED(dr) || desc.Width == 0 || desc.Height == 0) return false;
+    if (!EnsureSmaaResources(device, static_cast<int>(desc.Width), static_cast<int>(desc.Height))) return false;
+
+    void* edgesSurf = SmaaSurfaceOf(g_smaaEdgesTex);
+    void* blendSurf = SmaaSurfaceOf(g_smaaBlendTex);
+    if (!edgesSurf || !blendSurf) {
+        ReleaseComObject(edgesSurf);
+        ReleaseComObject(blendSurf);
+        return false;
+    }
+
+    // Capture the scene once (no draw): every stage below reads this copy.
+    g_fsCaptureOnly = true;
+    DrawFullScreenPass(device, g_smaaEdgePS, SmaaShaderSetupCallback);
+    g_fsCaptureOnly = false;
+    if (!g_fullscreenCaptureTexture) {
+        ReleaseComObject(edgesSurf);
+        ReleaseComObject(blendSurf);
+        return false;
+    }
+
+    const int debugView = g_modConfig.smaaDebugView;
+
+    // Pass 1 -- edges.
+    g_fsInputTex = g_fullscreenCaptureTexture;
+    g_fsTargetSurf = edgesSurf;
+    g_fsClearTarget = true;
+    g_fullScreenPassLinear = false;
+    DrawFullScreenPass(device, g_smaaEdgePS, SmaaShaderSetupCallback);
+
+    // Pass 2 -- blend weights.
+    g_fsInputTex = g_smaaEdgesTex;
+    g_fsTargetSurf = blendSurf;
+    g_fsClearTarget = true;
+    g_fsTex1 = g_smaaAreaTex;
+    g_fsTex2 = g_smaaSearchTex;
+    g_fsFilter1 = kD3DTEXF_LINEAR;
+    g_fsFilter2 = kD3DTEXF_POINT;
+    g_fullScreenPassLinear = true;
+    DrawFullScreenPass(device, g_smaaWeightsPS, SmaaShaderSetupCallback);
+
+    // Pass 3 -- neighborhood blend (or a debug view) onto the real render target.
+    g_fsTargetSurf = nullptr;
+    g_fsClearTarget = false;
+    g_fsTex2 = nullptr;
+    g_fullScreenPassLinear = true;
+    if (debugView == 1 || debugView == 2) {
+        g_fsInputTex = (debugView == 1) ? g_smaaEdgesTex : g_smaaBlendTex;
+        g_fsTex1 = nullptr;
+        if (EnsureFullscreenPassthroughShader(device)) DrawFullScreenPass(device, g_fullscreenPassthroughPixelShader);
+    } else {
+        g_fsInputTex = g_fullscreenCaptureTexture;
+        g_fsTex1 = g_smaaBlendTex;
+        g_fsFilter1 = kD3DTEXF_POINT;
+        DrawFullScreenPass(device, g_smaaBlendPS, SmaaShaderSetupCallback);
+    }
+
+    g_fsInputTex = nullptr;
+    g_fsTargetSurf = nullptr;
+    g_fsTex1 = nullptr;
+    g_fsTex2 = nullptr;
+    g_fsClearTarget = false;
+    g_fullScreenPassLinear = false;
+    ReleaseComObject(edgesSurf);
+    ReleaseComObject(blendSurf);
+    return true;
 }
 
 // Phase E -- camera-only (view-angle-delta-based) directional motion blur. See
@@ -3700,7 +4013,10 @@ bool RunPreOverlayScenePasses(void* device)
         blurActiveNow = (fabsf(yawDeg) + fabsf(pitchDeg)) * g_modConfig.motionBlurStrength > 0.05f;
     }
 #endif
-    if (g_modConfig.fxaaEnabled && !blurActiveNow && EnsureFxaaShader(device)) {
+    if (g_modConfig.smaaEnabled && !g_smaaFailed) {
+        // SMAA (shape-aware) replaces FXAA when enabled; same "skip while blur is active" rule.
+        if (!blurActiveNow && RunSmaa(device)) any = true;
+    } else if (g_modConfig.fxaaEnabled && !blurActiveNow && EnsureFxaaShader(device)) {
         DrawFullScreenPass(device, g_fxaaPixelShader, FxaaShaderSetupCallback);
         any = true;
     }
@@ -3715,7 +4031,7 @@ bool RunPreOverlayScenePasses(void* device)
 
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
-    if (!g_modConfig.motionBlurEnabled && !g_modConfig.fxaaEnabled) return;
+    if (!g_modConfig.motionBlurEnabled && !g_modConfig.fxaaEnabled && !g_modConfig.smaaEnabled) return;
 
 #if defined(_M_X64) || defined(_WIN64)
     // x64 gating (2026-09-12) -- real gates now wired, replacing the prior
@@ -6723,6 +7039,7 @@ void ReleaseAllCachedTextures()
     // lifecycle as g_optBlurTexture above, same reasoning applies: must be released
     // before Reset() and won't survive a full device recreation on its own.
     releaseIfSet(g_fullscreenCaptureTexture);
+    ReleaseSmaaResources(); // SMAA render targets/shaders are D3DPOOL_DEFAULT / device-bound, same lifecycle
     g_fullscreenCaptureTexW = 0;
     g_fullscreenCaptureTexH = 0;
     // Same device-bound-shader reasoning as g_optBlurPixelShader above -- released

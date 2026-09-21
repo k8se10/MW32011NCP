@@ -160,7 +160,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 42; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 43; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -631,6 +631,17 @@ void WriteDefaultConfig(const char* path)
         "; Live-tested 2026-08-26: 0.5 (the original default) was reported \"needs more\n"
         "; softness\" -- lowered to 0.3.\n"
         "FsrSharpenStrength=%.2f\n"
+        "; Edge anti-aliasing pass (FXAA-style, native resolution, scene only, before sharpening).\n"
+        "; The game has no working AA of its own. Composes with InternalRenderScalePercent (supersampling).\n"
+        "FxaaEnabled=%d\n"
+        "; Max edge-blur reach in pixels, 1-16. Higher = smoother, softer.\n"
+        "FxaaSpanMax=%.1f\n"
+        "; Relative luma contrast required to treat a pixel as an edge, 0.03-0.5. Lower = more AA.\n"
+        "FxaaEdgeThreshold=%.3f\n"
+        "; SMAA 1x (shape-aware edge smoothing; replaces FXAA when on, scene only, never the UI). Off by default.\n"
+        "SmaaEnabled=%d\n"
+        "; Debug: 0 = off, 1 = show detected edges, 2 = show blend weights.\n"
+        "SmaaDebugView=%d\n"
         "; Phase E, visual-suite plan: camera-only (view-angle-delta-based) directional\n"
         "; motion blur, built on the same pipeline -- composes with FsrSharpenEnabled\n"
         "; above when both are on (runs in sequence, after RCAS). Driven by real per-\n"
@@ -969,6 +980,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.fxaaEnabled ? 1 : 0,
         static_cast<double>(g_modConfig.fxaaSpanMax),
         static_cast<double>(g_modConfig.fxaaEdgeThreshold),
+        g_modConfig.smaaEnabled ? 1 : 0,
+        g_modConfig.smaaDebugView,
         g_modConfig.motionBlurEnabled ? 1 : 0,
         g_modConfig.motionBlurStrength,
         g_modConfig.motionBlurCenterFalloff,
@@ -1284,6 +1297,8 @@ void LoadModConfig()
     ReadBool(path, "Video", "FxaaEnabled", g_modConfig.fxaaEnabled);
     ReadFloat(path, "Video", "FxaaSpanMax", g_modConfig.fxaaSpanMax);
     ReadFloat(path, "Video", "FxaaEdgeThreshold", g_modConfig.fxaaEdgeThreshold);
+    ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
+    { unsigned long dv = static_cast<unsigned long>(g_modConfig.smaaDebugView); ReadUlong(path, "Video", "SmaaDebugView", dv); g_modConfig.smaaDebugView = (dv > 2) ? 0 : static_cast<int>(dv); }
     if (g_modConfig.fxaaSpanMax < 1.0f) g_modConfig.fxaaSpanMax = 1.0f;
     if (g_modConfig.fxaaSpanMax > 16.0f) g_modConfig.fxaaSpanMax = 16.0f;
     if (g_modConfig.fxaaEdgeThreshold < 0.03f) g_modConfig.fxaaEdgeThreshold = 0.03f;
