@@ -6372,14 +6372,19 @@ extern "C" bool IsReadyUpHudElemTextDrawnX64()
 extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t prefixSize, char* suffix, size_t suffixSize,
                                     char* asset, size_t assetSize)
 {
-    if (!g_backHintValidX64 || !IsGameplayPausedX64()) return false;
+    if (!IsGameplayPausedX64()) return false;
     if (!IsMenuActiveX64_Exported()) return false;
     int clc = -1;
     if (!TryGetClcStateX64(&clc) || clc == 0) return false;
-    *x = g_backHintXX64; *y = g_backHintYX64;
-    strcpy_s(prefix, prefixSize, g_backHintPrefixX64);
-    strcpy_s(suffix, suffixSize, g_backHintSuffixX64);
-    strcpy_s(asset, assetSize, g_backHintAssetX64);
+    // HARDCODED (2026-09-21, user direction). From the live capture the visible pause-menu Back hint is the standard
+    // bottom-right corner one, design (1634.2, 981.7). The other native "Back ^2ESC^7" draws while paused are offscreen
+    // blur-pass instances (design X 2042.8 > 1920 and a mid-screen 817,491), which is what made the glyph jump/flicker.
+    constexpr float kPausedBackXX64 = 1634.2f;
+    constexpr float kPausedBackYX64 = 981.7f;
+    if (!TryGetMenuGlyphAssetNameForKeyName("ESC", asset, assetSize)) return false;
+    *x = kPausedBackXX64; *y = kPausedBackYX64;
+    strcpy_s(prefix, prefixSize, "Back ");
+    suffix[0] = 0;
     return true;
 }
 
