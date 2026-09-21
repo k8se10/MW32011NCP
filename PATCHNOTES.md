@@ -746,6 +746,8 @@ item below.
 
 36. **The level-entry "unstick" sweep re-fired on every resume from pause / alt-tab (`-x64`).** `ForceReleaseStuckKbuttonsX64` treated more than 2 s of silent Pmove as "back at the menu" and re-armed itself, but Pmove is also silent while paused. Every resume then re-ran the native kbutton release, re-seeded the mouse baseline and sent a synthetic ESC, which reads as the game pausing itself and odd K+M input right after unpausing. It now re-arms only when the client state reports menu/disconnected (`clcState` 0). The once-per-level sweep and its ESC are unchanged.
 
+37. **Self-pausing at level entry and the intermittent Back-glyph flicker (`-x64`).** The per-level unstick sweep sent a real ESC, which opens the pause menu whenever the level is already live (live log: `PAUSE_LIST` focus immediately after the sweep); it now posts an unbound key (F24) instead, keeping the message-queue-routed input event without pausing. The pause menu and buy-station popups also draw a second "Back ^2ESC^7" instance on an unexpected row every 1-2 s; every Back instance is now suppressed, and an instance on an unknown row draws the glyph at the last good Back position, so the glyph no longer jumps or flickers and no native text flashes through. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

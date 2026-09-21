@@ -3243,7 +3243,13 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
                 // of the two direct-call fixes above can satisfy no matter how
                 // correct they are individually -- kept both (they fix real, distinct
                 // native bugs of their own) and added this as the missing piece.
-                SendSyntheticEscX64(); // deliberate "third piece" for the launch-input bug (commit 9cd3007e) -- fires once per REAL level entry only
+                // 2026-09-21: was SendSyntheticEscX64() (commit 9cd3007e's "message-queue-routed input event" piece), but
+                // a real ESC opens the pause menu whenever the level is already live (live log: PAUSE_LIST focus right
+                // after the sweep). Keep the message-queue-routed event, but use an unbound key (F24) so nothing pauses.
+                if (HWND hwndSweep = GetGameWindow()) {
+                    PostMessageA(hwndSweep, WM_KEYDOWN, VK_F24, 0x00000001);
+                    PostMessageA(hwndSweep, WM_KEYUP, VK_F24, 0xC0000001);
+                }
                 g_releaseAllKbuttons(0); // real native "release every stuck kbutton" sweep, no menu involved
                 // Real fix for the native "camera jumps on first real input" bug --
                 // see g_seedMouseBaseline's own declaration comment for the full trail.
@@ -6036,14 +6042,18 @@ void Hook_DrawTextX64(
             // bottom band of the screen (design y > 800); log any accepted non-standard row for calibration.
             // Real rows seen live (2026-09-21 capture): 995 = standard corner, ~700 = Survival buy-station popup Back,
             // ~498 = the mid-screen phantom instance (rejected).
-            bool isBackCornerHint = backContentMatches && (looksLikeCornerHintRowX64 || fabsf(designRowY - 700.0f) < 25.0f);
+            // Every Back instance is the Back hint (suppress all of them); only the position is filtered: an
+            // instance on an unknown row (the ~498 mid-screen one that draws every 1-2 s) reuses the last good
+            // position instead of its own, so the glyph stays put and no native "Back ESC" flashes through.
+            const bool backOnKnownRowX64 = looksLikeCornerHintRowX64 || fabsf(designRowY - 700.0f) < 25.0f;
+            bool isBackCornerHint = backContentMatches;
             if (backContentMatches && !looksLikeCornerHintRowX64) {
                 static int s_backOffRowLogged = 0;
                 if (s_backOffRowLogged < 12) {
                     ++s_backOffRowLogged;
                     char bo[160];
                     sprintf_s(bo, "[x64-back-diag] Back text off the standard row: designRowY=%.1f -> %s", designRowY,
-                              isBackCornerHint ? "accepted (buy-station row)" : "REJECTED (unknown row)");
+                              backOnKnownRowX64 ? "known row" : "unknown row -> reusing last good Back position");
                     LogFromController(bo);
                 }
             }
@@ -6106,6 +6116,16 @@ void Hook_DrawTextX64(
                         ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, startX, startY);
                         float designX = 0.0f, designY = 0.0f;
                         ConvertRealScreenPosToDesignSpaceX64(startX, startY + kMenuHintVerticalNudgeX64, designX, designY);
+                        if (isBackCornerHint) {
+                            static float s_lastBackDesignX = 0.0f, s_lastBackDesignY = 0.0f;
+                            static DWORD s_lastBackTick = 0;
+                            const DWORD nowBack = GetTickCount();
+                            if (backOnKnownRowX64) {
+                                s_lastBackDesignX = designX; s_lastBackDesignY = designY; s_lastBackTick = nowBack;
+                            } else if (s_lastBackTick != 0 && (nowBack - s_lastBackTick) < 3000) {
+                                designX = s_lastBackDesignX; designY = s_lastBackDesignY;
+                            }
+                        }
                         suppressRealDraw = true;
                         // Special-Ops-nested-modal / Friends-list-open suppression
                         // (2026-09-13 port of x86's IsInsideSpecOpsNestedModal()/
