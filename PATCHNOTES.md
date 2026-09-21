@@ -806,6 +806,8 @@ item below.
    full completion before `v0.4.0-x64` ships. Full decision record:
    `CLAUDE.md`'s 2026-09-15 Version Timeline entry.
 
+10. **D-pad squadmate call-in, Left and Right, confirmed working live on `-x64` (2026-09-21).** Direct playtest report. This closes the last "not yet live-confirmed" item for D-pad actionslot / D-pad Left (the Survival AI-squadmate call-in key-synthesis exception).
+
 ### Groundwork
 1. **Two new CI workflows.** `.github/workflows/build.yml` — real MSVC
    builds (Release x64) of every component that actually ships to players
