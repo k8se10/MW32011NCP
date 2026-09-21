@@ -6149,16 +6149,25 @@ void Hook_DrawTextX64(
     // regardless of whether this hook already recognized the text.
     if (g_modConfig.hudFontIdLoggingX64 && text && LooksSaneX64(reinterpret_cast<uintptr_t>(text))) {
         __try {
-            // Distinct-string set with a hard cap: alternating strings used to defeat a
-            // last-string dedup and grow the log without bound (perf issue, 55k lines).
-            static uint32_t s_seenFontDiag[300];
+            // Distinct-string set (open-addressing hash table, O(1)) with a hard log cap. Only "interesting"
+            // strings are logged -- anything with a color code (^), or key words used by interact/use
+            // prompts -- because the first version's 300-entry cap was consumed entirely by main-menu text
+            // before gameplay prompts ever appeared (2026-09-21 buy-station capture).
+            static uint32_t s_seenFontDiag[8192];
             static LONG s_seenFontDiagCount = 0;
             uint32_t fh = 2166136261u;
             for (size_t i = 0; i < 100 && text[i]; ++i) fh = (fh ^ static_cast<unsigned char>(text[i])) * 16777619u;
-            bool fontDiagNew = s_seenFontDiagCount < 300;
-            for (LONG i = 0; fontDiagNew && i < s_seenFontDiagCount; ++i) if (s_seenFontDiag[i] == fh) fontDiagNew = false;
+            if (fh == 0) fh = 1;
+            bool fontDiagNew = false;
+            if (s_seenFontDiagCount < 600 && (strchr(text, '^') || strstr(text, "Press") || strstr(text, "Hold") ||
+                                              strstr(text, " use") || strstr(text, "Armory") || strstr(text, "[{") ||
+                                              strstr(text, "Sentry") || strstr(text, "place"))) {
+                uint32_t slot = fh & 8191u;
+                while (s_seenFontDiag[slot] != 0 && s_seenFontDiag[slot] != fh) slot = (slot + 1) & 8191u;
+                if (s_seenFontDiag[slot] == 0) { s_seenFontDiag[slot] = fh; fontDiagNew = true; }
+            }
             if (fontDiagNew) {
-                s_seenFontDiag[s_seenFontDiagCount++] = fh;
+                ++s_seenFontDiagCount;
 
                 char hexBuf[3 * 32 + 1] = "";
                 auto fontAddr = reinterpret_cast<uintptr_t>(fontArg);
