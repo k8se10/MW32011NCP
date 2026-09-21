@@ -6029,11 +6029,22 @@ void Hook_DrawTextX64(
                     LogFromController(buf);
                 }
             }
-            // 2026-09-21: NOT gated on the standard corner-hint row (y~995). x86 matches Back purely by its exact template text;
-            // the Survival buy-station popups draw their own "Back ^2ESC^7" at a different row, which this gate rejected
-            // (native text left unsubstituted = "back glyph missing on buy stations"). Exact-equality on the resolved
-            // PLATFORM_BACK_SHORTCUT template is already a tight match.
-            bool isBackCornerHint = backContentMatches;
+            // 2026-09-21: the standard corner row (y~995) is too strict -- the Survival buy-station popups draw their own
+            // "Back ^2ESC^7" on a different row -- but ungating entirely was WRONG: the pause menu also draws a Back-text
+            // instance in the middle of the screen (live screenshot: glyph jumped to mid-screen and flickered), and the
+            // role-based "last request wins" slot collapse then let it override the real corner one. Accept only the
+            // bottom band of the screen (design y > 800); log any accepted non-standard row for calibration.
+            bool isBackCornerHint = backContentMatches && designRowY > 800.0f;
+            if (backContentMatches && !looksLikeCornerHintRowX64) {
+                static int s_backOffRowLogged = 0;
+                if (s_backOffRowLogged < 12) {
+                    ++s_backOffRowLogged;
+                    char bo[160];
+                    sprintf_s(bo, "[x64-back-diag] Back text off the standard row: designRowY=%.1f -> %s", designRowY,
+                              isBackCornerHint ? "accepted (bottom band)" : "REJECTED (not bottom band)");
+                    LogFromController(bo);
+                }
+            }
             const char* friendsTmpl = g_getLocalizedStringX64("PLATFORM_FRIENDS_SHORTCUT");
             bool isFriendsCornerHint = looksLikeCornerHintRowX64 && friendsTmpl &&
                 LooksSaneX64(reinterpret_cast<uintptr_t>(friendsTmpl)) && strcmp(text, friendsTmpl) == 0;
