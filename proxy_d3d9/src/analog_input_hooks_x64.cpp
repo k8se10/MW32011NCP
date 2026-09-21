@@ -627,6 +627,8 @@ static bool IsGameplayPausedX64()
 // frame -- the native draw is what flickered (it runs on the offscreen blur passes too); suppression of the
 // native text stays tied to the native draw, which was already consistent (2026-09-21, user direction).
 static bool g_backHintValidX64 = false;
+static bool g_backHintValidLoggedX64 = false;
+static float g_backHintLoggedXX64 = 0.0f, g_backHintLoggedYX64 = 0.0f;
 static float g_backHintXX64 = 0.0f, g_backHintYX64 = 0.0f;
 static char g_backHintPrefixX64[128] = "";
 static char g_backHintSuffixX64[128] = "";
@@ -6133,6 +6135,15 @@ void Hook_DrawTextX64(
                                 strncpy_s(g_backHintSuffixX64, suffixText, _TRUNCATE);
                                 strncpy_s(g_backHintAssetX64, assetName, _TRUNCATE);
                                 g_backHintValidX64 = true;
+                                static int s_backPosLogged = 0;
+                                if (s_backPosLogged < 6 && (!g_backHintValidLoggedX64 || fabsf(designX - g_backHintLoggedXX64) > 1.0f || fabsf(designY - g_backHintLoggedYX64) > 1.0f)) {
+                                    ++s_backPosLogged;
+                                    g_backHintValidLoggedX64 = true; g_backHintLoggedXX64 = designX; g_backHintLoggedYX64 = designY;
+                                    char bp[200];
+                                    sprintf_s(bp, "[x64-back-diag] stored Back hint position: designX=%.1f designY=%.1f prefix=\"%.20s\" suffix=\"%.20s\" asset=%s",
+                                              designX, designY, prefixText, suffixText, assetName);
+                                    LogFromController(bp);
+                                }
                             } else if (g_backHintValidX64) {
                                 designX = g_backHintXX64; designY = g_backHintYX64;
                             }
