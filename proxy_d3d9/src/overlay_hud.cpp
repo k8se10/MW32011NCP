@@ -2418,6 +2418,25 @@ void DrawMenuHintsIfRequested(void* device)
 {
     int count = g_menuHintSlotCountThisFrame;
     g_menuHintSlotCountThisFrame = 0;
+    // Flicker guard (2026-09-21, live-reported: menu corner-hint glyph flickers on the pause menu and is
+    // missing on other screens). Slots are only filled when the native text draw happens to run inside the
+    // frame that reaches EndScene; a frame where it doesn't (or an extra EndScene) used to drop the glyph
+    // AND leave the native text suppressed. Re-draw the last populated slots for a short grace window.
+    // Slot contents persist across frames (only the count is reset), so this is a pure re-draw.
+    static int s_lastMenuHintCount = 0;
+    static DWORD s_lastMenuHintTick = 0;
+    const DWORD nowTick = GetTickCount();
+    if (count > 0) {
+        s_lastMenuHintCount = count;
+        s_lastMenuHintTick = nowTick;
+    } else if (s_lastMenuHintCount > 0 && (nowTick - s_lastMenuHintTick) < 120) {
+        count = s_lastMenuHintCount;
+        static int s_graceLogged = 0;
+        if (s_graceLogged < 5) {
+            ++s_graceLogged;
+            LogFromController("[menuhint] frame without a fresh hint request -- re-drawing the previous slots (flicker guard)");
+        }
+    }
     if (count == 0) return;
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
