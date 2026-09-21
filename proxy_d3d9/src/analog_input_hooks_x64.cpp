@@ -3103,8 +3103,25 @@ extern "C" void InjectControllerMenuNavX64()
 // its own declaration comment above, near g_crouchProneHeldX64) so CrouchProne's
 // own dispatch in Hook_MovementTick never fires for a B press that overlapped an
 // open menu.
+// Post-menu input grace (2026-09-21, user request): the press that closes a menu (A on "Resume Game", B for back) is
+// often still down for a moment after the menu is gone and would otherwise land in gameplay (jump, crouch/prone).
+// For a short window after a menu closes, A and B read as not pressed to the gameplay code.
+static bool g_postMenuPrevActiveX64 = false;
+static DWORD g_postMenuBlockUntilMsX64 = 0;
+constexpr DWORD kPostMenuInputGraceMsX64 = 300;
+extern "C" bool PostMenuInputBlockedX64()
+{
+    if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) return false; // a menu is up: menu code owns A/B
+    return GetTickCount() < g_postMenuBlockUntilMsX64;
+}
+
 extern "C" void InjectControllerMenuBackX64()
 {
+    {
+        const bool activeNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+        if (g_postMenuPrevActiveX64 && !activeNow) g_postMenuBlockUntilMsX64 = GetTickCount() + kPostMenuInputGraceMsX64;
+        g_postMenuPrevActiveX64 = activeNow;
+    }
     unsigned short buttons = 0;
     unsigned char leftTrigger = 0, rightTrigger = 0;
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;

@@ -601,8 +601,15 @@ bool IsPhysicalHeld(PhysicalInput p, unsigned short buttons, unsigned char leftT
 // same class of bug and same fix as IsMenuActive_Exported() elsewhere in this file:
 // a thin exported forwarder around the internal-linkage function everything else
 // already trusts, rather than restructuring the namespace or duplicating the switch.
+#if defined(_M_X64) || defined(_WIN64)
+extern "C" bool PostMenuInputBlockedX64(); // analog_input_hooks_x64.cpp
+#endif
 extern "C" bool IsPhysicalHeld_Exported(PhysicalInput p, unsigned short buttons, unsigned char leftTrigger, unsigned char rightTrigger)
 {
+#if defined(_M_X64) || defined(_WIN64)
+    // Post-menu grace: A/B read as released for a moment after a menu closes (see PostMenuInputBlockedX64).
+    if ((p == PhysicalInput::A || p == PhysicalInput::B) && PostMenuInputBlockedX64()) return false;
+#endif
     return IsPhysicalHeld(p, buttons, leftTrigger, rightTrigger);
 }
 

@@ -752,6 +752,8 @@ item below.
 
 40. **Input sweep re-arms only for a level load or window focus loss; "Resume Game" closes fully (`-x64`).** The once-per-level sweep (kbutton release, mouse-baseline seed, ESC) re-armed whenever Pmove was silent for 2 s, which also happens while the pause menu is open, so every unpause re-ran it and re-paused the game. It now re-arms only when the client is in the menu/loading state (`clcState` 0) or the window was deactivated (`WM_ACTIVATEAPP`/`WM_KILLFOCUS`). Separately, A on the pause list's first item ("Resume Game") now closes the menu the way Esc does; forwarding Enter to it only half-closed the menu (UI cleared, blur and pause remained). Build-verified; not yet live-tested.
 
+41. **Post-menu input grace (`-x64`).** For 300 ms after a menu closes, the A and B buttons read as released to the gameplay code, so the press that closed the menu (A on "Resume Game", B for back) can't also jump or crouch/prone in gameplay. Menu navigation is unaffected while a menu is up. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
