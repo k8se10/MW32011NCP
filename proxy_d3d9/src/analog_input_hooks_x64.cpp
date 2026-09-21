@@ -3132,6 +3132,18 @@ extern "C" void InjectControllerMenuBackX64()
     // quit-confirmation prompt). Fixed to rising-edge only, matching how
     // every other synthetic-key call site in this file already fires (once
     // per physical press, never on release).
+    if (held && !g_menuBackHeldX64) {
+        // Diagnostic (2026-09-21): every B press, with the state that decides what happens -- used to
+        // chase "B/back is missing or flickers in every menu but the main menu". Per physical press only.
+        int clcDiag = -1;
+        TryGetClcStateX64(&clcDiag);
+        char bd[220];
+        sprintf_s(bd, "[x64-back-diag] B press: menuActive=%d pausedTickStale=%d clcState=%d menuStackDepth=%d customOptionsOpen=%d -> %s",
+                  menuActiveNow ? 1 : 0, IsGameplayPausedX64() ? 1 : 0, clcDiag, static_cast<int>(GetMenuStackDepthX64()),
+                  CustomOptionsMenu_IsOpen() ? 1 : 0,
+                  (menuActiveNow && !CustomOptionsMenu_IsOpen()) ? "SEND ESC" : "IGNORED");
+        LogFromController(bd);
+    }
     if (menuActiveNow && held && !g_menuBackHeldX64 && !CustomOptionsMenu_IsOpen()) {
         SendSyntheticEscX64();
     }
