@@ -773,12 +773,7 @@ struct ModConfig
     // Live-tested 2026-08-26: 0.5 (the original default) was reported "needs more
     // softness" -- lowered to 0.3.
     float fsrSharpenStrength = 0.3f;
-    // 2026-09-21: FXAA-style edge-directed AA at native resolution (DLAA-style: AA at output res,
-    // runs before RCAS). The game ships no working AA (MultiSampleType=0). Off by default until tuned.
-    bool fxaaEnabled = false;
-    float fxaaSpanMax = 2.0f;        // max blur reach in pixels (4-16)
-    float fxaaEdgeThreshold = 0.2f; // relative luma contrast needed to treat a pixel as an edge
-    // 2026-09-21: SMAA 1x (shape-aware morphological AA; see LICENSE for credit). Replaces FXAA when on.
+    // 2026-09-21: SMAA 1x (shape-aware morphological AA; see LICENSE for credit). 
     // Off by default until live-tested -- the full-screen pipeline is fragile. SmaaDebugView: 0 off,
     // 1 = show the edge-detection pass, 2 = show the blend-weight pass.
     bool smaaEnabled = false;

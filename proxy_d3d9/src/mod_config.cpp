@@ -631,14 +631,7 @@ void WriteDefaultConfig(const char* path)
         "; Live-tested 2026-08-26: 0.5 (the original default) was reported \"needs more\n"
         "; softness\" -- lowered to 0.3.\n"
         "FsrSharpenStrength=%.2f\n"
-        "; Edge anti-aliasing pass (FXAA-style, native resolution, scene only, before sharpening).\n"
-        "; The game has no working AA of its own. Composes with InternalRenderScalePercent (supersampling).\n"
-        "FxaaEnabled=%d\n"
-        "; Max edge-blur reach in pixels, 1-16. Higher = smoother, softer.\n"
-        "FxaaSpanMax=%.1f\n"
-        "; Relative luma contrast required to treat a pixel as an edge, 0.03-0.5. Lower = more AA.\n"
-        "FxaaEdgeThreshold=%.3f\n"
-        "; SMAA 1x (shape-aware edge smoothing; replaces FXAA when on, scene only, never the UI). Off by default.\n"
+        "; SMAA 1x (shape-aware edge smoothing; scene only, never the UI). Off by default.\n"
         "SmaaEnabled=%d\n"
         "; Debug: 0 = off, 1 = show detected edges, 2 = show blend weights, 3 = plain capture-redraw test (no SMAA).\n"
         "SmaaDebugView=%d\n"
@@ -977,9 +970,6 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.internalRenderScalePercent,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
-        g_modConfig.fxaaEnabled ? 1 : 0,
-        static_cast<double>(g_modConfig.fxaaSpanMax),
-        static_cast<double>(g_modConfig.fxaaEdgeThreshold),
         g_modConfig.smaaEnabled ? 1 : 0,
         g_modConfig.smaaDebugView,
         g_modConfig.motionBlurEnabled ? 1 : 0,
@@ -1294,15 +1284,8 @@ void LoadModConfig()
     }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
-    ReadBool(path, "Video", "FxaaEnabled", g_modConfig.fxaaEnabled);
-    ReadFloat(path, "Video", "FxaaSpanMax", g_modConfig.fxaaSpanMax);
-    ReadFloat(path, "Video", "FxaaEdgeThreshold", g_modConfig.fxaaEdgeThreshold);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
     { unsigned long dv = static_cast<unsigned long>(g_modConfig.smaaDebugView); ReadUlong(path, "Video", "SmaaDebugView", dv); g_modConfig.smaaDebugView = (dv > 3) ? 0 : static_cast<int>(dv); }
-    if (g_modConfig.fxaaSpanMax < 1.0f) g_modConfig.fxaaSpanMax = 1.0f;
-    if (g_modConfig.fxaaSpanMax > 16.0f) g_modConfig.fxaaSpanMax = 16.0f;
-    if (g_modConfig.fxaaEdgeThreshold < 0.03f) g_modConfig.fxaaEdgeThreshold = 0.03f;
-    if (g_modConfig.fxaaEdgeThreshold > 0.5f) g_modConfig.fxaaEdgeThreshold = 0.5f;
     if (g_modConfig.fsrSharpenStrength < 0.0f) g_modConfig.fsrSharpenStrength = 0.0f;
     if (g_modConfig.fsrSharpenStrength > 1.0f) g_modConfig.fsrSharpenStrength = 1.0f;
     ReadBool(path, "Video", "MotionBlurEnabled", g_modConfig.motionBlurEnabled);

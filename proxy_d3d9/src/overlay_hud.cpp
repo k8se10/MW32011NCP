@@ -54,7 +54,6 @@
 #include "options_blur_ps.h" // compiled ps_2_0 bytecode -- see that file's own header for the real HLSL source and how it was compiled
 #include "fullscreen_passthrough_ps.h" // Phase A visual-suite foundation -- see that file's own header comment
 #include "fsr_rcas_ps.h"
-#include "fxaa_ps.h" // Phase B visual-suite -- see that file's own header comment
 #include "smaa_edge_ps.h"
 #include "smaa_weights_ps.h"
 #include "smaa_blend_ps.h"
@@ -3611,38 +3610,6 @@ void RcasShaderSetupCallback(void* device, float texelW, float texelH)
     setPixelShaderConstantF(device, 1, sharpness, 1);
 }
 
-// FXAA-style AA pass (2026-09-21) -- see fxaa.hlsl. ps_3_0, same caps gating as RCAS.
-void* g_fxaaPixelShader = nullptr;
-
-bool EnsureFxaaShader(void* device)
-{
-    if (g_fxaaPixelShader) return true;
-    if (!g_fsrRcasDeviceCapsChecked) {
-        // Reuse RCAS's one-time caps check (same ps_3_0 requirement) by calling it; it also compiles RCAS,
-        // which is harmless and keeps the caps state in one place.
-        EnsureRcasShader(device);
-    }
-    if (!g_fsrRcasDeviceSupportsPS3) return false;
-    void** deviceVtbl = *reinterpret_cast<void***>(device);
-    auto createPixelShader = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
-    HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_fxaaPixelShaderBytecode), &g_fxaaPixelShader);
-    if (FAILED(hr) || !g_fxaaPixelShader) {
-        g_fxaaPixelShader = nullptr;
-        return false;
-    }
-    return true;
-}
-
-void FxaaShaderSetupCallback(void* device, float texelW, float texelH)
-{
-    void** deviceVtbl = *reinterpret_cast<void***>(device);
-    auto setPixelShaderConstantF = reinterpret_cast<SetPixelShaderConstantF_t>(deviceVtbl[kSetPixelShaderConstantFVtableIndex]);
-    const float texelSize[4] = { texelW, texelH, 0.0f, 0.0f };
-    setPixelShaderConstantF(device, 0, texelSize, 1);
-    const float params[4] = { g_modConfig.fxaaSpanMax, g_modConfig.fxaaEdgeThreshold, 0.0f, 0.0f };
-    setPixelShaderConstantF(device, 1, params, 1);
-}
-
 // ---- SMAA 1x (2026-09-21) -- see re_notes/shaders/smaa_passes.hlsl and LICENSE for credit ----
 // Three passes on the captured scene, run pre-overlay so the HUD/menus are never touched:
 //   1) luma edge detection      (scene copy -> edgesTex)
@@ -3726,7 +3693,7 @@ bool EnsureSmaaResources(void* device, int w, int h)
     if (g_smaaFailed) return false;
     void** deviceVtbl = *reinterpret_cast<void***>(device);
     if (!g_smaaEdgePS) {
-        // Same ps_3_0 device-caps gate as RCAS/FXAA (EnsureRcasShader performs the one-time check).
+        // Same ps_3_0 device-caps gate as RCAS (EnsureRcasShader performs the one-time check).
         if (!g_fsrRcasDeviceCapsChecked) EnsureRcasShader(device);
         if (!g_fsrRcasDeviceSupportsPS3) { g_smaaFailed = true; return false; }
         auto createPS = reinterpret_cast<CreatePixelShader_t>(deviceVtbl[kCreatePixelShaderVtableIndex]);
@@ -4008,14 +3975,13 @@ void MotionBlurShaderSetupCallback(void* device, float /*texelW*/, float /*texel
 // times the engine hook itself fires.
 bool g_motionBlurRanThisFrame = false;
 
-// Scene-only passes (run BEFORE the HUD/menus/our overlay are drawn, so FXAA never touches UI text):
-// FXAA first, then motion blur. 2026-09-21: FXAA moved here from the final-frame pass -- running it on the
-// composited frame smeared the UI and stacked with RCAS + blur.
+// Scene-only passes (run BEFORE the HUD/menus/our overlay are drawn, so AA never touches UI text):
+// SMAA first, then motion blur. (An FXAA pass was tried 2026-09-21 and removed -- it blurred the whole frame.)
 bool RunPreOverlayScenePasses(void* device)
 {
     bool any = false;
     // Live report (2026-09-21): stacking both full-screen passes in one frame produced ghosting/double images.
-    // While the camera is moving the blur already hides aliasing, so FXAA only runs when blur is idle
+    // While the camera is moving the blur already hides aliasing, so SMAA only runs when blur is idle
     // (or off) -- never two chained passes at once.
     bool blurActiveNow = false;
 #if defined(_M_X64) || defined(_WIN64)
@@ -4026,11 +3992,8 @@ bool RunPreOverlayScenePasses(void* device)
     }
 #endif
     if (g_modConfig.smaaEnabled && !g_smaaFailed) {
-        // SMAA (shape-aware) replaces FXAA when enabled; same "skip while blur is active" rule.
+        // SMAA (shape-aware) runs only when blur is idle -- never two chained passes.
         if (!blurActiveNow && RunSmaa(device)) any = true;
-    } else if (g_modConfig.fxaaEnabled && !blurActiveNow && EnsureFxaaShader(device)) {
-        DrawFullScreenPass(device, g_fxaaPixelShader, FxaaShaderSetupCallback);
-        any = true;
     }
     if (g_modConfig.motionBlurEnabled && EnsureMotionBlurShader(device)) {
         g_fullScreenPassLinear = true;
@@ -4043,7 +4006,7 @@ bool RunPreOverlayScenePasses(void* device)
 
 void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 {
-    if (!g_modConfig.motionBlurEnabled && !g_modConfig.fxaaEnabled && !g_modConfig.smaaEnabled) return;
+    if (!g_modConfig.motionBlurEnabled && !g_modConfig.smaaEnabled) return;
 
 #if defined(_M_X64) || defined(_WIN64)
     // x64 gating (2026-09-12) -- real gates now wired, replacing the prior
