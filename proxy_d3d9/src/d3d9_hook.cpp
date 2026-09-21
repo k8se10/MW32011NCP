@@ -416,6 +416,8 @@ extern "C" bool PollCapturedKeyName(char* outBuf, int outBufSize)
     return true;
 }
 
+extern "C" void NotifyWindowFocusLostX64(); // analog_input_hooks_x64.cpp
+
 LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (g_keybindCaptureActive) {
@@ -443,6 +445,12 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // state -- this needs to fire at the exact real-gameplay moment a prompt
     // like Survival ready-up/buy-station is on screen, which is whenever the
     // user presses it, not just while a menu is focused.
+#if defined(_M_X64) || defined(_WIN64)
+    // Window lost focus (alt-tab etc.): re-arms the once-per-level input sweep (analog_input_hooks_x64.cpp) -- and
+    // only this or a level load does, not an ordinary unpause.
+    if ((msg == WM_ACTIVATEAPP && wParam == FALSE) || msg == WM_KILLFOCUS) NotifyWindowFocusLostX64();
+#endif
+
     if (msg == WM_KEYDOWN && wParam == VK_F9 && (lParam & 0x40000000) == 0) {
         // High bit of lParam's repeat-count/previous-key-state (bit 30) is the
         // "was already down" flag -- only fire once per physical press, not

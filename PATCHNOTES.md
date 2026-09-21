@@ -750,6 +750,8 @@ item below.
 
 39. **Level-entry input sweep no longer fires for keyboard/mouse play (`-x64`).** The sweep (kbutton release, mouse-baseline seed, synthetic ESC) now runs only when a controller is connected and there has been no mouse activity for 3 s; otherwise it keeps waiting. Alt-tab, resume and K+M sessions no longer get injected input. Build-verified; not yet live-tested.
 
+40. **Input sweep re-arms only for a level load or window focus loss; "Resume Game" closes fully (`-x64`).** The once-per-level sweep (kbutton release, mouse-baseline seed, ESC) re-armed whenever Pmove was silent for 2 s, which also happens while the pause menu is open, so every unpause re-ran it and re-paused the game. It now re-arms only when the client is in the menu/loading state (`clcState` 0) or the window was deactivated (`WM_ACTIVATEAPP`/`WM_KILLFOCUS`). Separately, A on the pause list's first item ("Resume Game") now closes the menu the way Esc does; forwarding Enter to it only half-closed the menu (UI cleared, blur and pause remained). Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

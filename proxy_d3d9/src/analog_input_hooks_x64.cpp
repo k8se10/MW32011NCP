@@ -3053,7 +3053,23 @@ extern "C" void InjectControllerMenuNavX64()
         if (downHeld != g_menuNavDownHeldX64) ForwardKeyToMenuX64(kKeyNextItemX64, downHeld ? 1 : 0);
         if (leftHeld != g_menuNavLeftHeldX64) ForwardKeyToMenuX64(kKeyLeftNavX64, leftHeld ? 1 : 0);
         if (rightHeld != g_menuNavRightHeldX64) ForwardKeyToMenuX64(kKeyRightNavX64, rightHeld ? 1 : 0);
-        if (selectHeld != g_menuNavSelectHeldX64) ForwardKeyToMenuX64(kKeyEnterX64, selectHeld ? 1 : 0);
+        if (selectHeld != g_menuNavSelectHeldX64) {
+            // "Resume Game" (pause list, first item): forwarding Enter to it only half-closes the menu (UI cleared, blur +
+            // pause remain). Close it the way Esc does -- the full native path (live-reported 2026-09-21).
+            static bool s_selectSwallowedForResume = false;
+            if (selectHeld) {
+                char focusGroup[64] = {};
+                int focusIndex = -1, focusSiblings = -1;
+                s_selectSwallowedForResume =
+                    TryGetRealFocusedGroupAndIndexX64(focusGroup, sizeof(focusGroup), focusIndex, focusSiblings) &&
+                    strcmp(focusGroup, "PAUSE_LIST") == 0 && focusIndex == 0;
+                if (s_selectSwallowedForResume) SendSyntheticEscX64();
+                else ForwardKeyToMenuX64(kKeyEnterX64, 1);
+            } else {
+                if (!s_selectSwallowedForResume) ForwardKeyToMenuX64(kKeyEnterX64, 0);
+                s_selectSwallowedForResume = false;
+            }
+        }
     }
     g_menuNavUpHeldX64 = upHeld;
     g_menuNavDownHeldX64 = downHeld;
@@ -3213,6 +3229,10 @@ constexpr DWORD kLevelIdleResetMs = 2000; // Pmove silent this long -- treat as 
 
 extern "C" DWORD GetLastMouseMoveTickMs(); // d3d9_hook.cpp
 
+static volatile bool g_focusLostRearmX64 = false;
+// Called from the WndProc hook (d3d9_hook.cpp) when the window is deactivated (alt-tab etc.).
+extern "C" void NotifyWindowFocusLostX64() { g_focusLostRearmX64 = true; }
+
 extern "C" void ForceReleaseStuckKbuttonsX64()
 {
     if (!g_releaseAllKbuttons) return;
@@ -3221,10 +3241,16 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
     bool pmoveLiveNow = sinceLastPmoveTick <= 500;
 
     if (sinceLastPmoveTick > kLevelIdleResetMs) {
-        // Back at a menu/loading screen (or not yet in a level at all) -- arm
-        // for the NEXT level's own first activation.
-        g_autoUnstickDoneForThisLevel = false;
-        g_autoUnstickState = AutoUnstickState::Idle;
+        // Re-arm ONLY for a level load (client in the menu/disconnected/loading state, clcState 0) or after the
+        // window lost focus -- NOT merely because Pmove was silent, which also happens while the pause menu is open
+        // (every unpause used to re-run the sweep and its ESC; user direction 2026-09-21).
+        int clcNow = -1;
+        const bool haveClc = TryGetClcStateX64(&clcNow);
+        if (!haveClc || clcNow == 0 || g_focusLostRearmX64) {
+            g_autoUnstickDoneForThisLevel = false;
+            g_autoUnstickState = AutoUnstickState::Idle;
+            g_focusLostRearmX64 = false;
+        }
         return;
     }
 
