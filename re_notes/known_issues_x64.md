@@ -10503,7 +10503,7 @@ happens to cover all of them for free.
 
 ## 2. ROADMAP: anti-aliasing and a modern-renderer path (SMAA -> DLSS / FSR2 -> path tracing -> DX12/Vulkan)
 
-**Status: Roadmap Idea.** SMAA 1x is the only item in progress (off by default until proven stable); everything else is unstarted and recorded here so the direction isn't lost. (2026-09-21, direct user direction.)
+**Status: Roadmap Idea; SMAA PARKED (2026-09-21).** SMAA 1x is implemented but off by default and not viable yet: with `SmaaEnabled=1`, even `SmaaDebugView=3` (a plain capture-and-redraw with no SMAA math) looked worse than off and cost far more frame time than expected, so the shared capture/redraw path used by the full-screen passes is suspect independent of the SMAA shaders; an area-texture channel bug (`.ra` vs `.rg`) was also found and fixed but the fixed build was not confirmed. FXAA was removed (it blurred the whole frame). Nothing else here is started. (2026-09-21, direct user direction.)
 
 **Why this exists.** MW3 (2011) has low polygon counts and low-resolution textures, and the game ships no working AA (the render target reports zero MSAA samples). An FXAA-style pass ([Video] `FxaaEnabled`, shipped 2026-09-21) can only blur jagged edges; it cannot smooth geometric edges without softening the whole frame. Real edge smoothing needs a shape-aware method.
 
