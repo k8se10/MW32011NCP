@@ -411,6 +411,8 @@ item below.
 
 26. **`[Experimental] UnboundedDevLog` dev toggle.** Removes the caps and filters on the diagnostic logs (`[x64-fontid-diag]` logs every distinct string, `[x64-hudelem-draw]`, res-scale and auto-mantle diagnostics uncapped) so a capture session can't miss data. The log file is still truncated at every boot. Dev-only; off by default.
 
+27. **Survival buy-station / use-prompt glyphs on `-x64`.** "Hold ^3F^7 to use Weapon Armory / Equipment Armory / Air Support" (and "...to place..." prompts) now get the controller glyph. A live capture showed these reach the native text hook as plain expanded text with no localized template, so they are matched by structure ("Hold|Press ^N<key>^7 to use ...") and drawn through the existing Interact glyph slot, replacing the native text. Build-verified; not yet live-tested.
+
 
 ### Fixed
 1. **Crash on launch with the sniper Fire/ADS fix's own log line.** The

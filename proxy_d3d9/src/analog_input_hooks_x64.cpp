@@ -5444,7 +5444,17 @@ void Hook_DrawTextX64(
             bool isThrowbackHint = throwbackTmpl && LooksSaneX64(reinterpret_cast<uintptr_t>(throwbackTmpl)) &&
                 TextMatchesTemplateStructurallyX64(text, throwbackTmpl, "&&1");
 
-            if (isMantleHint || isPickupHint || isThrowbackHint) {
+            // Use-prompts (Survival buy stations / Air Support / Equipment Armory, sentry placement) -- 2026-09-21,
+            // from the live capture: "Hold ^3F^7 to use Weapon Armory" / "Hold ^3F^7 to use Air Support" /
+            // "Hold ^3F^7 to use Equipment Armory" all reach this hook as plain expanded text (they are not
+            // script hudelems and have no localized reference template), so match the fixed structure instead:
+            // "Hold|Press ^N<key>^7 to use ..." or "... to place ...". x86 reached the same strings via its
+            // extraBigFont check, which x64 cannot do (Font_s.fontName offset unresolved).
+            const bool isUseHint = !isMantleHint && !isPickupHint && !isThrowbackHint &&
+                (strncmp(text, "Hold ^", 6) == 0 || strncmp(text, "Press ^", 7) == 0) &&
+                (strstr(text, "^7 to use ") != nullptr || strstr(text, "^7 to place") != nullptr);
+
+            if (isMantleHint || isPickupHint || isThrowbackHint || isUseHint) {
                 size_t textLen = strlen(text);
                 ColorHighlightSpanX64 span = FindColorHighlightSpanX64(text, textLen);
                 if (span.found) {
