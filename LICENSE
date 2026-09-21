@@ -85,6 +85,14 @@ license, unmodified in license terms:
   and in both files' own header comments per its own attribution note, not
   vendored as a separate third-party directory since only the algorithm
   (not its own hooking mechanism or any of its files) was ported.
+- The `[Video] Smaa*` edge anti-aliasing passes (`re_notes/shaders/SMAA.hlsl`,
+  `re_notes/shaders/smaa_passes.hlsl`, the compiled `proxy_d3d9/src/smaa_*_ps.h`
+  bytecode, and the `smaa_area_tex.h`/`smaa_search_tex.h` lookup textures),
+  based on SMAA — Enhanced Subpixel Morphological Antialiasing by Jorge Jimenez,
+  Jose I. Echevarria, Belen Masia, Fernando Navarro and Diego Gutierrez
+  ([`iryoku/smaa`](https://github.com/iryoku/smaa), Copyright 2013 the authors,
+  MIT license — the full permission notice is preserved at the top of
+  `re_notes/shaders/SMAA.hlsl` and each `smaa_*_tex.h`).
 - OpenAssetTools (`tools/iw5oat/`), forked 2026-09-14 from
   `Laupetin/OpenAssetTools` via a history-preserving `git subtree` merge, as
   the base for this project's own in-house IW5 x64 zone/fastfile tooling

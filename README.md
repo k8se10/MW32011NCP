@@ -561,6 +561,12 @@ persistent `.iwd` archive read cache
 redistribution license is asserted for the ported source; credited here per
 its own attribution note.
 
+The x64 line's `[Video] Smaa*` anti-aliasing passes are based on **SMAA** by
+Jorge Jimenez, Jose I. Echevarria, Belen Masia, Fernando Navarro and Diego
+Gutierrez (**[iryoku/smaa](https://github.com/iryoku/smaa)**, Copyright 2013,
+MIT license) — reference shader, area and search lookup textures used with the
+authors' license notice preserved.
+
 This project also embeds **[Isotherm Sans](https://github.com/k8se10/isotherm-sans)**
 (UI, Condensed, and Italic styles) as a private, in-process-only font — a
 modernized derivative of [Manrope](https://github.com/sharanda/manrope)
