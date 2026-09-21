@@ -1284,7 +1284,7 @@ void LoadModConfig()
     ReadBool(path, "Video", "FxaaEnabled", g_modConfig.fxaaEnabled);
     ReadFloat(path, "Video", "FxaaSpanMax", g_modConfig.fxaaSpanMax);
     ReadFloat(path, "Video", "FxaaEdgeThreshold", g_modConfig.fxaaEdgeThreshold);
-    if (g_modConfig.fxaaSpanMax < 2.0f) g_modConfig.fxaaSpanMax = 2.0f;
+    if (g_modConfig.fxaaSpanMax < 1.0f) g_modConfig.fxaaSpanMax = 1.0f;
     if (g_modConfig.fxaaSpanMax > 16.0f) g_modConfig.fxaaSpanMax = 16.0f;
     if (g_modConfig.fxaaEdgeThreshold < 0.03f) g_modConfig.fxaaEdgeThreshold = 0.03f;
     if (g_modConfig.fxaaEdgeThreshold > 0.5f) g_modConfig.fxaaEdgeThreshold = 0.5f;

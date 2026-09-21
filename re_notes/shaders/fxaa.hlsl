@@ -25,7 +25,7 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0
     float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
 
     // No edge here -- leave the pixel untouched (keeps text/flat areas crisp).
-    if ((lumaMax - lumaMin) < max(0.0312, lumaMax * params.y))
+    if ((lumaMax - lumaMin) < max(0.0625, lumaMax * params.y))
         return texM;
 
     float2 dir;
