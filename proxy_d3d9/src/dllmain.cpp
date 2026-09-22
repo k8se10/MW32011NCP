@@ -120,49 +120,37 @@ constexpr DWORD kLogFlushIntervalMs = 1000;
 // crashes. This handler was doing a real, synchronous, blocking disk write
 // (fflush) for every single one of those, unconditionally, on whichever
 // thread happened to raise it -- for the vast majority of exceptions, that's
-// the game's own main thread. A real native code path specifically taken on
-// an unarmored hit (matching this project's own x86-era `visionset_pain`
-// research into native code that only runs on that exact path) raising even
-// one internally-caught SEH/C++ exception would be enough to trigger this,
-// completely independent of anything this project logs or how much of it --
-// explaining why disabling every individual logged feature never helped.
-// Fixed by filtering to exception codes that would ACTUALLY crash the process
-// if left unhandled -- the only case this handler's own stated purpose (a
-// fully flushed log for genuine crash diagnosis) requires -- and skipping the
-// synchronous flush entirely for everything else, same "never handle, only
-// observe" contract as before, just no longer paying a real disk I/O cost for
-// exceptions nothing was ever going to crash from.
-bool IsLikelyFatalExceptionCode(DWORD code)
+// the game's own main thread.
+//
+// FIRST FIX ATTEMPT (same day) filtered to exception codes that look
+// genuinely fatal (access violation, stack overflow, etc.) -- live-retested,
+// did NOT fix it. Real reason, found on reflection: this project's own code
+// is full of `__try`/`__except(EXCEPTION_EXECUTE_HANDLER)` guards around
+// probing possibly-invalid memory (TryResolveGscInternedString and every
+// other SEH-guarded read this codebase uses for defensive reads out of the
+// game's own process memory) -- a real, EXPECTED, internally-caught
+// EXCEPTION_ACCESS_VIOLATION from one of those still matched that filter and
+// still triggered a synchronous flush, since a vectored handler fires on the
+// first-chance exception regardless of whether an inner __except is about to
+// catch it a few frames up. A real native code path specifically taken on an
+// unarmored hit (matching this project's own x86-era `visionset_pain`
+// research into native code with a distinct unarmored-only path) plausibly
+// hits exactly this shape.
+//
+// REAL FIX: don't fflush() from inside a vectored handler at all. The
+// periodic background thread (LogFlushThreadProc below) already flushes
+// every kLogFlushIntervalMs (1s) regardless -- accepting the same tradeoff
+// this file's own comment already flagged when that design was chosen
+// (losing at most the last <1s of buffered lines on a hard, unclean kill),
+// which is a real but minor diagnostic risk next to a live-confirmed,
+// repeatedly-reproducing performance bug. Handler kept installed (still
+// "never handle, only observe" -- EXCEPTION_CONTINUE_SEARCH, never
+// suppresses anything) purely so a future, more targeted mechanism (e.g. a
+// real is-this-actually-unhandled check, which a VEH callback structurally
+// cannot do on its own) has an obvious place to land later.
+LONG WINAPI FlushLogOnCrash(EXCEPTION_POINTERS* /*exceptionInfo*/)
 {
-    switch (code) {
-        case EXCEPTION_ACCESS_VIOLATION:
-        case EXCEPTION_STACK_OVERFLOW:
-        case EXCEPTION_ILLEGAL_INSTRUCTION:
-        case EXCEPTION_PRIV_INSTRUCTION:
-        case EXCEPTION_INT_DIVIDE_BY_ZERO:
-        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
-        case EXCEPTION_IN_PAGE_ERROR:
-        case EXCEPTION_NONCONTINUABLE_EXCEPTION:
-        case 0xC0000409: // STATUS_STACK_BUFFER_OVERRUN -- this project's own recurring
-                          // sprintf_s-overflow crash class, real and worth a flush for.
-            return true;
-        default:
-            // Deliberately excludes 0xE06D7363 (standard MSVC C++ exception, already
-            // documented elsewhere in this codebase as benign/expected -- see the
-            // x64dbg workflow notes on auto-ignoring it) and everything else: normal
-            // SEH-based control flow, debugger first-chance breakpoints, etc. -- none
-            // of these would ever reach this handler as a genuine unhandled crash.
-            return false;
-    }
-}
-
-LONG WINAPI FlushLogOnCrash(EXCEPTION_POINTERS* exceptionInfo)
-{
-    if (g_log && exceptionInfo && exceptionInfo->ExceptionRecord &&
-        IsLikelyFatalExceptionCode(exceptionInfo->ExceptionRecord->ExceptionCode)) {
-        fflush(g_log);
-    }
-    return EXCEPTION_CONTINUE_SEARCH; // never handle -- observe-and-flush only
+    return EXCEPTION_CONTINUE_SEARCH; // never handle -- observe only, no flush (see above)
 }
 
 // MOVED OFF THE CALLING THREAD (2026-08-25, live-reported: recurring hitching
