@@ -756,6 +756,8 @@ item below.
 
 42. **Mod-wide hold + fade for hint glyphs and their text (`-x64`).** Every overlay hint (gameplay hints such as interact/ready-up/mantle, and the menu corner hints) now holds fully visible for 100 ms after its native draw stops being detected, then fades out over 50 ms, and fades in over 50 ms when it first appears. A hint that is detected repeatedly therefore looks solid instead of flickering, and it replaces the earlier fixed 120 ms re-draw guard. Build-verified; not yet live-tested.
 
+43. **Hint glyphs only draw on the visible presentation pass (`-x64`).** EndScene also fires for the offscreen blur/tint passes (2048x2048 targets), and hints drawn there used a different resolution scale each time, so every hint's text texture was re-rasterised at a different font height on alternate EndScenes (heavy, and it read as flicker at the buy stations). Hint drawing and request consumption now happen only when the current render target matches the back buffer size (failing open after 30 consecutive mismatches); requests made during offscreen passes wait for the visible one, and the hold + fade above covers native-draw gaps. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

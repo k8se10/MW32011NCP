@@ -1566,6 +1566,38 @@ void PrewarmGlyphIconTextures(void* device)
 // draws solid UI chrome (white bars/panels), the custom cursor, or a real .menu DDS
 // asset deliberately leaves this false -- this is specifically a cosmetic override
 // for text/glyph draws, not a general rendering hook.
+// True on the VISIBLE presentation pass: the current render target has the same size as the swap-chain back buffer.
+// EndScene also fires for the offscreen passes (the blur/tint targets are 2048x2048 -- see the alternating
+// "[overlay-hud][res-scale] real screen size=2048x2048" log lines). Drawing hints on those passes used a different
+// resolution scale each time, so every hint's text texture was re-rasterised at a different font height on alternate
+// EndScenes (heavy, and it showed as flicker). Hint drawing and request-consumption now happen only on the visible
+// pass; requests made during offscreen passes simply wait for it. Fails open after 30 consecutive non-matching
+// EndScenes so a size mismatch can never hide the overlay permanently.
+bool IsVisiblePresentationPass(void* device)
+{
+    typedef HRESULT(WINAPI* GetBackBuffer_t)(void* This, UINT iSwapChain, UINT iBackBuffer, DWORD Type, void** ppBackBuffer);
+    static int s_consecutiveMismatch = 0;
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getRenderTarget = reinterpret_cast<GetRenderTarget_t>(deviceVtbl[kGetRenderTargetVtableIndex]);
+    auto getBackBuffer = reinterpret_cast<GetBackBuffer_t>(deviceVtbl[18]);
+    void* rt = nullptr;
+    void* bb = nullptr;
+    bool same = true; // fail open when the queries fail
+    if (SUCCEEDED(getRenderTarget(device, 0, &rt)) && rt && SUCCEEDED(getBackBuffer(device, 0, 0, 0, &bb)) && bb) {
+        SurfaceDesc rd{}, bd{};
+        void** rv = *reinterpret_cast<void***>(rt);
+        void** bv = *reinterpret_cast<void***>(bb);
+        if (SUCCEEDED(reinterpret_cast<SurfaceGetDesc_t>(rv[kSurfaceGetDescVtableIndex])(rt, &rd)) &&
+            SUCCEEDED(reinterpret_cast<SurfaceGetDesc_t>(bv[kSurfaceGetDescVtableIndex])(bb, &bd))) {
+            same = (rd.Width == bd.Width && rd.Height == bd.Height);
+        }
+    }
+    if (rt) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(rt))[kSurfaceReleaseVtableIndex])(rt);
+    if (bb) reinterpret_cast<Release_t>((*reinterpret_cast<void***>(bb))[kSurfaceReleaseVtableIndex])(bb);
+    if (same) { s_consecutiveMismatch = 0; return true; }
+    return ++s_consecutiveMismatch >= 30;
+}
+
 // ---- Mod-wide hold + fade for hint glyphs and their text (2026-09-22, user design) -------------------------------
 // The native draws that trigger our overlay hints are intermittent (extra passes, menu animations), which showed as
 // flicker. Once a hint stops being detected it is held fully visible for kHintHoldMs, then faded out over kHintFadeMs;
@@ -2310,6 +2342,8 @@ void DrawGameplayHintSlotsIfRequested(void* device)
         }
     }
 #endif
+    // Visible pass only (see IsVisiblePresentationPass): pending requests stay set until then.
+    if (!IsVisiblePresentationPass(device)) return;
     // Hold + fade persistence (see UpdateHintFade): requests are consumed here, and each slot keeps drawing through short
     // detection gaps instead of flickering.
     static HintFadeState s_gpFade[kGameplayHintSlotCount];
@@ -2496,8 +2530,9 @@ bool IsRenderingToBackBuffer(void* device)
 // stale ones.
 void DrawMenuHintsIfRequested(void* device)
 {
-    // (No render-target gate here: it made the glyph flicker on EVERY screen -- the hint is now requested from hardcoded
-    // positions each call while paused, so drawing on an offscreen EndScene is harmless.)
+    // Visible pass only (see IsVisiblePresentationPass): requests wait for it, nothing is consumed or drawn on the
+    // offscreen blur/tint EndScenes.
+    if (!IsVisiblePresentationPass(device)) return;
 #if defined(_M_X64) || defined(_WIN64)
     // Pause-menu Back glyph: drawn from the last known-good position every rendered frame while paused, NOT from
     // whether the native Back text happened to draw this frame (that draw runs on offscreen blur passes as well and
