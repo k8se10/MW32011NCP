@@ -654,6 +654,30 @@ void PollDamageStallDiagX64()
 {
     if (!g_entityArrayBaseX64) return;
 
+    // 2026-09-22 -- direct live report: a full session took real damage and NOT
+    // ONE [x64-stall-diag] line appeared, not even the "armed" line -- meaning
+    // detection itself never fires, not that the stall is just missing from a
+    // clean window. This heartbeat shows exactly which stage is failing (second-
+    // entity false-positive, IsRealPlayerEntity failing, an implausible health
+    // read, or genuinely no delta ever computed) instead of guessing again.
+    // Rate-limited to once per 2s -- cheap, always on, not gated by anything.
+    {
+        static DWORD s_lastHeartbeatMs = 0;
+        DWORD nowHb = GetTickCount();
+        if (nowHb - s_lastHeartbeatMs >= 2000) {
+            s_lastHeartbeatMs = nowHb;
+            bool secondPresent = SecondRealPlayerEntityPresentX64();
+            uint8_t* localHb = LocalPlayerEntityX64();
+            bool isRealHb = IsRealPlayerEntityX64(localHb);
+            int rawHealthHb = isRealHb ? *reinterpret_cast<volatile int*>(localHb + kHealthFieldOffsetX64) : -99999;
+            char hb[224];
+            sprintf_s(hb, "[x64-stall-diag-hb] entityBase=0x%p secondEntityPresent=%d isRealPlayerEntity=%d "
+                "rawHealth=%d lastKnownHealth=%d", reinterpret_cast<void*>(g_entityArrayBaseX64),
+                secondPresent ? 1 : 0, isRealHb ? 1 : 0, rawHealthHb, g_damageStallLastHealthX64);
+            LogFromController(hb);
+        }
+    }
+
     if (SecondRealPlayerEntityPresentX64()) {
         g_damageStallLastHealthX64 = -1;
     } else {
