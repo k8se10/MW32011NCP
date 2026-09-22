@@ -7398,8 +7398,8 @@ void DrawBuildWatermark(void* device)
     const float wmScale = static_cast<float>(kWmFontHeightPx) / 20.0f; // EnsureLeftAlignedTextTexture's own baseline is 20px
     // Bottom-right, close to the very edge (design space, 1920x1080 basis) -- pulled in further after it clipped
     // other UI at a 10px margin.
-    constexpr float kWmRightMarginPx = 10.0f;
-    constexpr float kWmBottomMarginPx = -2.0f; // slightly past the bottom edge, per direct request
+    constexpr float kWmRightMarginPx = -40.0f; // moved 50px further right (was 10)
+    constexpr float kWmBottomMarginPx = -5.0f; // moved 3px further down (was -2)
     const float drawX = 1920.0f - kWmRightMarginPx - static_cast<float>(widthPx);
     const float drawY = 1080.0f - kWmBottomMarginPx - static_cast<float>(kTextureHeight) * wmScale;
     // Grey, ~25% alpha. At low opacity a pale grey blends toward white against a dark background -- darkened the RGB
