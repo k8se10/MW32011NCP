@@ -1077,25 +1077,34 @@ item below.
    in place — additive, inert-if-unneeded, not the actual cause but not
    wrong to have shipped either. See `re_notes/known_issues_x64.md`
    issue #1 for the full trail.
-2. **Gameplay controller-glyph icon overlays — PARTIAL, not fully resolved
-   (updated, item 22 above).** Items 18/19/21/22 now draw real icons/tracking
-   for Mantle, weapon pickup/swap/pickup-health, grenade throwback, Reload,
-   every menu corner hint (Back/Friends/Quit/Leaderboards/Game Summary), the
-   Special-Ops-modal/Friends-list Friends-suppression logic, the
-   highlighted-item A-glyph, the F2/F3 glyph-position editor, and the custom
-   cursor. **Still genuinely native/unmodified**: buy-station's "Hold F to
-   use Weapon Armory," Survival's ready-up prompt (F5), and turret placement
-   (Sentry-Place) — buy-station and ready-up are blocked on x64's real
-   `Font_s` `fontName` offset, still unconfirmed (needed for
-   `IsGameplayHintFont`-style filtering, since neither has a known
-   reference-key template even on `-x86`, and a dedicated investigation
-   could not resolve the offset via decompile); Sentry-Place's own reference
-   string wasn't found anywhere in the x64 binary. See
+2. **UPDATE 2026-09-19/21 — Survival ready-up's own prompt and buy-station's
+   use-prompt are now both RESOLVED, full glyph+text replacements, not just
+   detection.** Ready-up: the real native draw caller was found
+   (`FUN_140046a30`, the client script-hudelem text draw, via a full
+   text-draw-path enumeration — see item 17 above) and hooked directly,
+   suppressing the native draw and substituting a real glyph + "Hold ... to
+   ready up: NN" text. Buy-station/use-prompt: resolved via a structural
+   template match ("Hold/Press ^N key ^7 to use/place") rather than needing
+   the blocked font offset at all. **Still genuinely native/unmodified**:
+   turret placement (Sentry-Place) and Campaign QTE prompts — both remain
+   blocked on x64's real `Font_s` `fontName` offset, still unconfirmed
+   (needed for `IsGameplayHintFont`-style filtering, since neither has a
+   known reference-key template even on `-x86`, and a dedicated
+   investigation could not resolve the offset via decompile); Sentry-Place's
+   own reference string wasn't found anywhere in the x64 binary. See
    `re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and why
    each remaining case is blocked.
-3. **FXAA and a forced-MSAA option** don't exist on either line — checked
-   directly, and neither was ever actually built even on the old `-x86`
-   line, only ever planned. Real future work, not a regression.
+3. **UPDATE 2026-09-21 — FXAA and SMAA were both actually built and shipped
+   this session, correcting the entry below.** `[Video] FxaaEnabled` (an
+   edge-blur-only pass) and `[Video] SmaaEnabled` (real SMAA 1x, iryoku
+   reference, MIT-licensed and credited) both shipped 2026-09-21, off by
+   default. SMAA is **parked**, not viable yet: even a plain capture-and-
+   redraw with no SMAA math (`SmaaDebugView=3`) looked worse than off and
+   cost far more frame time than expected, meaning the shared capture/redraw
+   path the full-screen passes share (also used by motion blur/FSR) is
+   itself suspect, independent of the SMAA shaders. FXAA works but is
+   limited to blurring jagged edges. See `re_notes/known_issues_x64.md`
+   issue #2 for the staged AA/renderer roadmap.
 4. **The native low-health "You are hurt, get to cover" TEXT is missing
    on the current retail x64 build — confirmed to be Activision's own
    regression, not caused by this project.** A live-reported symptom
@@ -1116,3 +1125,12 @@ item below.
    native health-ratio detection and the text-overlay infrastructure this
    would need. See `re_notes/known_issues_x64.md`'s newest round for the
    full trail.
+5. **Pause-menu Back glyph still flickers.** Purely cosmetic (Back still
+   functions correctly) but not yet closed despite heavy iteration
+   2026-09-21/22: the pause menu's own Back glyph is now drawn from a
+   stored position every frame instead of the native (flickering) draw,
+   and buy-station Back settled back on a native-driven, template-text-
+   matched approach after a hardcoded-position attempt was tried and
+   reverted — but a residual flicker on the pause-menu Back glyph
+   specifically is still present as of the latest build. Tracked for a
+   follow-up pass.
