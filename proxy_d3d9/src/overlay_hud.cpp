@@ -7394,14 +7394,16 @@ void DrawBuildWatermark(void* device)
     if (!EnsureLeftAlignedTextTexture(device, s_wmTexture, s_wmRenderedFor, sizeof(s_wmRenderedFor), text,
                                        s_wmLastFontHeight, kWmFontHeightPx, FontRole::Default))
         return;
+    const int widthPx = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, kWmFontHeightPx, FontRole::Default);
     const float wmScale = static_cast<float>(kWmFontHeightPx) / 20.0f; // EnsureLeftAlignedTextTexture's own baseline is 20px
-    // Top-left, ~30px from the top at 1440p (user-specified) -- 1440p's real scaleY is 1440/1080 = 1.3333, so the
-    // design-space (1920x1080 basis) margin that lands on 30 real px there is 30 / 1.3333 = 22.5.
-    constexpr float kWmLeftMarginPx = 10.0f;
-    constexpr float kWmTopMarginPx = 22.5f;
-    const float drawX = kWmLeftMarginPx;
-    const float drawY = kWmTopMarginPx;
-    constexpr DWORD kWmColor = 0x40808080u; // ~25% alpha, grey -- "very hard to notice but there," made more transparent per direct request
+    // Bottom-right, 30px up from the bottom edge (design space, 1920x1080 basis) -- reverted from top-left.
+    constexpr float kWmRightMarginPx = 10.0f;
+    constexpr float kWmBottomMarginPx = 30.0f;
+    const float drawX = 1920.0f - kWmRightMarginPx - static_cast<float>(widthPx);
+    const float drawY = 1080.0f - kWmBottomMarginPx - static_cast<float>(kTextureHeight) * wmScale;
+    // Grey, ~25% alpha. At low opacity a pale grey blends toward white against a dark background -- darkened the RGB
+    // (0x50 instead of 0x80) so the hue still reads as grey rather than washing out to a whitish smudge.
+    constexpr DWORD kWmColor = 0x40505050u;
     DrawGenericTexturedQuad(device, s_wmTexture, drawX * scaleX, drawY * scaleY,
                               static_cast<float>(kTextureWidth) * scaleX * wmScale,
                               static_cast<float>(kTextureHeight) * scaleY * wmScale,
