@@ -859,8 +859,17 @@ void Rumble_Install()
 void Rumble_Tick()
 {
 #if defined(_M_X64) || defined(_WIN64)
-    PollDamageRumbleX64();
-    PollDamageStallDiagX64(); // 2026-09-22, always-on stall investigation -- see its own comment
+    // 2026-09-22, direct user instruction ("the damage read is 100% whats causing
+    // it, comment the whole thing out and we will see") -- BOTH health-reading
+    // functions disabled entirely for this test build. If the lag is gone with
+    // these off, the health-field read itself (g_entityArrayBaseX64 + player
+    // stride + kHealthFieldOffsetX64, dereferenced every single gameplay tick,
+    // not just on a delta) is confirmed as the cause -- next step is finding out
+    // WHY that specific read is expensive/dangerous (wrong offset landing on
+    // unmapped or "hot"/cross-thread-contended memory, a guard page, etc.),
+    // not guessing at unrelated systems again.
+    // PollDamageRumbleX64();
+    // PollDamageStallDiagX64();
     // Armor-scan diagnostic not ported to x64 this pass -- see its own comment in the
     // x64 PORT block above (out of scope: an off-by-default exploratory RE tool, not
     // one of the two real shipped mechanisms).
