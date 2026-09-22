@@ -452,7 +452,7 @@ char g_textureRenderedFor[160] = {};  // which message string the texture curren
 constexpr int kWarningTextureWidth = 640;
 constexpr int kWarningTextureHeight = 540; // was 160 (welcome modal feature list)
 void* g_warningTextTexture = nullptr;
-char g_warningTextureRenderedFor[512] = {};
+char g_warningTextureRenderedFor[1024] = {}; // must be >= g_overlayText: a shorter cache key made the modal re-render every frame (lag)
 
 // Set once by LoadOverlayFonts (DllMain, DLL_PROCESS_ATTACH) -- needed here too so the
 // glyph-icon loader below can FindResourceA against THIS DLL's own embedded resources
