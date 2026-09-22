@@ -437,7 +437,9 @@ struct ModConfig
         // killstreaks like Predator Missile. NOT YET LIVE-CONFIRMED to help or be
         // harmless; toggle off here if it's ever suspected of causing a gameplay
         // regression, without needing to touch analog_input_hooks.cpp.
-    bool bindResolverHookLogging = true; // task #6/#35 (2026-07-21): the bind-resolver
+    bool bindResolverHookLogging = false; // 2026-09-22, release prep: was `true` -- a dev-only
+        // logging toggle should not default on for every fresh player install. See
+        // re_notes/known_issues.md issue #35 for what this actually does. task #6/#35 (2026-07-21): the bind-resolver
         // text hook (FUN_0061f6f0) itself is always installed and always forwards to
         // the real trampoline completely unmodified (log-only first pass, no glyph
         // substitution yet -- see re_notes/known_issues.md issue #35) -- this toggle
@@ -464,7 +466,9 @@ struct ModConfig
         // prompt character instead (see known_issues.md issue #48) -- this toggle
         // stays here only in case that pivot doesn't pan out; don't assume it's on
         // the critical path for glyph work going forward.
-    bool hudFontIdLogging = true; // task #6/#34 (2026-07-21): read-only diagnostic hook
+    bool hudFontIdLogging = false; // 2026-09-22, release prep: was `true` -- same reasoning as
+        // bindResolverHookLogging above, a dev-only diagnostic shouldn't default on for every
+        // fresh install. task #6/#34 (2026-07-21): read-only diagnostic hook
         // on FUN_00690c80 (the real glyph-draw call every on-screen HUD/menu text goes
         // through) that logs the real Font_s.fontName whenever it CHANGES -- built to
         // empirically identify which real font renders interact-hint text, after
