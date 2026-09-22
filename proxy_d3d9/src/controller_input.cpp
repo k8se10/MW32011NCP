@@ -837,13 +837,43 @@ void ApplyPendingVibration()
     QueryPerformanceFrequency(&benchFreq);
     QueryPerformanceCounter(&benchStart);
 
+    // 2026-09-22, live report ("vibration doesnt work, not firing ever") -- this call's
+    // own return code was never checked or logged, so a silent hardware-level failure
+    // (stale/wrong slot after a receiver re-enumeration, a virtual XInput device via
+    // Steam Input not forwarding force feedback, etc.) was previously indistinguishable
+    // from "never even tried." Logged, rate-limited to the first 10 calls plus any
+    // non-zero (failing) return afterward -- a real device-not-connected/failure result
+    // will always be visible, a healthy session won't spam the log forever.
+    static int s_applyVibLogCount = 0;
     if (isDualSense) {
         DualSense_SetVibration(static_cast<uint8_t>(leftMotor * 255.0f), static_cast<uint8_t>(rightMotor * 255.0f));
+        if (s_applyVibLogCount < 10) {
+            ++s_applyVibLogCount;
+            char buf[160];
+            sprintf_s(buf, "[xinput-vib-diag] DualSense_SetVibration(L=%.2f, R=%.2f) call #%d",
+                leftMotor, rightMotor, s_applyVibLogCount);
+            LogFromController(buf);
+        }
     } else if (g_XInputSetState) {
         XINPUT_VIBRATION vib{};
         vib.wLeftMotorSpeed = static_cast<WORD>(leftMotor * 65535.0f);
         vib.wRightMotorSpeed = static_cast<WORD>(rightMotor * 65535.0f);
-        g_XInputSetState(static_cast<DWORD>(slot), &vib);
+        DWORD result = g_XInputSetState(static_cast<DWORD>(slot), &vib);
+        if (s_applyVibLogCount < 10 || result != ERROR_SUCCESS) {
+            ++s_applyVibLogCount;
+            char buf[192];
+            sprintf_s(buf, "[xinput-vib-diag] XInputSetState(slot=%d, L=%u, R=%u) = %lu%s call #%d",
+                slot, vib.wLeftMotorSpeed, vib.wRightMotorSpeed, result,
+                result == ERROR_SUCCESS ? " (OK)" : " (FAILED -- see winerror.h; 1167=ERROR_DEVICE_NOT_CONNECTED)",
+                s_applyVibLogCount);
+            LogFromController(buf);
+        }
+    } else {
+        if (s_applyVibLogCount < 10) {
+            ++s_applyVibLogCount;
+            LogFromController("[xinput-vib-diag] vibration write requested but g_XInputSetState is null "
+                "(EnsureLoaded never resolved a real SetState export) -- call skipped entirely");
+        }
     }
 
     QueryPerformanceCounter(&benchEnd);
