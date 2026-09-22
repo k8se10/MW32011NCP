@@ -1,0 +1,28 @@
+MATCH "PLATFORM_HOLD" @ 1403f0550 (full string: "PLATFORM_HOLD_BREATH")
+  from 14005254c type=DATA IN FUNCTION FUN_140052220@140052220
+  (1 references to string start)
+MATCH "HINT_" @ 140408b70 (full string: "HINT_INHERIT")
+  from 14014daae type=DATA IN FUNCTION FUN_14014da50@14014da50
+  from 1401693a1 type=DATA IN FUNCTION FUN_1401692f0@1401692f0
+  (2 references to string start)
+MATCH "HINT_" @ 14040b380 (full string: "?HINT_NOICON")
+  (0 references to string start)
+MATCH "HINT_" @ 14040b390 (full string: "HINT_ACTIVATE")
+  from 14014db00 type=PARAM IN FUNCTION FUN_14014da50@14014da50
+  from 1401693ea type=PARAM IN FUNCTION FUN_1401692f0@1401692f0
+  from 1404c78c0 type=DATA IN DATA
+  (3 references to string start)
+MATCH "HINT_" @ 14040b3a0 (full string: "HINT_HEALTH")
+  from 1404c78c8 type=DATA IN DATA
+  (1 references to string start)
+MATCH "HINT_" @ 14040b3b0 (full string: "HINT_FRIENDLY")
+  from 1404c78d0 type=DATA IN DATA
+  (1 references to string start)
+MATCH "hintstring" @ 140402a44 (full string: "Too many different hintstring values on weapons. Max allowed is %i different strings")
+  (0 references to string start)
+MATCH "hintstring" @ 14040b444 (full string: "Too many different hintstring key values on trigger_use entities. Max allowed is %i different strings")
+  (0 references to string start)
+MATCH "PLATFORM_USE" @ 140425ea9 (full string: "@PLATFORM_USECONTROLLER1")
+  from 1404d11e0 type=DATA IN DATA
+  from 1404d1260 type=DATA IN DATA
+  (2 references to string start)

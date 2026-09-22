@@ -1,0 +1,25 @@
+Signature-byte dump of FUN_14000f860 @ 14000f860
+(byte offsets relative to function entry point)
+
++0x00  40 53                          PUSH RBX                                 
++0x02  48 81 EC E0 00 00 00           SUB RSP,0xe0                             
++0x09  48 8B 05 28 4C 4D 00           MOV RAX,qword ptr [0x1404e4498]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x10  48 8B D9                       MOV RBX,RCX                              
++0x13  66 41 0F 6E D8                 MOVD XMM3,R8D                            
++0x18  48 8D 4C 24 20                 LEA RCX,[RSP + 0x20]                     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1D  0F 5B DB                       CVTDQ2PS XMM3,XMM3                       
++0x20  0F 29 B4 24 D0 00 00 00        MOVAPS xmmword ptr [RSP + 0xd0],XMM6     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x28  F3 0F 59 1D D0 45 3D 00        MULSS XMM3,dword ptr [0x1403e3e60]       [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30  0F 28 CB                       MOVAPS XMM1,XMM3                         
++0x33  F3 0F 59 48 10                 MULSS XMM1,dword ptr [RAX + 0x10]        
++0x38  0F BE 42 3E                    MOVSX EAX,byte ptr [RDX + 0x3e]          
++0x3C  66 0F 6E C0                    MOVD XMM0,EAX                            
++0x40  48 8B 05 F9 4B 4D 00           MOV RAX,qword ptr [0x1404e44a0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x47  0F 5B C0                       CVTDQ2PS XMM0,XMM0                       
++0x4A  F3 0F 5E 05 1A 96 3D 00        DIVSS XMM0,dword ptr [0x1403e8ecc]       [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (82 total): 40 53 48 81 EC E0 00 00 00 48 8B 05 28 4C 4D 00 48 8B D9 66 41 0F 6E D8 48 8D 4C 24 20 0F 5B DB 0F 29 B4 24 D0 00 00 00 F3 0F 59 1D D0 45 3D 00 0F 28 CB F3 0F 59 48 10 0F BE 42 3E 66 0F 6E C0 48 8B 05 F9 4B 4D 00 0F 5B C0 F3 0F 5E 05 1A 96 3D 00
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+40 53 48 81 EC E0 00 00 00 ?? ?? ?? ?? ?? ?? ?? 48 8B D9 66 41 0F 6E D8 ?? ?? ?? ?? ?? 0F 5B DB ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 28 CB F3 0F 59 48 10 0F BE 42 3E 66 0F 6E C0 ?? ?? ?? ?? ?? ?? ?? 0F 5B C0 ?? ?? ?? ?? ?? ?? ?? ??

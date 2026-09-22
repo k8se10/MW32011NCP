@@ -4267,10 +4267,55 @@ MountedAimTickFn g_realMountedAimTick = nullptr;
 // in place of testing.
 constexpr float kMountedAimBytesPerSecond = 60.0f;
 
+// Predator Missile REAL FIX (2026-09-22, issue #30) -- see the big comment before Hook_MissileSteerConsumerX64
+// (analog_input_hooks_x64.cpp, further below) for the full trail. Live data proved: (a) FUN_14007d9f0/
+// Hook_MovementTick never fires during missile guidance (same DPV/mortar/turret 0x80000-bit routing, confirmed
+// by [x64-missile-tick-diag] never firing across two real captures); (b) FUN_14007de20/Hook_MountedAimTick IS
+// already firing during missile guidance and IS already the sole writer of cmd+0x3e/0x3f, the exact bytes the
+// missile's real steering consumer (FUN_14000f860) reads -- confirmed by [x64-missile-steer-diag]'s rawBytes
+// matching [x64-mountedaim]'s own written values exactly, live. So the byte-write pipeline was never broken --
+// the mismatch is semantic: FUN_14000f860 treats cmd+0x3e/0x3f as the CURRENT STICK POSITION (byte/127.0 *
+// 35deg/sec * frametime, re-read fresh every tick), but the existing DPV/mortar/turret logic below treats them
+// as a MOUSE-DELTA-style running accumulator (small per-tick increments, correct for that system's own real
+// FUN_14007d3b0 consumer) -- at kMountedAimBytesPerSecond=60 and a ~24ms tick, full stick deflection only ever
+// adds ~1-2 to the byte per frame, an effectively negligible fraction of the -128..127 range the missile
+// consumer expects for a real "stick pushed" signal -- exactly the "sensitivity ~1000x too low" symptom
+// (direct user diagnosis, matching this project's own already-documented missileHellfireUpAccel=1000 vs
+// missileRemoteSteerPitchRate/YawRate=35.0 disparity, known_issues.md issue #30).
+//
+// Fix, scoped ONLY to confirmed missile guidance (g_missileGuidanceLinkedX64): write cmd+0x3e/0x3f as the
+// LEFT stick's current absolute position each tick (direct user correction: "its LS to control a missile
+// natively on console," and the missile consumer's own re-read-every-frame semantics matches an absolute
+// position input, not a delta) instead of the DPV/mortar/turret right-stick delta-accumulate path below, which
+// stays completely unchanged for that case. Pitch/yaw axis assignment and sign mirror the existing convention
+// (leftY -> 0x3e respecting Invert Look, leftX -> 0x3f) -- NOT independently confirmed against real console
+// missile-steering sign; flag as the first thing to check on an actual playtest if it steers backwards.
 void __fastcall Hook_MountedAimTick(int player, void* cmd)
 {
     g_realMountedAimTick(player, cmd);
     if (!cmd) return;
+    auto* cmdBytesEarly = reinterpret_cast<unsigned char*>(cmd);
+
+    if (g_missileGuidanceLinkedX64) {
+        float lsX = 0.0f, lsY = 0.0f;
+        if (!Controller_GetLeftStick(lsX, lsY)) return; // raw, independent of the player's own move/look layout
+        float pitchIn = g_modConfig.invertLook ? -lsY : lsY;
+        cmdBytesEarly[0x3e] = static_cast<unsigned char>(ClampToSByteX64(static_cast<int>(pitchIn * 127.0f)));
+        cmdBytesEarly[0x3f] = static_cast<unsigned char>(ClampToSByteX64(static_cast<int>(lsX * 127.0f)));
+
+        static DWORD s_lastMissileSteerFixDiagMs = 0;
+        DWORD nowMsFix = GetTickCount();
+        if (nowMsFix - s_lastMissileSteerFixDiagMs >= 200) {
+            s_lastMissileSteerFixDiagMs = nowMsFix;
+            char fbuf[192];
+            sprintf_s(fbuf, "[x64-missile-steer-fix] writing LEFT-stick absolute position -- "
+                "leftStick=(%.3f,%.3f) -> cmd+0x3e=%d cmd+0x3f=%d", lsX, lsY,
+                static_cast<int>(static_cast<int8_t>(cmdBytesEarly[0x3e])),
+                static_cast<int>(static_cast<int8_t>(cmdBytesEarly[0x3f])));
+            LogFromController(fbuf);
+        }
+        return;
+    }
 
     float leftX, leftY, rightX, rightY;
     if (!Controller_GetLeftStick(leftX, leftY)) return;

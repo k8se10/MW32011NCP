@@ -1,0 +1,4 @@
+STRING @ 1403e8c28 = "missileRemoteSteerPitchRate" (block .rdata)
+  from 14000f059 type=DATA IN FUNCTION FUN_14000dba0@14000dba0
+  (1 references)
+

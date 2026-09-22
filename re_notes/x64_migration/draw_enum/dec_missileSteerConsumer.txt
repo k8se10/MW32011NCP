@@ -1,0 +1,45 @@
+================================================================
+Function: FUN_14000f860 @ 14000f860
+----------------------------------------------------------------
+
+void FUN_14000f860(float *param_1,longlong param_2,int param_3)
+
+{
+  double dVar1;
+  float fVar2;
+  float fVar3;
+  float local_c8;
+  float local_c4;
+  undefined4 local_c0;
+  undefined1 local_b8 [40];
+  undefined1 local_90 [40];
+  undefined1 local_68 [40];
+  undefined1 local_40 [56];
+  
+  local_c8 = (float)param_3 * DAT_1403e3e60 * *(float *)(DAT_1404e4498 + 0x10) *
+             ((float)(int)*(char *)(param_2 + 0x3e) / DAT_1403e8ecc);
+  local_c4 = (float)param_3 * DAT_1403e3e60 * *(float *)(DAT_1404e44a0 + 0x10) *
+             ((float)(int)*(char *)(param_2 + 0x3f) / DAT_1403e8ecc);
+  local_c0 = 0;
+  FUN_1402bd1d0(&local_c8,local_b8);
+  FUN_1402bd1d0(param_1,local_90);
+  FUN_1402b8060(local_b8,local_68);
+  FUN_1402ba560(local_68,local_90,local_40);
+  FUN_1402b7970(local_40,param_1);
+  fVar2 = *param_1 * DAT_1403e4134;
+  dVar1 = floor((double)(fVar2 + DAT_1403e3e68));
+  fVar3 = (fVar2 - (float)dVar1) * DAT_1403e4168;
+  *param_1 = fVar3;
+  fVar2 = *(float *)(DAT_1404e4490 + 0x14);
+  if (fVar2 < fVar3) {
+    *param_1 = fVar2;
+    fVar3 = fVar2;
+  }
+  if (fVar3 < *(float *)(DAT_1404e4490 + 0x10)) {
+    *param_1 = *(float *)(DAT_1404e4490 + 0x10);
+  }
+  return;
+}
+
+
+
