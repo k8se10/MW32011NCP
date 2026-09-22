@@ -96,49 +96,45 @@ and verifies its own fix, per standard responsible-disclosure practice.
 
 ## Status
 
-> **Early release -- expect hidden bugs and unfinished or unported features.** Survival is the only recommended
-> way to use the mod for now: controller support in Campaign is incomplete and Multiplayer is not supported yet. The
-> netcode security fixes are the exception -- they protect every mode, Multiplayer included. Known gaps are listed below
-> and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+> **`v0.0.1-x64` is out now — the first release on the rebuilt 64-bit line.** Survival is the recommended way to
+> use the mod (Gameplay Complete — every core control, including Predator Missile guidance, is live-confirmed);
+> Campaign ships best-effort, and Multiplayer is not supported yet. The netcode security fixes protect every mode,
+> Multiplayer included. Still early software — expect hidden bugs and unfinished or unported features. Known gaps
+> are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
 
 **Alpha, `v0.0.1-x64` line.** On 2026-09-03 MW3 received its first real
 binary update in the game's history, recompiling both `iw5sp.exe`/`iw5mp.exe`
 from 32-bit to 64-bit — a hard architectural break that invalidated every
 hook this project had. The old 32-bit (`-x86`) line is fully discontinued;
 its final state and documentation are preserved in
-[`legacy-x86-docs/`](legacy-x86-docs/) for reference. This repository is now
-rebuilding for x64 from that foundation, using the same reverse-engineering
-methodology, across all four components above.
+[`legacy-x86-docs/`](legacy-x86-docs/) for reference. This release rebuilds
+the project for x64 from that foundation, using the same reverse-engineering
+methodology, across all four components above — **almost three weeks after
+the recompile broke every prior release**, now rebuilt more resilient than
+before, with real fixes and features beyond what the `-x86` line ever shipped.
 
-**Release gate**: no `-x64` release ships until Survival controller support
-reaches the same feature completeness the `-x86` line reached before being
-discontinued — every control and the visual-enhancement suite working, not
+**Release scope**: Survival controller support reaches the same feature
+completeness the `-x86` line reached before being discontinued — every
+control and the visual-enhancement suite's headline features working, not
 just the input-remapping core. (The custom Options screen's own vanilla-
-setting tabs are a deliberately deferred exception, not a release blocker —
-see Known gaps below.) **Campaign has never been a release gate** — same as
-on the `-x86` line, where several Campaign-specific items (e.g. the AC-130
-sequence) shipped honestly marked untested rather than blocking release;
-Campaign controller support ships best-effort, verified as it's touched,
-not held to Survival's own live-test bar. **Survival's own controller-
-support scope is now Gameplay Complete (2026-09-22)** — every core control,
-Predator Missile guidance included, is live-confirmed working; further
-killstreak/mounted-weapon feel and sensitivity refinement is deferred to a
-dedicated future bulk pass rather than blocking this milestone. **Progress
-is going well — current estimate: a release within the next 14 days**,
-revised down from the original 2-4 week estimate now that the first real
-playtest has confirmed most of the build already works and found/closed
-every regression it turned up same-day. See
+setting tabs are a deliberately deferred exception — see Known gaps below.)
+**Campaign has never been a release gate** — same as on the `-x86` line,
+where several Campaign-specific items (e.g. the AC-130 sequence) shipped
+honestly marked untested rather than blocking release; Campaign controller
+support ships best-effort, verified as it's touched, not held to Survival's
+own live-test bar. **Survival's own controller-support scope reached
+Gameplay Complete on 2026-09-22** — every core control, Predator Missile
+guidance included, is live-confirmed working; further killstreak/mounted-
+weapon feel and sensitivity refinement is deferred to a dedicated future
+bulk pass. One known cosmetic bug ships with this release: the pause-menu
+Back glyph flickers (Back itself still works). See
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) issue #1 for
-the live, detailed tracking of exactly what's done and what's left,
+the live, detailed tracking of exactly what's done and what's left, and
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
-for the complete, systematic audit against every `-x86` feature (61 items
-tracked), and
-[`re_notes/x64_live_testing_checklist.md`](re_notes/x64_live_testing_checklist.md)
-for exactly what's build-verified but still needs a real playtest before
-this gate can close.
+for the complete, systematic audit against every `-x86` feature.
 
 Netcode security fixes and Multiplayer support each have their own status —
-see their own sections below; neither gates this release.
+see their own sections below; neither gated this release.
 
 ### What works right now
 
@@ -514,9 +510,11 @@ Campaign/Survival only.
    to the DLL. See the [wiki Configuration page](../../wiki/Configuration)
    for every available key.
 
-No release is currently published — see the Status section above. Building
-from source requires Windows, MSVC (Visual Studio Build Tools or Community
-with the Windows 10 SDK), and MSBuild; see
+Download the latest `v0.0.1-x64` release from this repo's
+[Releases page](../../releases/latest) or [Nexus Mods](https://www.nexusmods.com/callofdutymodernwarfare3/mods/29)
+— both ship the same zip (`d3d9.dll` + `LICENSE` + `PATCHNOTES.md` + a short
+`README.txt`). Building from source requires Windows, MSVC (Visual Studio
+Build Tools or Community with the Windows 10 SDK), and MSBuild; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full build/RE-tooling setup.
 
 ## Security: netcode vulnerability patches

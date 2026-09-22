@@ -48,10 +48,11 @@ Uninstall: delete `d3d9.dll`. Nothing else was touched.
 
 ## Main file
 
-**No main file is currently live.** No `-x64` release has shipped yet — see
-`README.md`'s release gate. Once one does, ship the same release zip already
-built for GitHub releases (`d3d9.dll` + `LICENSE` + `PATCHNOTES.md` +
-`README.txt`) rather than maintaining a separate Nexus-only archive.
+**`v0.0.1-x64` is live as of 2026-09-22** — the same release zip built for
+GitHub Releases (`d3d9.dll` + `LICENSE` + `PATCHNOTES.md` + `README.txt`),
+uploaded here rather than maintaining a separate Nexus-only archive. The
+`nexus-upload.yml` GitHub Actions workflow pushes future releases here
+automatically whenever a GitHub Release is published.
 
 ## Things to double check before every Nexus update
 - Nexus's own "Adult content"/"Contains mature content" flags — this project

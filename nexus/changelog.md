@@ -3,7 +3,7 @@
 Condensed from `PATCHNOTES.md` in the source repo — see there for the full,
 itemized detail behind each entry.
 
-## v0.0.1-x64 — Unreleased
+## v0.0.1-x64 — Alpha (2026-09-22)
 
 The first release on the `-x64` line, rebuilding this project from scratch
 against MW3's recompiled 64-bit binaries. **Survival's own controller
@@ -43,7 +43,7 @@ build — no scoreboard UI exists there).
 
 Campaign has never gated this release (same as on the prior `-x86` line,
 which also shipped it best-effort/partially untested); it ships as-is,
-verified as it's touched. **This release has not shipped.**
+verified as it's touched.
 
 The prior `-x86` line's full changelog history is preserved in this project's
 GitHub repository under `legacy-x86-docs/nexus/changelog.bbcode.txt`.

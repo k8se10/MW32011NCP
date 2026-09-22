@@ -8,50 +8,41 @@ patch history is preserved in
 
 ---
 
-## v0.0.1-x64 — Unreleased
+## v0.0.1-x64 — Alpha (2026-09-22) — first release on the rebuilt 64-bit line
 
-**Early release -- expect hidden bugs and unfinished or unported features.** Survival is the only recommended mode for now
-(Campaign controller support is incomplete, Multiplayer is not supported yet); the netcode security fixes protect every mode,
-Multiplayer included.
+**Early release -- expect hidden bugs and unfinished or unported features.** Survival is the recommended mode
+(Gameplay Complete — every core control is live-confirmed); Campaign ships best-effort, Multiplayer is not supported
+yet. The netcode security fixes protect every mode, Multiplayer included.
 
 **Summary:** The first release on the `-x64` line, rebuilding this project
-from scratch against MW3's recompiled 64-bit binaries. The first real
-playtest of this build has now happened: every core gameplay control except
-D-pad actionslot is confirmed working live, along with motion blur, main-menu
-navigation, and glyph-icon substitution. That same playtest found and closed
-several real, previously-undiscovered bugs — most notably an x64-specific
-regression where a movement-tick early-return meant to skip a no-op write
-instead silently disabled Fire, ADS, Reload, and most other controls whenever
-the stick was centered (the actual cause of "Fire/ADS randomly fails," not
-the earlier sniper-specific theory), plus three separate `sprintf_s` buffer
-overflows that made the build fail to launch entirely. A full feature-parity
-audit against the `-x86` line (`re_notes/x64_feature_parity_audit.md`), later
-extended with a full git-history sweep, found and closed dozens of real gaps
-the project's own documentation had missed — vibration, the visual-enhancement
-suite (including motion blur's own real trigger hook, found and wired only
-after the gate that depended on it had already been live-tested silent), the
-native text-draw hook nine glyph-icon categories now substitute through, and
-Sprint's silent regression to x86's own deprecated pre-kbutton design, among
-many others. On direct instruction, every Campaign killstreak-type system and
-outstanding Campaign issue with a real history of being broken was also
-investigated from GSC script logic first: DPV/Goalpost mortar/Goalpost M2
-turret aiming (never fixed on either architecture, now fixed with a real
-shared root cause), Campaign QTE/scripted-sequence button presses (Jump
-falling through the "Dust to Dust" elevator, now fixed via a synthetic
-keypress, the same technique already proven for Survival's ready-up),
-cutscene-skip audio (fixed on both `-x86` and `-x64`, with x64's own version
-turning out worse than x86's ever was), AC-130 zoom sensitivity (fixed) and
-gun-type switching (investigated, honestly still open), and SMAW's lock-on
-(confirmed to have never been a bug at all — the weapon's own data file has
-it compiled out). Predator Missile's launch is now confirmed live; its
-post-fire guidance remains open, more thoroughly mapped than ever, with a
-safe diagnostic shipped rather than a guess. The Custom Options screen's
-real vanilla-setting tabs remain a known, deliberately deferred gap — the
-INI config already covers everything this mod needs to expose. **This
-release has not shipped** — see `README.md` for the current release gate
-(parity with the `-x86` line's final state) and
-`re_notes/known_issues_x64.md` issue #1 for live, detailed status on every
-item below.
+from scratch against MW3's recompiled 64-bit binaries — shipping almost three
+weeks after that recompile broke every prior release, rebuilt more resilient
+than before, with real fixes and features beyond what the `-x86` line ever
+shipped. **Survival's own controller-support scope reached Gameplay Complete
+on 2026-09-22**: every core control is live-confirmed working, including
+Predator Missile's post-fire guidance (never fixed on either architecture
+until now), D-pad, DPV/Goalpost mortar/turret aiming, Campaign QTE button
+presses, and cutscene-skip audio. Survival ready-up and buy-station/use
+prompts are now full on-screen glyph+text replacements, not just detection.
+The visual-enhancement suite's headline features (render scale, motion blur)
+are live-confirmed and default-on, alongside three performance techniques
+absorbed from `legoliamneeson/MW3_Standalone_D3D9_Project` (frame pacing,
+wait coalescing, an `.iwd` read cache). Netcode security patching — four
+tracked, genuine, exploitable vulnerabilities in the base game's own netcode
+— ships complete, built in by default. Along the way this release closed
+several real, previously-undiscovered bugs, including a movement-tick
+early-return that silently disabled most controls whenever the stick was
+centered, multiple launch-crashing `sprintf_s` buffer overflows, and the
+real, three-part root cause of the long-standing "needs a click/input at
+launch" bug family (replacing the old pause/unpause workaround entirely).
+**One known cosmetic bug ships with this release**: the pause-menu Back
+glyph flickers (Back itself still works). Genuinely open, not blocking:
+sentry/turret-placement and Campaign QTE prompt *text* (still native),
+AC-130 gun-type switching (confirmed GSC/data-driven, no native hook point),
+SMAA (implemented, parked off by default), and the Custom Options screen's
+real vanilla-setting tabs (deliberately deferred — the INI config already
+covers everything this mod needs to expose). See `re_notes/known_issues_x64.md`
+issue #1 for live, detailed status on every item below.
 
 ### What's New
 1. **Every core gameplay control implemented.** Movement, look, Sprint,

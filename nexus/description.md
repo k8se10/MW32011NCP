@@ -11,15 +11,17 @@ and Multiplayer support (in active development). None of it works by faking
 keyboard/mouse input underneath a mapper — every piece hooks the game's own
 real internal engine functions directly.
 
-## ⚠ Alpha-stage software, no release currently available
+## ⚠ Alpha-stage software — `v0.0.1-x64` is out now
 
 This project hooks directly into a live game process. Expect bugs, rough
-edges, and unfinished features. It is being rebuilt from scratch against
-MW3's own recompiled 64-bit binaries (the game's first-ever binary update, a
-hard architectural break for every tool built on the original 32-bit
-executable) — no download is offered yet. **Survival's own controller
-support is now Gameplay Complete** (2026-09-22) — every core control,
-including Predator Missile guidance, is live-confirmed; a release is close.
+edges, and unfinished features. `v0.0.1-x64` is the first release rebuilt
+from scratch against MW3's own recompiled 64-bit binaries (the game's
+first-ever binary update, a hard architectural break for every tool built
+on the original 32-bit executable) — shipping almost three weeks after that
+recompile broke every prior release, more resilient than before, with real
+fixes and features beyond what the prior 32-bit line ever shipped.
+**Survival's own controller support is Gameplay Complete** (2026-09-22) —
+every core control, including Predator Missile guidance, is live-confirmed.
 Campaign has never gated release (same as on the prior 32-bit line, which
 also shipped it best-effort) and ships as-is. Full live status: see this
 page's Source link (GitHub) for `re_notes/known_issues_x64.md` and
@@ -122,11 +124,11 @@ Supported: retail Steam Campaign/Survival only.
 
 ## Installation
 
-No file is currently available — see the notice at the top of this page.
-Once a release ships: copy `d3d9.dll` into your MW3 install folder (the same
-folder as `iw5sp.exe`), launch the game normally, and check
-`proxy_d3d9.log` in that folder if anything looks wrong. Uninstalling is
-just deleting `d3d9.dll` — the base game files are never modified.
+Download the file from this page, extract it, and copy `d3d9.dll` (plus its
+companion files) into your MW3 install folder (the same folder as
+`iw5sp.exe`). Launch the game normally — no separate injector needed — and
+check `proxy_d3d9.log` in that folder if anything looks wrong. Uninstalling
+is just deleting `d3d9.dll` — the base game files are never modified.
 
 ## Credits & License
 

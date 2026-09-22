@@ -6,9 +6,9 @@ A native, from-scratch reverse-engineering platform for [b]Call of Duty: Modern 
 
 [hr]
 
-[size=4][b]⚠ Alpha-stage software, no release currently available[/b][/size]
+[size=4][b]⚠ Alpha-stage software — v0.0.1-x64 is out now[/b][/size]
 
-This project hooks directly into a live game process. Expect bugs, rough edges, and unfinished features. It is being rebuilt from scratch against MW3's own recompiled 64-bit binaries (the game's first-ever binary update, a hard architectural break for every tool built on the original 32-bit executable) — no download is offered yet. [b]Survival's own controller support is now Gameplay Complete[/b] (2026-09-22) — every core control, including Predator Missile guidance, is live-confirmed; a release is close. Campaign has never gated release (same as on the prior 32-bit line, which also shipped it best-effort) and ships as-is. Full live status: see this page's Source link (GitHub) for [font=Courier New]re_notes/known_issues_x64.md[/font] and [font=Courier New]re_notes/x64_feature_parity_audit.md[/font].
+This project hooks directly into a live game process. Expect bugs, rough edges, and unfinished features. v0.0.1-x64 is the first release rebuilt from scratch against MW3's own recompiled 64-bit binaries (the game's first-ever binary update, a hard architectural break for every tool built on the original 32-bit executable) — shipping almost three weeks after that recompile broke every prior release, more resilient than before, with real fixes and features beyond what the prior 32-bit line ever shipped. [b]Survival's own controller support is Gameplay Complete[/b] (2026-09-22) — every core control, including Predator Missile guidance, is live-confirmed. Campaign has never gated release (same as on the prior 32-bit line, which also shipped it best-effort) and ships as-is. Full live status: see this page's Source link (GitHub) for [font=Courier New]re_notes/known_issues_x64.md[/font] and [font=Courier New]re_notes/x64_feature_parity_audit.md[/font].
 
 Not affiliated with, endorsed by, or sponsored by Activision, Infinity Ward, or any of their affiliates.
 
@@ -44,7 +44,7 @@ Plutonium's own anti-cheat is confirmed to ban DLL injection and memory access �
 
 [size=4][b]Installation[/b][/size]
 
-No file is currently available — see the notice at the top of this page. Once a release ships: copy [font=Courier New]d3d9.dll[/font] into your MW3 install folder (the same folder as [font=Courier New]iw5sp.exe[/font]), launch the game normally, and check [font=Courier New]proxy_d3d9.log[/font] in that folder if anything looks wrong. Uninstalling is just deleting [font=Courier New]d3d9.dll[/font] — the base game files are never modified.
+Download the file from this page, extract it, and copy [font=Courier New]d3d9.dll[/font] (plus its companion files) into your MW3 install folder (the same folder as [font=Courier New]iw5sp.exe[/font]). Launch the game normally — no separate injector needed — and check [font=Courier New]proxy_d3d9.log[/font] in that folder if anything looks wrong. Uninstalling is just deleting [font=Courier New]d3d9.dll[/font] — the base game files are never modified.
 
 [size=4][b]Credits & License[/b][/size]
 

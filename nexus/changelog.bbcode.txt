@@ -2,7 +2,7 @@
 
 Condensed from [font=Courier New]PATCHNOTES.md[/font] in the source repo — see there for the full, itemized detail behind each entry.
 
-[size=4][b]v0.0.1-x64 — Unreleased[/b][/size]
+[size=4][b]v0.0.1-x64 — Alpha (2026-09-22)[/b][/size]
 
 The first release on the [font=Courier New]-x64[/font] line, rebuilding this project from scratch against MW3's recompiled 64-bit binaries. [b]Survival's own controller support is now Gameplay Complete (2026-09-22)[/b] — every core gameplay control is confirmed working live: analog movement/look, Jump, Interact, Fire, true hold-to-aim ADS, Reload, Melee, Lethal, Tactical, weapon switch, Crouch/Prone, Sprint, D-pad, pause menu open/close, Hold Breath, Predator Missile launch and post-fire guidance (the last core control that had never worked on either architecture), DPV/mortar/turret aiming, cutscene-skip audio, and Campaign QTE button presses.
 
@@ -12,6 +12,6 @@ A full feature-parity audit against the prior 32-bit line's final build found an
 
 One known cosmetic bug remains: the pause-menu Back glyph still flickers (Back itself still works). Not yet implemented / genuinely open: sentry/turret-placement and Campaign QTE prompt [i]text[/i] (the mechanism works, only the on-screen text still renders native); the Custom Options screen's real vanilla-setting tabs (deliberately deferred); AC-130 gun-type switching (confirmed GSC/data-driven, no native hook point); SMAA (implemented, parked off by default); and Back's scoreboard button (a real gap, but a confirmed no-op in Campaign/Survival even on the prior line's own final build — no scoreboard UI exists there).
 
-Campaign has never gated this release (same as on the prior [font=Courier New]-x86[/font] line, which also shipped it best-effort/partially untested); it ships as-is, verified as it's touched. [b]This release has not shipped.[/b]
+Campaign has never gated this release (same as on the prior [font=Courier New]-x86[/font] line, which also shipped it best-effort/partially untested); it ships as-is, verified as it's touched.
 
 The prior [font=Courier New]-x86[/font] line's full changelog history is preserved in this project's GitHub repository under [font=Courier New]legacy-x86-docs/nexus/changelog.bbcode.txt[/font].
