@@ -22,7 +22,7 @@ native call exists, never a config tweak):
 | Component | What it does | Release-gating? | Status |
 |---|---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — Survival gates the release; Campaign ships best-effort and has never gated it (same as on `-x86`) | Survival: Gameplay Complete (2026-09-22) — see [What works](#what-works-right-now) |
-| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
+| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes, frame pacing/wait coalescing/IWD read cache | 🔴 Yes — the gate | Render scale, motion blur, and the three ported perf techniques (frame pacing/wait coalescing/IWD cache) live-confirmed; FSR build-verified only; SMAA parked, FXAA build-verified — see [What works](#what-works-right-now) |
 | **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — not held to the SP controller-support gate below (same repo, absorbed 2026-09-12 — not a separate project) | **Complete, end to end — all 4 tracked vulnerabilities resolved** (3 fixed, 1 confirmed already safe), closing genuine RCE-class holes present since before this project existed, with no known official Activision fix. 2 of 3 active fixes independently confirmed firing against real MP traffic; the third (SP/Spec-Ops P2P) is build-verified and resolves correctly live, just not yet observed against a real P2P session — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
@@ -142,55 +142,71 @@ see their own sections below; neither gates this release.
 
 ### What works right now
 
-**2026-09-14: the first real playtest of this build happened.** Every core
-control except D-pad actionslot/D-pad Left is now confirmed live, along with
-motion blur, main-menu navigation, and glyph-icon substitution. Two real,
-previously-undiscovered bugs were found and fixed the same day — see "Fire,
-ADS" and "Custom mouse cursor overlay" below.
+**2026-09-22: Survival's own controller-support scope is Gameplay Complete.**
+Since the first real playtest (2026-09-14) found every core control except
+D-pad working, a further week of live-tested fixes closed the rest: D-pad,
+Predator Missile's post-fire guidance (the last core control that had never
+worked on either architecture), the Survival ready-up prompt (now a full
+glyph+text replacement, not just the underlying mechanism), buy-station/
+use-prompt glyphs, AI-suppression's F4 toggle, several critical launch-
+crashing buffer overflows, and the real root cause of the "needs a click/
+input at launch" bug family. Campaign has never been a release gate (same
+as on `-x86`, where it also shipped best-effort/partially untested) and
+ships as-is, verified as it's touched.
 
-#### ✅ Confirmed live (2026-09-14 playtest)
+#### ✅ Confirmed live
 
 | Feature | Note |
 |---|---|
 | Analog movement, analog look | |
-| Fire, ADS (true hold-to-aim), Reload | A real x64-only regression (an early-return meant to skip a no-op write instead silently disabled most controls whenever the stick was centered) was found and fixed 2026-09-13, live-confirmed 2026-09-14 |
+| Fire, ADS (true hold-to-aim), Reload | A real x64-only regression (an early-return meant to skip a no-op write instead silently disabled most controls whenever the stick was centered) was found and fixed 2026-09-13 |
 | Melee, Lethal, Tactical, Jump, Interact, Jump auto-stand | |
 | Weapon switch (Y) | |
 | Crouch/Prone (tap vs. hold), Sprint (real kbutton) | |
-| Pause menu open/close | |
-| Survival ready-up (hold Y, synthetic F5) | Mechanism confirmed live; the prompt itself still renders native — see [Known gaps](#known-gaps) |
+| Pause menu open/close | Multiple real bugs found and fixed since 2026-09-14 (Start wrongly blocked after unpause, B firing a second unwanted ESC, gameplay controls no-op'ing correctly while a menu is up and for 300-400ms after it closes) — this whole interaction area has had a full week of live-test hardening |
+| D-pad actionslot (all four directions), D-pad Left's squadmate-call-in | |
+| Survival ready-up | Full prompt replacement (real glyph + "Hold ... to ready up: NN" text via the client hudelem draw hook), not just the underlying mechanism — found and shipped 2026-09-19/21, correcting this file's own earlier "mechanism only" framing |
 | Hold Breath (L3 while ADS'd, sniper-class) | |
-| Predator Missile launch (Survival buy-station) | |
-| Motion blur | Real x64 trigger hook found 2026-09-13, live-confirmed 2026-09-14 |
-| Internal render scale | Live-confirmed 2026-09-14 |
-| Native controller menu/UI navigation | Main menu confirmed; pause/options/buy-stations not yet separately exercised |
-| Mantle glyph-icon substitution | Confirmed visible live 2026-09-14; needed a first-pass position fix same day, may still need further tuning |
+| Predator Missile launch and post-fire guidance (Survival buy-station) | Guidance fixed 2026-09-22 (issue #30) — never worked on either architecture before this. Filed as "good enough," not fully polished; further killstreak/mounted-weapon feel refinement is deferred to a future bulk pass |
+| DPV (Hunter Killer)/Goalpost mortar/Goalpost M2 turret aiming | Never worked on either architecture before, real shared root cause found and fixed 2026-09-14 |
+| AC-130 zoom-aware look sensitivity | |
+| Cutscene-skip audio (controller Start) | Fixed on both `-x86` and `-x64` 2026-09-14 |
+| Campaign QTE/scripted-sequence button presses (e.g. the "Dust to Dust" elevator/chopper jump) | Real synthetic-keypress fix, same technique already proven for Survival ready-up |
+| Motion blur | Real x64 trigger hook found 2026-09-13; a stepped-ghosting artifact was later fixed 2026-09-21 (8-tap → 24-tap bilinear) |
+| Internal render scale | |
+| Native controller menu/UI navigation | Main menu, pause, buy-stations |
+| Buy-station / use-prompt glyph substitution | Structural template match ("Hold/Press ^N key ^7"), shipped 2026-09-21 |
+| Glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo, five menu corner hints | Mod-wide 100ms hold + 50ms fade added 2026-09-22 to stop flicker; drawn only on the visible back-buffer pass (an earlier bug re-rasterised text at a different scale on offscreen blur passes) |
+| "Needs a click/input at launch," real root cause | Genuinely a family of three separate native bugs (stuck kbuttons from a stale internal table, an unseeded mouse-delta baseline, and a missing message-queue-routed input event), each found via full decompile and fixed 2026-09-16/17, replacing the old 2026-09-04 pause/unpause automation workaround entirely. User-confirmed "seamless," including a bonus fix for a long-standing mission-restart version of the same bug |
+| `[Video] FramePacingEnabled`, `WaitCoalescingEnabled`, `IwdReadAccelEnabled` | Three techniques ported from `legoliamneeson/MW3_Standalone_D3D9_Project`, credited. Confirmed live 2026-09-21; default on |
+| F4 `ai_disableSpawn` debug toggle | Fixed 2026-09-21 (was a silent no-op — the dvar setter drops writes off the main thread; now queued to the gameplay tick) |
+| Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor | |
+| Custom mouse cursor overlay | A real gap (not showing at the true main menu specifically) was found and fixed 2026-09-14 |
+| Auto-Mantle (while sprinting) — ships off by default | |
+| Back (scoreboard, `+scores` key-synthesis) — correctly confirmed as a no-op in SP | |
+| ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/close-range taper) | |
+
+#### 🟠 One known remaining visual bug
+
+The pause-menu **Back glyph still flickers**. It's drawn from a stored
+position every frame (rather than the flickering native draw) specifically
+to fix this, and buy-station Back uses a separate native-template-match path
+— both went through several iterations 2026-09-21/22 — but a residual
+flicker is still present as of the latest build. Purely cosmetic (Back still
+works), tracked for a follow-up pass.
 
 #### 🟡 Build-verified, awaiting live confirmation
 
 | Feature | Note |
 |---|---|
-| D-pad actionslot (all four directions) | |
-| D-pad Left's squadmate-call-in fix | |
 | Plugin API | Loader, hook/memory access |
-| Predator Missile's post-fire guidance | Launch is confirmed live; guidance remains genuinely open — see [Known gaps](#known-gaps) |
-| AC-130 zoom-aware look sensitivity | Real fix shipped 2026-09-14 |
 | DualSense gyro-aim | Preview/WIP, same status as `-x86`, needs real hardware to test |
 | FSR sharpening | Runs without crashing; not yet confirmed to produce its real visible effect the way `-x86` was |
-| Glyph-icon substitution: Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo, menu corner hints | Same mechanism as the confirmed-live Mantle substitution, not yet individually live-confirmed |
-
-*(Two items that used to sit in this table — the Custom Options screen's vanilla-setting tabs, and AC-130 gun-type switching — are genuinely-open gaps, not "verified and awaiting a live test." They're tracked in [Known gaps](#known-gaps) instead so this table only lists things that actually work, just not yet confirmed live.)*
-| Highlighted-item A-glyph (menu list navigation) and the F2/F3 glyph-position editor | |
-| Auto-Mantle (while sprinting) — ships off by default | |
-| Back (scoreboard, `+scores` key-synthesis) — correctly confirmed as a no-op in SP | |
-| ADS zoom-aware look-slowdown (`AdsSlowdownStrength`/`Baseline`/close-range taper) | |
-| | Custom mouse cursor overlay — a real gap (not showing at the true main menu specifically) was found and fixed 2026-09-14, not yet re-confirmed live |
-| | DPV (Hunter Killer)/Goalpost mortar/Goalpost M2 turret aiming — never worked on either architecture before, real shared root cause found and fixed 2026-09-14, not yet live-tested |
-| | Cutscene-skip audio (controller Start) — fixed on both `-x86` and `-x64` 2026-09-14 (x64's own version was worse than x86's ever was — no skip at all, not just missing audio-stop), not yet live-tested |
-| | Campaign QTE/scripted-sequence button presses (e.g. the "Dust to Dust" elevator/chopper jump) — real root cause found and fixed 2026-09-14 via the same synthetic-keypress technique already proven for Survival ready-up, not yet live-tested |
-| "Needs a click at launch" fix, real root cause | 2026-09-16: replaced the 2026-09-04 pause/unpause automation with a direct call into the real native "release every stuck kbutton" sweep, found via full decompile of the native pause-toggle chain — no pause menu ever opens or closes now. Not yet independently re-confirmed by a fresh playtest |
-| `[Video] FramePacingEnabled`, `WaitCoalescingEnabled`, `IwdReadAccelEnabled` | Three techniques ported from `legoliamneeson/MW3_Standalone_D3D9_Project` 2026-09-16, credited. Confirmed live 2026-09-21; default on |
 | `[General] DisableControllerInput` ("K+M safe mode") | Hot-reloadable toggle disabling all controller/mod-side input injection while keeping every visual-enhancement feature working, shipped 2026-09-16 |
+| `[Video] FxaaEnabled` | Edge-blur-only AA pass, shipped 2026-09-21, off by default — real but limited (blurs jagged edges, can't smooth geometry without softening the frame) |
+| First-launch welcome modal, "possibly outdated" nag, launch toast, dev-build watermark | Informational/cosmetic, shipped 2026-09-22 |
+
+*(The Custom Options screen's vanilla-setting tabs and AC-130 gun-type switching are genuinely-open gaps, not "verified and awaiting a live test" — see [Known gaps](#known-gaps).)*
 
 ### Known gaps
 
@@ -208,55 +224,55 @@ the main flow.
 
 | # | Gap | Priority | Current status |
 |---|---|---|---|
-| 1 | Buy-station / Survival ready-up hint **text** | 🟠 Medium | Mechanism works (you can ready up / buy) — the on-screen prompt itself still renders native. Blocked on a genuinely unresolved native offset |
-| 2 | Predator Missile post-fire guidance | 🟠 Medium | Never worked on **either** architecture — not a parity gap. Safe diagnostic shipped instead of a guess |
-| 3 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | 5 zones fully clean, many more no longer crash after this week's `SpeakerMap` fix; a `LoadedSound` alias-miss bug remains open — affects project velocity, not players |
+| 1 | Pause-menu Back glyph flicker | 🟠 Medium | Cosmetic only — Back still works. Drawn from a stored position specifically to fix this, plus a separate native-template-match path for buy-station Back; several iterations landed 2026-09-21/22 but a residual flicker remains |
+| 2 | Sentry/turret-placement and Campaign QTE prompt **text** | 🟠 Medium | Mechanism works — the on-screen prompt itself still renders native. Buy-station and Survival ready-up's own prompt text are both now fully replaced (see [What works](#what-works-right-now)); this is what's left. Blocked on a genuinely unresolved native offset |
+| 3 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | 5 zones fully clean, many more no longer crash after the `SpeakerMap` fix; a `LoadedSound` alias-miss bug remains open — affects project velocity, not players |
 | 4 | AC-130 gun-type switching (105/40/25mm) | 🟡 Low | Confirmed GSC/data-driven with no native hook point; correctly left unfixed rather than guessed at |
 | 5 | Custom Options screen's vanilla-setting data layer (7/9 tabs) | 🟡 Low — deliberately deferred | INI config already covers everything this mod itself needs |
 | 6 | Back's `+scores` scoreboard | 🟢 Low | Real gap, but a confirmed no-op in SP/Survival on every platform; matters once MP ships |
-| 7 | FXAA / forced MSAA | 🟢 Low | Never built even on the prior `-x86` line — future work, not a regression |
+| 7 | SMAA edge smoothing | 🟢 Low — parked 2026-09-21 | Implemented but off by default and not viable yet: even a plain capture-and-redraw with no SMAA math looked worse than off and cost far more frame time, so the shared capture/redraw path is suspect independent of the SMAA shaders. See `re_notes/known_issues_x64.md` issue #2 for the staged AA/renderer roadmap |
 
 <details>
-<summary><b>1. Buy-station / Survival ready-up hint text</b> — full detail</summary>
+<summary><b>1. Pause-menu Back glyph flicker</b> — full detail</summary>
 
-Buy-station's "Hold F to use Weapon Armory," Survival's ready-up prompt, and
-turret placement still render completely native/unmodified — both are
-blocked on x64's genuinely unconfirmed `Font_s` `fontName` offset (needed
-for `IsGameplayHintFont`-style filtering, since neither has a known
-reference-key template even on `-x86`; a dedicated investigation tried to
-independently confirm this offset via decompile and could not — a real
-negative result, not a skipped step, see
-`re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (d)"). Sentry-Place's
-own reference string wasn't found anywhere in the x64 binary either.
-
-Separately: on-screen alignment for the nine already-working glyph-icon
-categories (Mantle, Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo,
-five menu corner hints) is unverified beyond Mantle — no pixel-tuning
-nudges were ported yet, and the Special-Ops/Friends-list suppression logic
-(a faithful port of `-x86`'s own v4 sticky-state algorithm, which itself
-took four iterations to get right) has never been live-exercised on x64. A
-real positioning bug (Mantle's icon never drawing; Interact/Reload's text
-rendering at the top of the screen instead of near the real prompt) was
-root-caused 2026-09-13 to this hook's own x/y being pre-transform,
-draw-context-local coordinates rather than the final screen-pixel position
-— fixed by calling the real native transform (`FUN_14008d020`) directly.
-Build-verified, not yet live-tested. See
-`re_notes/x64_migration/drawtext_hook_x64.md` for the exact scope and
-reasoning behind each remaining piece.
+This went through heavy iteration 2026-09-21/22: hardcoding the pause Back
+glyph's position and drawing it from that stored value every frame (instead
+of the flickering native draw) was the fix that actually stuck for the
+pause menu specifically; buy-station Back went the other way — after a
+hardcoded-position attempt was tried and reverted, it settled back on the
+native-driven, template-text-matched approach ("Back matched by template
+text at any row, drawn at the native position"), matching `-x86`'s own
+original design. A mod-wide 100ms hold + 50ms fade for every hint glyph
+(gameplay and menu) was also added 2026-09-22 specifically to smooth over
+gaps in native-draw detection. Despite all of this, a residual flicker on
+the pause-menu Back glyph specifically is still present as of the latest
+build — purely cosmetic, Back still functions correctly either way.
 
 </details>
 
 <details>
-<summary><b>2. Predator Missile post-fire guidance</b> — full detail</summary>
+<summary><b>2. Sentry/turret-placement and Campaign QTE prompt text</b> — full detail</summary>
 
-2026-09-14 investigation mapped the real x64 native call chain further than
-either platform has ever had it (exact struct offsets, confirmed
-angle-decode math), and found real (not conclusive) evidence the bug may
-already be partially fixed as a side effect of the ordinary look-injection
-pipeline — but this couldn't be proven statically. A safe, cheap diagnostic
-hook now ships instead of a guess; the next real playtest against Predator
-Missile specifically will give the first live data either architecture has
-ever collected on this question. See `re_notes/known_issues.md` issue #30.
+Survival's ready-up prompt and the buy-station use-prompt are both now
+fully replaced with real glyph + text (2026-09-19/21, via the client
+hudelem draw hook `FUN_140046a30` and a structural "Hold/Press ^N key ^7"
+template match respectively). What's left — sentry/turret placement and
+Campaign QTE prompts — is blocked on the same genuinely unconfirmed
+`Font_s`/`fontName` offset that blocked ready-up until its own hudelem
+route was found (neither has a known reference-key template even on
+`-x86`; a dedicated investigation tried to independently confirm this
+offset via decompile and could not — a real negative result, not a skipped
+step, see `re_notes/x64_migration/drawtext_hook_x64.md`'s "Stage (d)").
+Sentry-Place's own reference string wasn't found anywhere in the x64 binary
+either.
+
+Separately: on-screen alignment for the glyph-icon categories (Mantle,
+Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo, five menu corner
+hints, buy-station, pause-menu Back) is unverified beyond the ones
+explicitly live-tested — no pixel-tuning nudges were ported for the rest
+yet, and the Special-Ops/Friends-list suppression logic (a faithful port of
+`-x86`'s own v4 sticky-state algorithm, which itself took four iterations
+to get right) has never been fully live-exercised on x64.
 
 </details>
 
@@ -352,10 +368,24 @@ genuinely exists.
 </details>
 
 <details>
-<summary><b>7. FXAA / forced MSAA</b> — full detail</summary>
+<summary><b>7. SMAA edge smoothing</b> — full detail</summary>
 
-Never actually built even on the old `-x86` line (only ever planned) — real
-future work, not a regression.
+MW3 (2011) ships no working AA (the render target reports zero MSAA
+samples). SMAA 1x (three passes — edge detect, blend weights via area/search
+lookup textures, neighborhood blend — from the MIT-licensed iryoku reference,
+credited in `LICENSE`/`README.md`) was implemented and shipped 2026-09-21,
+off by default. A real bug (the blend-weight pass reading the area texture
+from the wrong channels — HLSL selects `.ra`, the upload used `.rg`) was
+found and fixed the same day, but even after that fix, `SmaaDebugView=3` (a
+plain capture-and-redraw with no SMAA math at all) still looked worse than
+off and cost far more frame time than expected — meaning the shared
+capture/redraw path the full-screen passes share (also used by motion blur
+and FSR) is itself suspect, independent of the SMAA shaders. **Parked**
+until that's understood; not viable to ship as default-on yet. A simpler
+FXAA-style pass (`[Video] FxaaEnabled`) shipped the same day as an
+edge-blur-only fallback, off by default. Full staged roadmap (temporal
+upscalers, path tracing, a DX12/Vulkan translation layer) in
+`re_notes/known_issues_x64.md` issue #2.
 
 </details>
 
