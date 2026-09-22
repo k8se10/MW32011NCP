@@ -739,12 +739,82 @@ bool ShowWelcomeModalIfNewVersion()
     return true;
 }
 
+// ---- Possibly-outdated modal (2026-09-22) ------------------------------------------------------------------------
+// Early releases change quickly. Every version below 0.4.0 (the beta milestone) nags, at most once per day, when the DLL
+// was built more than 4 weeks ago. The build date is the compile-time __DATE__, so it is the date of THIS build.
+int MonthFromName(const char* m)
+{
+    static const char* const kNames[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    for (int i = 0; i < 12; ++i) if (strncmp(m, kNames[i], 3) == 0) return i + 1;
+    return 1;
+}
+
+bool ShowOutdatedModalIfStale()
+{
+    int major = 0, minor = 0, patch = 0;
+    sscanf_s(kModVersionString, "%d.%d.%d", &major, &minor, &patch);
+    if (major > 0 || minor >= 4) return false; // 0.4.0-x64 (beta) and later never nag
+
+    // Build date -> days since the FILETIME epoch.
+    SYSTEMTIME built = {};
+    built.wMonth = static_cast<WORD>(MonthFromName(__DATE__));
+    built.wDay = static_cast<WORD>(atoi(__DATE__ + 4));
+    built.wYear = static_cast<WORD>(atoi(__DATE__ + 7));
+    FILETIME builtFt = {};
+    if (!SystemTimeToFileTime(&built, &builtFt)) return false;
+    SYSTEMTIME nowSt = {};
+    GetSystemTime(&nowSt);
+    FILETIME nowFt = {};
+    SystemTimeToFileTime(&nowSt, &nowFt);
+    ULARGE_INTEGER b, n;
+    b.LowPart = builtFt.dwLowDateTime; b.HighPart = builtFt.dwHighDateTime;
+    n.LowPart = nowFt.dwLowDateTime; n.HighPart = nowFt.dwHighDateTime;
+    if (n.QuadPart <= b.QuadPart) return false;
+    long long ageDays = static_cast<long long>((n.QuadPart - b.QuadPart) / (10000000ULL * 86400ULL));
+    // Test hook: `[State] TestOutdated=1` in mw3ncp_state.ini pretends the build is 30 days old and ignores the once-a-day limit.
+    char testPath[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, testPath, MAX_PATH);
+    char* testSlash = strrchr(testPath, 92); // 92 = backslash
+    if (testSlash) *(testSlash + 1) = 0;
+    strcat_s(testPath, "mw3ncp_state.ini");
+    const bool testOutdated = GetPrivateProfileIntA("State", "TestOutdated", 0, testPath) != 0;
+    if (testOutdated) ageDays = 30;
+    if (ageDays < 28) return false;
+
+    // At most once per calendar day.
+    char path[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, path, MAX_PATH);
+    char* slash = strrchr(path, '\\');
+    if (slash) *(slash + 1) = '\0';
+    strcat_s(path, "mw3ncp_state.ini");
+    const int today = nowSt.wYear * 10000 + nowSt.wMonth * 100 + nowSt.wDay;
+    if (!testOutdated && static_cast<int>(GetPrivateProfileIntA("State", "OutdatedShownDay", 0, path)) == today) return false;
+
+    char msg[900];
+    sprintf_s(msg,
+              "\x03" "This version of MW32011NCP may be out of date.\n\n"
+              "\x01" "\xE2\x9A\xA0 This build (v%s) is %lld days old. Early releases change quickly and fix real bugs -- please check GitHub or"
+              " Nexus for a newer version before reporting problems.\n\n"
+              "Enter / Space / Click to continue:",
+              kModVersionString, ageDays);
+    ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
+    char todayStr[16];
+    sprintf_s(todayStr, "%d", today);
+    WritePrivateProfileStringA("State", "OutdatedShownDay", todayStr, path);
+    return true;
+}
+
 void ShowStartupMessage()
 {
+    // 1) once per version: welcome + feature list; 2) possibly-outdated (below 0.4.0, build older than 4 weeks, once a
+    // day); 3) every normal launch: the short toast below, which carries the version and the early-release reminder.
     if (ShowWelcomeModalIfNewVersion()) return;
+    if (ShowOutdatedModalIfStale()) return;
     srand(GetTickCount());
     if ((rand() % kVariantMessageOneInN) != 0) {
-        ShowOverlayMessage("MW32011NCP Started", 15000, OverlayAnimStyle::Plain);
+        char startedMsg[128];
+        sprintf_s(startedMsg, "MW32011NCP v%s Started (early release)", kModVersionString);
+        ShowOverlayMessage(startedMsg, 15000, OverlayAnimStyle::Plain);
         return;
     }
 

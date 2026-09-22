@@ -768,6 +768,8 @@ item below.
 
 46. **Welcome modal: colour classes and leading symbols/emoji (`-x64`).** The dismiss-to-continue modal text now supports UTF-8 and a small markup: a paragraph may start with a colour marker (warning = orange-red, positive = green, heading = white; unmarked stays yellow) and then with one leading symbol/emoji drawn in a symbol font in a left gutter. The welcome message uses it: a highlighted early-release warning, green check marks for the feature list, and a white heading. Emoji render as monochrome outlines under GDI (colour emoji would need DirectWrite). Build-verified; not yet live-tested.
 
+47. **Three startup messages instead of one (`-x64`).** (1) Once per version: the welcome modal with the feature list. (2) Possibly outdated: on any version below 0.4.0 (the beta milestone) whose build is more than 4 weeks old (compile-time `__DATE__`), a dismiss-to-continue modal asks the player to check GitHub or Nexus for a newer version, at most once per day (recorded in `mw3ncp_state.ini`; `[State] TestOutdated=1` in that file forces it for testing). (3) Every normal launch: the short "MW32011NCP v0.0.1-x64 Started (early release)" toast. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
