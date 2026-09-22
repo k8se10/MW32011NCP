@@ -6641,13 +6641,9 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
         // e.g. the restart-mission modal is "all_restart_popmenu" and gets nothing.
         if (strcmp(lower, "pausedmenu") == 0) {
             // pause menu: bottom-right corner (defaults above)
-        } else if (strncmp(lower, "survival_armory", 15) == 0) {
-            // Buy stations: the native Back draw is at ONE stable position (live [x64-back-native] capture:
-            // survival_armory_equipment -> design (1200.8, 885.8)), so it is hardcoded here too.
-            useX = 1200.8f;
-            useY = 885.8f;
         } else {
-            // Every other menu: NOT handled here -- native-driven substitution in Hook_DrawTextX64.
+            // Every other menu -- buy stations included (their box position varies per menu, so a hardcoded position
+            // does not work there, user 2026-09-22): NOT handled here -- native-driven substitution in Hook_DrawTextX64.
             return false; // any other menu/modal (restart-mission confirm, options, ...): no hardcoded Back
         }
     }
