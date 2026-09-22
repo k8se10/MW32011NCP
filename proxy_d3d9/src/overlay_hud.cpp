@@ -450,7 +450,7 @@ char g_textureRenderedFor[160] = {};  // which message string the texture curren
 // system. See DrawWarningModal (defined after DrawBlurredBackgroundRegion, whose
 // blur-capture mechanism it reuses) for the actual panel/text/glyph composition.
 constexpr int kWarningTextureWidth = 640;
-constexpr int kWarningTextureHeight = 420; // was 160 (welcome modal feature list)
+constexpr int kWarningTextureHeight = 540; // was 160 (welcome modal feature list)
 void* g_warningTextTexture = nullptr;
 char g_warningTextureRenderedFor[512] = {};
 
@@ -3211,7 +3211,7 @@ void DrawWarningModal(void* device)
     // (ConvertRealScreenPosToDesignSpace's own 1920x1080 basis) as every other
     // element in this codebase.
     constexpr float kPanelW = 640.0f;
-    constexpr float kPanelH = 480.0f; // was 225 (welcome modal feature list)
+    constexpr float kPanelH = 600.0f; // was 225 (welcome modal feature list)
     const float panelX = (1920.0f - kPanelW) * 0.5f;
     const float panelY = (1080.0f - kPanelH) * 0.5f;
 

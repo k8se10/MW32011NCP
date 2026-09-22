@@ -10,6 +10,10 @@ patch history is preserved in
 
 ## v0.0.1-x64 — Unreleased
 
+**Early release -- expect hidden bugs and unfinished or unported features.** Survival is the only recommended mode for now
+(Campaign controller support is incomplete, Multiplayer is not supported yet); the netcode security fixes protect every mode,
+Multiplayer included.
+
 **Summary:** The first release on the `-x64` line, rebuilding this project
 from scratch against MW3's recompiled 64-bit binaries. The first real
 playtest of this build has now happened: every core gameplay control except

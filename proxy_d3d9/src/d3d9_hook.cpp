@@ -726,6 +726,9 @@ bool ShowWelcomeModalIfNewVersion()
 
     char msg[1024];
     sprintf_s(msg, "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\nThis version includes:\n%s\n\n"
+                   "This is an EARLY release: expect hidden bugs and unfinished or unported features. Survival is the only"
+                   " recommended mode for now (controller support in Campaign and Multiplayer is incomplete or unsupported), but the"
+                   " netcode security fixes protect every mode, Multiplayer included.\n\n"
                    "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
               kModVersionString, kWelcomeFeatureList);
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);

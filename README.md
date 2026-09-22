@@ -96,6 +96,11 @@ and verifies its own fix, per standard responsible-disclosure practice.
 
 ## Status
 
+> **Early release -- expect hidden bugs and unfinished or unported features.** Survival is the only recommended
+> way to use the mod for now: controller support in Campaign is incomplete and Multiplayer is not supported yet. The
+> netcode security fixes are the exception -- they protect every mode, Multiplayer included. Known gaps are listed below
+> and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+
 **Alpha, `v0.0.1-x64` line.** On 2026-09-03 MW3 received its first real
 binary update in the game's history, recompiling both `iw5sp.exe`/`iw5mp.exe`
 from 32-bit to 64-bit — a hard architectural break that invalidated every
