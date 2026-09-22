@@ -4520,6 +4520,58 @@ void __fastcall Hook_MissileGuidanceDispatchX64(
         leftStickX, leftStickY, ourPitchAccum, ourYawAccum, static_cast<unsigned long>(GetTickCount()));
     LogFromController(buf);
 }
+
+// ---- Real missile-steering INPUT consumer, x64 (2026-09-22) ------------------------------------------------------
+//
+// Issue #30 follow-up. The dispatch hook above reads/writes clientStruct+0xc/+0x10c-0x114, a compressed VIEW-ANGLE
+// style field -- but tracing FUN_140014dc0's own callers found the REAL native function that turns player input
+// into missile steering: FUN_14000f860, called from FUN_14011f8e0 (the confirmed Pmove per-substep entry) only
+// when a specific per-ENTITY missile-control flag is set (`&DAT_140f57cf0[entityIndex] == 3`), passing
+// `piVar7 + 0x2b56` (the SAME "pml" scratch region the dispatch hook's own param_4 is drawn from) as its own
+// param_2. This function reads TWO SIGNED BYTES at param_2+0x3e/+0x3f -- not the compressed angle ints -- multiplies
+// each by frametime * the real `missileRemoteSteerPitchRate`/`missileRemoteSteerYawRate` dvars (both confirmed
+// 35.0 on x64, `DAT_1404e4498`/`DAT_1404e44a0`), then composes the result into *param_1 (the missile's own live
+// orientation) via a quaternion/matrix chain and clamps it to `missileRemoteSteerPitchRange` (`DAT_1404e4490`).
+//
+// A signed-byte pair scaled by a deg/sec rate is exactly the shape of usercmd_t.forwardmove/rightmove (this
+// project's own confirmed cmd[0x1c]/[0x1d] write target for ordinary movement) -- direct user correction
+// (2026-09-22): "its LS to control a missile natively on console," matching this shape exactly (LEFT stick, not
+// look/right stick, which is what the dispatch hook above was actually comparing against). This hook settles,
+// for the first time on either architecture, whether our own movement-byte write already reaches this exact
+// consumer: logs the raw bytes it reads alongside our own real left-stick axes, log-and-call-through only.
+constexpr const char* kMissileSteerConsumerSignatureX64 =
+    "40 53 48 81 EC E0 00 00 00 ?? ?? ?? ?? ?? ?? ?? 48 8B D9 66 41 0F 6E D8 ?? ?? ?? ?? ?? 0F 5B DB "
+    "?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 0F 28 CB F3 0F 59 48 10 0F BE 42 3E 66 0F 6E C0 "
+    "?? ?? ?? ?? ?? ?? ?? 0F 5B C0 ?? ?? ?? ?? ?? ?? ?? ??";
+using MissileSteerConsumerFnX64 = void(__fastcall*)(float* param1, uintptr_t param2, int param3);
+MissileSteerConsumerFnX64 g_realMissileSteerConsumerX64 = nullptr;
+DWORD g_lastMissileSteerDiagLogMsX64 = 0;
+
+void __fastcall Hook_MissileSteerConsumerX64(float* param1, uintptr_t param2, int param3)
+{
+    if (!param2) {
+        g_realMissileSteerConsumerX64(param1, param2, param3);
+        return;
+    }
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_lastMissileSteerDiagLogMsX64 >= 150) {
+        g_lastMissileSteerDiagLogMsX64 = nowMs;
+        __try {
+            signed char rawPitchByte = *reinterpret_cast<volatile signed char*>(param2 + 0x3e);
+            signed char rawYawByte   = *reinterpret_cast<volatile signed char*>(param2 + 0x3f);
+            float leftStickX = 0.0f, leftStickY = 0.0f;
+            Controller_GetLeftStick(leftStickX, leftStickY);
+            char buf[224];
+            sprintf_s(buf, "[x64-missile-steer-diag] FUN_14000f860 called -- rawBytes(param2+0x3e/0x3f)=%d/%d "
+                "leftStick=(%.4f,%.4f) frameTimeArg=%d", static_cast<int>(rawPitchByte),
+                static_cast<int>(rawYawByte), leftStickX, leftStickY, param3);
+            LogFromController(buf);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            LogFromController("[x64-missile-steer-diag] read faulted (SEH caught)");
+        }
+    }
+    g_realMissileSteerConsumerX64(param1, param2, param3);
+}
 } // namespace
 
 // ---- Visual-enhancement suite x64 gating (2026-09-12) -- InternalRenderScalePercent
@@ -7054,6 +7106,44 @@ void InstallAnalogInputHooksX64()
                         "controller look already reaches the missile and the fix (if any is still needed) is "
                         "elsewhere; if rawAngles stays frozen/independent, the fix is writing controller look "
                         "directly into pml+0x10/+0x14/+0x18 while linked.");
+                }
+            }
+        }
+    }
+
+    // Predator Missile real steering-input CONSUMER diagnostic (Hook_MissileSteerConsumerX64, see its own big
+    // comment for the full trail -- FUN_14000f860, found by tracing FUN_14000f860's own callers from the
+    // already-confirmed Pmove chain). Independent of the dispatch diagnostic above; a failure here costs only
+    // this one extra diagnostic line, nothing else.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMissileSteerConsumerSignatureX64);
+        if (!r.found) {
+            LogFromController("[x64-missile-steer-diag] FATAL: signature did not resolve -- diagnostic not "
+                "installed this session (no gameplay impact either way)");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MissileSteerConsumerX64),
+                                                    reinterpret_cast<void**>(&g_realMissileSteerConsumerX64));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-missile-steer-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-missile-steer-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-missile-steer-diag] Diagnostic hook installed and enabled -- "
+                        "log-and-call-through only, zero behavior change. Fire a Predator Missile and hold the "
+                        "LEFT stick fully deflected the whole flight: watch for '[x64-missile-steer-diag]' lines "
+                        "-- if rawBytes tracks leftStick, the real native steering-input consumer already "
+                        "receives our movement write and the fix (if any) is a sensitivity/scale mismatch; if "
+                        "rawBytes stays 0 while leftStick moves, our movement write never reaches this field and "
+                        "the fix is a direct write here.");
                 }
             }
         }
