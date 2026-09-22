@@ -627,6 +627,81 @@ void PollDamageRumbleX64()
     TriggerRumble(intensity, g_modConfig.vibrationDamageDurationMs);
 }
 
+// 2026-09-22, live perf investigation -- "lags a shit ton... taking actual player
+// damage... this is not log related." Every prior theory (vibration, motion blur,
+// frame pacing/wait coalescing/IWD cache, FSR, GSC-VM notify resolution overhead)
+// has been ruled out by direct live test. Rather than keep guessing at more
+// toggles, this gets real, objective per-frame timing data around the actual
+// health-decrease event: an INDEPENDENT health-delta detector (same detection
+// logic as PollDamageRumbleX64 above, deliberately NOT sharing its
+// g_lastKnownHealthX64 baseline or its vibrationEnabled gate -- this must keep
+// working regardless of that setting) arms a short timing window the instant
+// real damage is detected, then logs the wall-clock gap between this function's
+// own successive calls for the next ~90 gameplay ticks (roughly 1.5-3s
+// depending on real framerate) -- but ONLY frames that are actually slow
+// (>=40ms, more than double a healthy 60fps frame budget), so a normal session
+// stays quiet and a real stall stands out immediately. This runs from the SAME
+// per-tick call site as PollDamageRumbleX64 (Rumble_Tick, called unconditionally
+// every gameplay tick) but is entirely independent of it.
+namespace {
+int g_damageStallLastHealthX64 = -1;
+DWORD g_damageStallLastTickMsX64 = 0;
+int g_damageStallFramesRemainingX64 = 0;
+int g_damageStallFrameIndexX64 = 0;
+}
+
+void PollDamageStallDiagX64()
+{
+    if (!g_entityArrayBaseX64) return;
+
+    if (SecondRealPlayerEntityPresentX64()) {
+        g_damageStallLastHealthX64 = -1;
+    } else {
+        uint8_t* local = LocalPlayerEntityX64();
+        if (!IsRealPlayerEntityX64(local)) {
+            g_damageStallLastHealthX64 = -1;
+        } else {
+            int health = *reinterpret_cast<volatile int*>(local + kHealthFieldOffsetX64);
+            constexpr int kMaxPlausibleHealth = 1000; // same bound as PollDamageRumbleX64
+            if (health < 0 || health > kMaxPlausibleHealth) {
+                g_damageStallLastHealthX64 = -1;
+            } else if (g_damageStallLastHealthX64 < 0) {
+                g_damageStallLastHealthX64 = health;
+            } else {
+                int delta = g_damageStallLastHealthX64 - health;
+                g_damageStallLastHealthX64 = health;
+                constexpr int kMaxPlausibleSingleFrameDamage = 200; // same bound as PollDamageRumbleX64
+                if (delta > 0 && delta <= kMaxPlausibleSingleFrameDamage) {
+                    char b[128];
+                    sprintf_s(b, "[x64-stall-diag] REAL DAMAGE DETECTED (delta=%d, health now %d) -- "
+                        "arming frame-timing window", delta, health);
+                    LogFromController(b);
+                    g_damageStallFramesRemainingX64 = 90;
+                    g_damageStallFrameIndexX64 = 0;
+                    g_damageStallLastTickMsX64 = GetTickCount();
+                }
+            }
+        }
+    }
+
+    if (g_damageStallFramesRemainingX64 > 0) {
+        DWORD now = GetTickCount();
+        DWORD elapsed = now - g_damageStallLastTickMsX64;
+        g_damageStallLastTickMsX64 = now;
+        ++g_damageStallFrameIndexX64;
+        --g_damageStallFramesRemainingX64;
+        if (elapsed >= 40) {
+            char b[128];
+            sprintf_s(b, "[x64-stall-diag] tick #%d after hit took %lums (SLOW)",
+                g_damageStallFrameIndexX64, static_cast<unsigned long>(elapsed));
+            LogFromController(b);
+        }
+        if (g_damageStallFramesRemainingX64 == 0) {
+            LogFromController("[x64-stall-diag] timing window closed");
+        }
+    }
+}
+
 // Armor-field scan diagnostic (x86's own PollArmorFieldScanDiag) is deliberately NOT
 // ported this pass -- it's an off-by-default exploratory RE tool (issue #63 follow-up),
 // not one of the two real shipped mechanisms this task scopes (fire hook + damage poll).
@@ -761,6 +836,7 @@ void Rumble_Tick()
 {
 #if defined(_M_X64) || defined(_WIN64)
     PollDamageRumbleX64();
+    PollDamageStallDiagX64(); // 2026-09-22, always-on stall investigation -- see its own comment
     // Armor-scan diagnostic not ported to x64 this pass -- see its own comment in the
     // x64 PORT block above (out of scope: an off-by-default exploratory RE tool, not
     // one of the two real shipped mechanisms).
