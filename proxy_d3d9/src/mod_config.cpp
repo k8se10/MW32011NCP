@@ -179,7 +179,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 43; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 44; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -244,6 +244,19 @@ constexpr unsigned long kCurrentConfigVersion = 43; // v23->v24: FsrSharpenEnabl
                                                      // resolution, never the real output window/backbuffer
                                                      // size; doesn't solve the actual custom-monitor/
                                                      // splitscreen request. Noted as future work post-0.3.5.
+                                                     // v43->v44 (2026-09-22, v0.0.1-x64 release prep):
+                                                     // [Experimental] BindResolverHookLogging/HudFontIdLogging
+                                                     // compiled defaults corrected true->false -- both are
+                                                     // dev-only diagnostics with their own comments already
+                                                     // saying so, but had defaulted ON since the day each was
+                                                     // added (2026-07-21); every fresh install would have
+                                                     // shipped with them enabled, growing proxy_d3d9.log for no
+                                                     // benefit. The bump forces WriteDefaultConfig() to rewrite
+                                                     // any already-current-version tester's file so the real
+                                                     // default reaches them too, not just brand-new installs.
+                                                     // (v41->v42 and v42->v43 were not documented here when
+                                                     // they landed -- a pre-existing gap in this comment chain,
+                                                     // not touched by this entry.)
 
 // Reads a legacy key's raw value, returning true only if the key genuinely existed
 // (unlike ReadFloat, which can't distinguish "absent" from "present but unparsable" --
