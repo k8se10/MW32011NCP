@@ -3069,7 +3069,23 @@ void DrawBlurredBackgroundRegion(void* device, float regionX, float regionY, flo
 // NOT sharing those functions' static buffers/DT_SINGLELINE behavior -- this is
 // a genuinely separate, larger, wrapped-text canvas, not a resize of the
 // existing single-line notification-toast pipeline.
-bool RenderWarningTextMask(const char* text, const POINT* offsets, int offsetCount, BYTE* outLuminance, int fontHeightPx)
+// Modal text markup (2026-09-22): a paragraph (text between '\n') may start with one marker character selecting its
+// colour class -- 0x01 = warning, 0x02 = positive, 0x03 = heading, none = normal -- and may then start with ONE leading
+// symbol/emoji (a code point >= U+2190, e.g. a warning sign or check mark) drawn in a symbol font in a left gutter.
+// Text is UTF-8; the modal renders it as UTF-16 (DrawTextW).
+constexpr int kWarningClassCount = 4;
+struct WarningClassColor { BYTE r, g, b; };
+constexpr WarningClassColor kWarningClassColors[kWarningClassCount] = {
+    { 255, 212, 0 },   // 0 normal (the original modal yellow)
+    { 255, 96, 64 },   // 1 warning
+    { 140, 255, 150 }, // 2 positive
+    { 255, 255, 255 }, // 3 heading
+};
+
+// classFilter: -1 = every paragraph (outline pass), otherwise only paragraphs of that colour class are drawn (layout is
+// identical in every pass because skipped paragraphs still advance the cursor by their measured height).
+bool RenderWarningTextMask(const char* text, const POINT* offsets, int offsetCount, BYTE* outLuminance, int fontHeightPx,
+                           int classFilter)
 {
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -3098,22 +3114,70 @@ bool RenderWarningTextMask(const char* text, const POINT* offsets, int offsetCou
     HFONT font = CreateFontA(fontHeightPx, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
                               ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                               ANTIALIASED_QUALITY, DEFAULT_PITCH, ResolveFontFamily(FontRole::Default));
+    // Symbol/emoji font for the leading-symbol gutter (monochrome outlines under GDI; falls back to Segoe UI Symbol).
+    HFONT iconFont = CreateFontW(fontHeightPx, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                  ANTIALIASED_QUALITY, DEFAULT_PITCH, L"Segoe UI Emoji");
     HFONT oldFont = static_cast<HFONT>(SelectObject(memDC, font));
     SetBkMode(memDC, TRANSPARENT);
     SetTextColor(memDC, RGB(255, 255, 255));
 
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
+    static wchar_t wide[2048];
+    if (wideLen <= 0 || wideLen > 2048) wideLen = 0;
+    if (wideLen > 0) MultiByteToWideChar(CP_UTF8, 0, text, -1, wide, wideLen);
+    TEXTMETRICW tm = {};
+    GetTextMetricsW(memDC, &tm);
+    const int lineHeight = tm.tmHeight > 0 ? tm.tmHeight : fontHeightPx;
+
     constexpr int kWarningTextMarginPx = 24;
-    for (int i = 0; i < offsetCount; ++i) {
-        RECT textRect = { kWarningTextMarginPx + offsets[i].x, kWarningTextMarginPx + offsets[i].y,
-                           kWarningTextureWidth - kWarningTextMarginPx + offsets[i].x,
-                           kWarningTextureHeight - kWarningTextMarginPx + offsets[i].y };
-        // DT_WORDBREAK (real multi-line wrap, unlike the single-line notification-toast
-        // pipeline) + DT_CENTER -- this is a centered modal, not a left/right-aligned toast.
-        DrawTextA(memDC, text, -1, &textRect, DT_CENTER | DT_WORDBREAK | DT_NOCLIP | DT_TOP);
+    constexpr int kIconGutterPx = 34;
+    for (int i = 0; i < offsetCount && wideLen > 0; ++i) {
+        int y = kWarningTextMarginPx + offsets[i].y;
+        const wchar_t* p = wide;
+        while (true) {
+            const wchar_t* eol = p;
+            while (*eol && *eol != L'\n') ++eol;
+            const wchar_t* q = p;
+            int cls = 0;
+            if (*q >= 1 && *q <= 3) { cls = static_cast<int>(*q); ++q; }
+            // optional leading symbol (BMP >= U+2190, or a surrogate pair for non-BMP emoji)
+            const wchar_t* iconStart = nullptr;
+            int iconLen = 0;
+            if (q < eol && (*q >= 0x2190 || (*q >= 0xD800 && *q <= 0xDBFF))) {
+                iconStart = q;
+                iconLen = (*q >= 0xD800 && *q <= 0xDBFF && q + 1 < eol) ? 2 : 1;
+                q += iconLen;
+                while (q < eol && *q == L' ') ++q;
+            }
+            const int textLen = static_cast<int>(eol - q);
+            const int textLeft = kWarningTextMarginPx + (iconLen ? kIconGutterPx : 0) + offsets[i].x;
+            int h = lineHeight;
+            if (textLen > 0) {
+                RECT calc = { textLeft, y, kWarningTextureWidth - kWarningTextMarginPx + offsets[i].x, y + 4000 };
+                DrawTextW(memDC, q, textLen, &calc, DT_CALCRECT | DT_CENTER | DT_WORDBREAK);
+                h = calc.bottom - calc.top;
+                if (h < lineHeight) h = lineHeight;
+                if (classFilter < 0 || classFilter == cls) {
+                    RECT textRect = { textLeft, y, kWarningTextureWidth - kWarningTextMarginPx + offsets[i].x, y + h };
+                    DrawTextW(memDC, q, textLen, &textRect, DT_CENTER | DT_WORDBREAK | DT_NOCLIP | DT_TOP);
+                }
+            }
+            if (iconLen && (classFilter < 0 || classFilter == cls)) {
+                SelectObject(memDC, iconFont);
+                RECT iconRect = { kWarningTextMarginPx + offsets[i].x, y, kWarningTextMarginPx + kIconGutterPx + offsets[i].x, y + h };
+                DrawTextW(memDC, iconStart, iconLen, &iconRect, DT_LEFT | DT_NOCLIP | DT_TOP);
+                SelectObject(memDC, font);
+            }
+            y += h;
+            if (!*eol) break;
+            p = eol + 1;
+        }
     }
 
     SelectObject(memDC, oldFont);
     DeleteObject(font);
+    DeleteObject(iconFont);
 
     const DWORD* src = static_cast<const DWORD*>(bits);
     for (int i = 0; i < kWarningTextureWidth * kWarningTextureHeight; ++i) {
@@ -3129,7 +3193,7 @@ bool RenderWarningTextMask(const char* text, const POINT* offsets, int offsetCou
 bool RenderWarningTextToArgbBuffer(const char* text, DWORD* outPixels)
 {
     static BYTE outlineMask[kWarningTextureWidth * kWarningTextureHeight];
-    static BYTE fillMask[kWarningTextureWidth * kWarningTextureHeight];
+    static BYTE fillMask[kWarningClassCount][kWarningTextureWidth * kWarningTextureHeight];
 
     const POINT kOutlineOffsets[9] = {
         { -1, -1 }, { 0, -1 }, { 1, -1 },
@@ -3137,15 +3201,26 @@ bool RenderWarningTextToArgbBuffer(const char* text, DWORD* outPixels)
         { -1, 1 },  { 0, 1 },  { 1, 1 },
     };
     constexpr int kWarningFontHeightPx = 22;
-    if (!RenderWarningTextMask(text, kOutlineOffsets, 9, outlineMask, kWarningFontHeightPx)) return false;
+    if (!RenderWarningTextMask(text, kOutlineOffsets, 9, outlineMask, kWarningFontHeightPx, -1)) return false;
 
     const POINT kFillOffset[1] = { { 0, 0 } };
-    if (!RenderWarningTextMask(text, kFillOffset, 1, fillMask, kWarningFontHeightPx)) return false;
+    for (int c = 0; c < kWarningClassCount; ++c) {
+        if (!RenderWarningTextMask(text, kFillOffset, 1, fillMask[c], kWarningFontHeightPx, c)) return false;
+    }
 
     for (int i = 0; i < kWarningTextureWidth * kWarningTextureHeight; ++i) {
         DWORD alpha = outlineMask[i];
-        DWORD whiteness = fillMask[i];
-        outPixels[i] = (alpha << 24) | (whiteness << 16) | (whiteness << 8) | whiteness;
+        unsigned r = 0, g = 0, b = 0;
+        for (int c = 0; c < kWarningClassCount; ++c) {
+            const unsigned f = fillMask[c][i];
+            r += f * kWarningClassColors[c].r / 255;
+            g += f * kWarningClassColors[c].g / 255;
+            b += f * kWarningClassColors[c].b / 255;
+        }
+        if (r > 255) r = 255;
+        if (g > 255) g = 255;
+        if (b > 255) b = 255;
+        outPixels[i] = (alpha << 24) | (r << 16) | (g << 8) | b;
     }
     return true;
 }
@@ -3235,7 +3310,7 @@ void DrawWarningModal(void* device)
         // warm-gold tone as OverlayAnimStyle::Gold's celebratory "MW32011NCP Started"
         // homage, a different thing entirely) rather than a per-message color choice
         // this single current use doesn't yet need.
-        constexpr DWORD kWarningTextTint = 0xFFFFD400u;
+        constexpr DWORD kWarningTextTint = 0xFFFFFFFFu; // colours are baked per paragraph class in RenderWarningTextToArgbBuffer
         DrawGenericTexturedQuad(device, g_warningTextTexture, textX * scaleX, textY * scaleY,
                                   textDrawW * scaleX, textDrawH * scaleY,
                                   kWarningTextTint, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);

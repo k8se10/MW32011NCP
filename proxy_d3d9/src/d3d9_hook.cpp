@@ -706,12 +706,12 @@ constexpr int kVariantCount = 4;
 // the version is recorded in a tiny state file beside the game exe so it never reappears until the next release.
 // kWelcomeFeatureList is LIVE CONTENT -- update it whenever the feature set changes (CLAUDE.md / AGENTS.md rule).
 constexpr const char* kWelcomeFeatureList =
-    "Native controller support and menu navigation\n"
-    "Controller button prompts and vibration\n"
-    "Four netcode security fixes\n"
-    "Frame pacing and faster loading\n"
-    "Render scale, FSR, motion blur, anisotropic\n"
-    "Plugin API for sub-mods";
+    "\x02" "\xE2\x9C\x94 Native controller support and menu navigation\n"
+    "\x02" "\xE2\x9C\x94 Controller button prompts and vibration\n"
+    "\x02" "\xE2\x9C\x94 Four netcode security fixes\n"
+    "\x02" "\xE2\x9C\x94 Frame pacing and faster loading\n"
+    "\x02" "\xE2\x9C\x94 Render scale, FSR, motion blur, anisotropic\n"
+    "\x02" "\xE2\x9C\x94 Plugin API for sub-mods";
 
 bool ShowWelcomeModalIfNewVersion()
 {
@@ -725,11 +725,14 @@ bool ShowWelcomeModalIfNewVersion()
     if (strcmp(seen, kModVersionString) == 0) return false;
 
     char msg[1024];
-    sprintf_s(msg, "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\nThis version includes:\n%s\n\n"
-                   "This is an EARLY release: expect hidden bugs and unfinished or unported features. Survival is the only"
-                   " recommended mode for now (controller support in Campaign and Multiplayer is incomplete or unsupported), but the"
-                   " netcode security fixes protect every mode, Multiplayer included.\n\n"
-                   "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
+    sprintf_s(msg,
+              "\x03" "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\n"
+              "\x03" "This version includes:\n%s\n\n"
+              "\x01" "\xE2\x9A\xA0 EARLY RELEASE: expect hidden bugs and unfinished or unported features. Survival is the only"
+              " recommended mode for now (controller support in Campaign and Multiplayer is incomplete or unsupported)." 
+              "\n\n"
+              "\x02" "\xE2\x9C\x94 The netcode security fixes protect every mode, Multiplayer included.\n\n"
+              "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
               kModVersionString, kWelcomeFeatureList);
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
     WritePrivateProfileStringA("State", "WelcomeShownVersion", kModVersionString, path);

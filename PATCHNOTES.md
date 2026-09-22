@@ -766,6 +766,8 @@ item below.
 
 45. **First-launch welcome modal replaces the obsolete high-render-scale warning (`-x64`).** The on-screen warning about x86 32-bit memory ceilings is gone (this project no longer supports x86). The same dismiss-to-continue modal now shows "Thanks for downloading MW32011NCP" with a short feature list, once per mod version (recorded in `mw3ncp_state.ini`). The modal panel and text canvas were enlarged to fit the list. The feature list and version live in `kWelcomeFeatureList` (`d3d9_hook.cpp`) and `kModVersionString` (`mod_config.h`) and are updated per release (rule added to CLAUDE.md/AGENTS.md). Build-verified; not yet live-tested.
 
+46. **Welcome modal: colour classes and leading symbols/emoji (`-x64`).** The dismiss-to-continue modal text now supports UTF-8 and a small markup: a paragraph may start with a colour marker (warning = orange-red, positive = green, heading = white; unmarked stays yellow) and then with one leading symbol/emoji drawn in a symbol font in a left gutter. The welcome message uses it: a highlighted early-release warning, green check marks for the feature list, and a white heading. Emoji render as monochrome outlines under GDI (colour emoji would need DirectWrite). Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
