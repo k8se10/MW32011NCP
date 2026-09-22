@@ -3568,11 +3568,35 @@ extern "C" float GetDvarFloatX64_Exported(const char* name)
     return GetDvarFloatX64(name);
 }
 
+// Set/cleared by Hook_MissileGuidanceDispatchX64 (below) whenever the real "guidance linked" flag
+// (clientStruct+0xc bit 0x80000) is observed set/clear -- lets Hook_MovementTick log whether it is
+// still firing and updating g_pitchAccum/g_yawAccum during missile guidance, without guessing from
+// a single capture whether a frozen accumulator means "the tick is skipped" (the DPV/mortar/turret
+// bug class) or just "the player held the stick still" (2026-09-22, issue #30 live-data follow-up).
+volatile bool g_missileGuidanceLinkedX64 = false;
+
 void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
     GameplayHookCtxScopeX64 gameplayCtx;
     g_lastGameplayTickMsX64 = GetTickCount();
     ApplyPendingDvarSetX64();
+
+    // Missile-guidance movement-tick liveness diagnostic (issue #30 follow-up) -- rate-limited, only while
+    // g_missileGuidanceLinkedX64 is true. Directly answers whether THIS hook (and therefore g_pitchAccum/
+    // g_yawAccum) is still being called at all during guidance, independent of whether the tester actually
+    // moved the stick that frame.
+    if (g_missileGuidanceLinkedX64) {
+        static DWORD s_lastMissileTickDiagMs = 0;
+        DWORD nowMsMissile = GetTickCount();
+        if (nowMsMissile - s_lastMissileTickDiagMs >= 200) {
+            s_lastMissileTickDiagMs = nowMsMissile;
+            char mtb[200];
+            sprintf_s(mtb, "[x64-missile-tick-diag] Hook_MovementTick fired while guidance linked -- "
+                "pitchAccum=%.4f yawAccum=%.4f",
+                g_pitchAccum ? *g_pitchAccum : -9999.0f, g_yawAccum ? *g_yawAccum : -9999.0f);
+            LogFromController(mtb);
+        }
+    }
     // Rate-limited (~1s) diagnostic heartbeat -- real data for the "needs a
     // click for input" investigation (see kMenuActiveGateInsnOffset's own
     // comment), so the NEXT test run shows what these candidate gate values
@@ -4431,6 +4455,8 @@ void __fastcall Hook_MissileGuidanceDispatchX64(
     if (!param2) return;
     unsigned int clientFlags = *reinterpret_cast<volatile unsigned int*>(reinterpret_cast<uintptr_t>(param2) + 0xc);
     bool linked = (clientFlags & 0x80000) != 0;
+
+    g_missileGuidanceLinkedX64 = linked; // feeds Hook_MovementTick's own liveness diagnostic, see its declaration
 
     if (!linked) {
         if (g_missileGuidanceDiagWasLinkedX64) {
