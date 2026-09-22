@@ -608,7 +608,10 @@ extern "C" bool IsPhysicalHeld_Exported(PhysicalInput p, unsigned short buttons,
 {
 #if defined(_M_X64) || defined(_WIN64)
     // Post-menu grace: A/B read as released for a moment after a menu closes (see PostMenuInputBlockedX64).
-    if (PostMenuInputBlockedX64()) return false;
+    // Never block Start/Back: the pause toggle polls Start from BOTH the gameplay tick and the always-on menu tick and
+    // keeps ONE shared edge tracker. Blocking it only inside the gameplay tick made that tracker see a release, so the
+    // next real read looked like a fresh press -- the game re-paused itself the moment it was unpaused (2026-09-22).
+    if (p != PhysicalInput::Start && p != PhysicalInput::Back && PostMenuInputBlockedX64()) return false;
 #endif
     return IsPhysicalHeld(p, buttons, leftTrigger, rightTrigger);
 }

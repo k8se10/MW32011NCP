@@ -3305,6 +3305,7 @@ constexpr DWORD kLevelIdleResetMs = 2000; // Pmove silent this long -- treat as 
 extern "C" DWORD GetLastMouseMoveTickMs(); // d3d9_hook.cpp
 
 static volatile bool g_focusLostRearmX64 = false;
+static DWORD g_lastMenuActiveMsX64 = 0; // last time the menu-active flag was seen set (sweep re-arm rule)
 // Called from the WndProc hook (d3d9_hook.cpp) when the window is deactivated (alt-tab etc.).
 extern "C" void NotifyWindowFocusLostX64() { g_focusLostRearmX64 = true; }
 
@@ -3315,13 +3316,17 @@ extern "C" void ForceReleaseStuckKbuttonsX64()
     DWORD sinceLastPmoveTick = nowMs - g_lastPmoveTickMs;
     bool pmoveLiveNow = sinceLastPmoveTick <= 500;
 
+    if (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0)) g_lastMenuActiveMsX64 = nowMs;
     if (sinceLastPmoveTick > kLevelIdleResetMs) {
-        // Re-arm ONLY for a level load (client in the menu/disconnected/loading state, clcState 0) or after the
-        // window lost focus -- NOT merely because Pmove was silent, which also happens while the pause menu is open
-        // (every unpause used to re-run the sweep and its ESC; user direction 2026-09-21).
+        // Re-arm for: a level load (client menu/disconnected state, clcState 0), a window focus loss, or a level RESTART
+        // (Pmove silent for a while with NO menu having been open recently -- a restart passes through loading without
+        // ever reaching clcState 0, which left the sweep un-armed and the new level stuck until a focus event,
+        // 2026-09-22). Pmove is also silent while the pause menu is open, so silence WITH a recent menu never re-arms
+        // (that made every unpause re-run the sweep and its ESC).
         int clcNow = -1;
         const bool haveClc = TryGetClcStateX64(&clcNow);
-        if (!haveClc || clcNow == 0 || g_focusLostRearmX64) {
+        const bool menuRecently = (nowMs - g_lastMenuActiveMsX64) < 2500;
+        if (!haveClc || clcNow == 0 || g_focusLostRearmX64 || !menuRecently) {
             g_autoUnstickDoneForThisLevel = false;
             g_autoUnstickState = AutoUnstickState::Idle;
             g_focusLostRearmX64 = false;
@@ -6222,6 +6227,47 @@ void Hook_DrawTextX64(
             // ~line 8813) -- in practice Quit/Leaderboards' own text content never
             // equals Back/Friends/GameSummary's, so this is a fail-safe, not a
             // load-bearing condition.
+            // "{GLYPH}" variant (2026-09-22): when the game considers a gamepad the active input it draws these corner hints
+            // with a literal "{GLYPH}" placeholder instead of the ^N key span ("Back {GLYPH}"), which matched nothing and
+            // showed the raw token. Substitute it the same way: text before/after the token become prefix/suffix.
+            if (!suppressRealDraw) {
+                const char* glyphTok = strstr(text, "{GLYPH}");
+                if (glyphTok && (strncmp(text, "Back", 4) == 0 || strncmp(text, "Friends", 7) == 0 ||
+                                 strncmp(text, "Game Summary", 12) == 0)) {
+                    static int s_glyphVariantLogged = 0;
+                    if (s_glyphVariantLogged < 6) {
+                        ++s_glyphVariantLogged;
+                        char gv[200];
+                        sprintf_s(gv, "[x64-back-diag] {GLYPH} variant seen: \"%.60s\" menu=\"%.40s\"", text, backMenuName);
+                        LogFromController(gv);
+                    }
+                    const bool gvBack = (text[0] == 'B');
+                    const char* gvKey = gvBack ? "ESC" : (text[0] == 'F' ? "F" : "G");
+                    char gvAsset[32] = {};
+                    if (TryGetMenuGlyphAssetNameForKeyName(gvKey, gvAsset, sizeof(gvAsset))) {
+                        char gvPrefix[128] = {}, gvSuffix[128] = {};
+                        size_t pl = static_cast<size_t>(glyphTok - text);
+                        if (pl >= sizeof(gvPrefix)) pl = sizeof(gvPrefix) - 1;
+                        memcpy(gvPrefix, text, pl);
+                        strncpy_s(gvSuffix, glyphTok + 7, _TRUNCATE);
+                        float gsx = 0.0f, gsy = 0.0f;
+                        ComputeRealDrawPositionX64(dcHandle, fontArg, scale, color1, color2, x, y, gsx, gsy);
+                        float gdx = 0.0f, gdy = 0.0f;
+                        ConvertRealScreenPosToDesignSpaceX64(gsx, gsy + kMenuHintVerticalNudgeX64, gdx, gdy);
+                        bool gvHardcoded = false;
+                        if (gvBack) {
+                            float hx = 0.0f, hy = 0.0f;
+                            char hp[16] = {}, hs[16] = {}, ha[32] = {};
+                            gvHardcoded = GetPausedBackHintX64(&hx, &hy, hp, sizeof(hp), hs, sizeof(hs), ha, sizeof(ha));
+                        }
+                        if (!gvHardcoded) {
+                            RequestMenuHintOverlay(gdx, gdy, gvPrefix, gvSuffix, gvAsset, 0xFFFFFFFFu, /*isBackShortcut=*/gvBack);
+                        }
+                        suppressRealDraw = true;
+                    }
+                }
+            }
+
             if (!suppressRealDraw && (isBackCornerHint || isFriendsCornerHint || isGameSummaryCornerHint)) {
                 char assetName[32] = {};
                 bool haveAssetName = isBackCornerHint
@@ -6595,9 +6641,13 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
         // e.g. the restart-mission modal is "all_restart_popmenu" and gets nothing.
         if (strcmp(lower, "pausedmenu") == 0) {
             // pause menu: bottom-right corner (defaults above)
+        } else if (strncmp(lower, "survival_armory", 15) == 0) {
+            // Buy stations: the native Back draw is at ONE stable position (live [x64-back-native] capture:
+            // survival_armory_equipment -> design (1200.8, 885.8)), so it is hardcoded here too.
+            useX = 1200.8f;
+            useY = 885.8f;
         } else {
-            // Buy stations (survival_armory_*) and every other menu: NOT handled here (2026-09-22) -- they use the
-            // original native-driven Back substitution in Hook_DrawTextX64.
+            // Every other menu: NOT handled here -- native-driven substitution in Hook_DrawTextX64.
             return false; // any other menu/modal (restart-mission confirm, options, ...): no hardcoded Back
         }
     }
