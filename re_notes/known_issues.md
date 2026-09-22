@@ -4119,17 +4119,22 @@ alone was not sufficient — see "Next step" above for where to look next.
 
 **Status:** Open on x86 (unchanged — the diagnostic hooks this issue's own
 x86 investigation depends on remain disabled after the issue #6 regression,
-data collection still blocked there). On x64: the DPV/mortar/turret
-`cmd+0x3e`/`0x3f` sub-mechanism is now mechanism-confirmed and a fix is
-build-verified, not yet live-tested (see the 2026-09-14 round below and
-`re_notes/known_issues_x64.md`). Predator Missile guidance specifically
-(REFUTED as sharing that mechanism, see the 2026-07-19 correction below) has
-its own separate, NEW, build-verified x64 diagnostic hook as of 2026-09-14
-(`Hook_MissileGuidanceDispatchX64`) — safer by design than x86's disabled
-pair (cheap-check-first, rate-limited, doesn't touch the Sprint/Hold-Breath
-call path that regressed x86), but not yet live-tested either. See the
-2026-09-14 "Predator Missile guidance — x64 investigation" round below for
-the full native-chain mapping and the open question it settles or leaves open.
+data collection still blocked there; the x86 line is discontinued/unsupported
+per CLAUDE.md, so this is not expected to be revisited). On x64: the
+DPV/mortar/turret `cmd+0x3e`/`0x3f` sub-mechanism is mechanism-confirmed and
+build-verified (see the 2026-09-14 round below and `re_notes/known_issues_x64.md`).
+**Predator Missile guidance on x64: RESOLVED 2026-09-22, LIVE-CONFIRMED** —
+root cause was a semantic mismatch (Hook_MountedAimTick's delta-accumulate
+write vs. the real steering consumer FUN_14000f860's absolute-position read),
+not the `FUN_14007e1e0` routing question this issue's 2026-09-14 round left
+open (that round's "already may work" hypothesis was wrong — live data showed
+guidance DOES share the DPV/mortar/turret routing bit after all). Fixed by
+writing an absolute LEFT-stick position during confirmed guidance instead of
+the right-stick delta. User confirmed working live, filed as "good enough,"
+not fully polished — refinement deferred to a future bulk killstreak pass.
+Full trail: `re_notes/known_issues_x64.md`'s newest round (immediately after
+the 2026-09-14 "Predator Missile guidance — x64 investigation" entry),
+commits `ce5b8ce2`/`5966e606`.
 
 **CONFIRMED LIVE REGRESSION, `Hook_ControlsLinkTo`/`Hook_MissileGuidanceDispatch`
 DISABLED (2026-07-19)** — these two diagnostic hooks (installed for this issue's

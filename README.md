@@ -21,7 +21,7 @@ native call exists, never a config tweak):
 
 | Component | What it does | Release-gating? | Status |
 |---|---|---|---|
-| **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — the gate | Flagship, most mature — see [What works](#what-works-right-now) |
+| **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — Survival gates the release; Campaign ships best-effort and has never gated it (same as on `-x86`) | Survival: Gameplay Complete (2026-09-22) — see [What works](#what-works-right-now) |
 | **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes | 🔴 Yes — the gate | Render scale and motion blur live-confirmed; rest wired for x64, not yet live-tested |
 | **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — not held to the SP controller-support gate below (same repo, absorbed 2026-09-12 — not a separate project) | **Complete, end to end — all 4 tracked vulnerabilities resolved** (3 fixed, 1 confirmed already safe), closing genuine RCE-class holes present since before this project existed, with no known official Activision fix. 2 of 3 active fixes independently confirmed firing against real MP traffic; the third (SP/Spec-Ops P2P) is build-verified and resolves correctly live, just not yet observed against a real P2P session — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
@@ -110,15 +110,24 @@ its final state and documentation are preserved in
 rebuilding for x64 from that foundation, using the same reverse-engineering
 methodology, across all four components above.
 
-**Release gate**: no `-x64` release ships until Campaign/Survival controller
-support reaches the same feature completeness the `-x86` line reached before
-being discontinued — every control and the visual-enhancement suite working,
-not just the input-remapping core. (The custom Options screen's own vanilla-
+**Release gate**: no `-x64` release ships until Survival controller support
+reaches the same feature completeness the `-x86` line reached before being
+discontinued — every control and the visual-enhancement suite working, not
+just the input-remapping core. (The custom Options screen's own vanilla-
 setting tabs are a deliberately deferred exception, not a release blocker —
-see Known gaps below.) **Progress is going well — current estimate: a
-release within the next 14 days**, revised down from the original 2-4 week
-estimate now that the first real playtest has confirmed most of the build
-already works and found/closed every regression it turned up same-day. See
+see Known gaps below.) **Campaign has never been a release gate** — same as
+on the `-x86` line, where several Campaign-specific items (e.g. the AC-130
+sequence) shipped honestly marked untested rather than blocking release;
+Campaign controller support ships best-effort, verified as it's touched,
+not held to Survival's own live-test bar. **Survival's own controller-
+support scope is now Gameplay Complete (2026-09-22)** — every core control,
+Predator Missile guidance included, is live-confirmed working; further
+killstreak/mounted-weapon feel and sensitivity refinement is deferred to a
+dedicated future bulk pass rather than blocking this milestone. **Progress
+is going well — current estimate: a release within the next 14 days**,
+revised down from the original 2-4 week estimate now that the first real
+playtest has confirmed most of the build already works and found/closed
+every regression it turned up same-day. See
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) issue #1 for
 the live, detailed tracking of exactly what's done and what's left,
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)

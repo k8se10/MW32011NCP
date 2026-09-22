@@ -5658,6 +5658,48 @@ worked on any architecture, not a guessed-and-shipped behavior change.
 
 ---
 
+**RESOLVED (good-enough basket) 2026-09-22 — real root cause found, fixed, LIVE-CONFIRMED
+working by direct playtest. The "already may work" MEDIUM-confidence hypothesis above was
+WRONG** (worth recording precisely, since it was reasoned carefully and still missed): the
+missing hop it flagged as unconfirmed does NOT exist the way it guessed. Real diagnostic data
+(two live captures, `[x64-missile-tick-diag]` + `[x64-missile-steer-diag]`) instead showed
+missile guidance DOES share the DPV/Mortar/Turret `FUN_14007e1e0` routing bit after all
+(`DAT_1406e4774+0x80000`) — the opposite of what this round's cross-reference concluded —
+so `Hook_MovementTick`/`FUN_14007d9f0` never runs during guidance at all;
+`FUN_14007de20`/`Hook_MountedAimTick` runs instead and is already the sole writer of
+`cmd+0x3e`/`0x3f`, the exact bytes `FUN_14000f860` (the real steering consumer, found this
+same round) reads. So the byte-write pipeline was never broken. The actual bug: a semantic
+mismatch — `FUN_14000f860` treats `cmd+0x3e`/`0x3f` as an ABSOLUTE stick position re-read
+every tick, but `Hook_MountedAimTick`'s existing DPV/Mortar/Turret logic treats them as a
+small per-tick DELTA accumulator (correct for that system's own real mouse-delta consumer,
+`FUN_14007d3b0`) — full stick deflection only ever added ~1-2 to the byte per tick, an
+effectively negligible fraction of the -128..127 range the missile expects. Matches the
+user's own recalled "~1000x too low" diagnosis and the existing `missileHellfireUpAccel=1000`
+vs `missileRemoteSteerPitchRate/YawRate=35.0` disparity noted elsewhere in this issue.
+
+**Fix**: `Hook_MountedAimTick` now branches on a new flag (`g_missileGuidanceLinkedX64`, set
+by the existing `Hook_MissileGuidanceDispatchX64`) — only during confirmed missile guidance,
+it writes the LEFT stick's current absolute position into `cmd+0x3e`/`0x3f` each tick (direct
+user correction: real console MW3 uses LS to steer, not RS) instead of the RS delta-accumulate
+path, which is completely unchanged for the real DPV/Mortar/Turret case. First live test found
+both axes inverted ("it works but is inverted in all directions") — fixed by negating both
+`lsX`/`lsY` unconditionally (not gated on `g_modConfig.invertLook`, which is a separate,
+unrelated normal-gameplay-look setting). **User confirmed fixed** after that second fix.
+
+**Explicitly filed as "good enough," not a finished feature** — direct user framing: "it still
+needs work but im putting it in the good enough basket (killstreaks will get refined and
+implemented in bulk)." Every other killstreak/mounted-weapon control issue in this file and
+`known_issues.md` (AC-130 gun-type switching, DPV/Mortar/Turret's own live-test status, etc.)
+gets the same treatment going forward — real, working, shippable, but not polished — until a
+dedicated future bulk killstreak-refinement pass. Do not silently reopen this specific bug for
+minor feel/sensitivity tuning without that broader pass being the actual trigger.
+
+Diagnostic logging (`[x64-missile-tick-diag]`, `[x64-missile-steer-diag]`,
+`[x64-missile-steer-fix]`) left in place, rate-limited, useful groundwork for the future bulk
+pass. Commits: `ce5b8ce2` (root cause + fix), `5966e606` (axis-inversion correction).
+
+---
+
 **UPDATE 2026-09-14 (live playtest) — REFRAMES the cutscene-skip-audio
 investigation: on x64, Start currently does NOT skip a cutscene at all.**
 

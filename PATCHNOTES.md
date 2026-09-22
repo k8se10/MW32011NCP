@@ -772,6 +772,8 @@ item below.
 
 48. **Pre-1.0 dev-build watermark (`-x64`).** Every frame draws a small, ~70%-opacity build stamp in the bottom-right corner ("MW32011NCP dev build - DD/MM/YYYY - v0.0.1-x64 (commit)"), the same idea as Fortnite/Rocket League's dev-build corner text. Derived at compile time from the build date, the release version and the exact git commit that built the DLL (a new pre-build step, `gen_git_version.bat`, regenerates a small gitignored header with the short commit hash before every build) -- not a hand-maintained string. Unconditional, no config toggle: remove entirely once 1.0 ships (rule added to CLAUDE.md/AGENTS.md). Build-verified; not yet live-tested.
 
+49. **Predator Missile post-fire guidance now steers on controller (`-x64`, issue #30).** Never worked on either architecture before. Root cause: guidance shares the DPV/Mortar/Turret orchestrator routing bit, so `Hook_MountedAimTick` (not the normal movement/look hook) is the sole writer of the steering bytes -- but its existing right-stick, per-tick-delta design (correct for DPV/mortar/turret's own mouse-delta-style consumer) produced values ~1000x too small for the missile's own absolute-stick-position-style consumer. Now writes the LEFT stick's current absolute position during confirmed missile guidance only; the DPV/Mortar/Turret right-stick path is unchanged. **Live-confirmed working.** Filed as "good enough," not fully polished -- further feel/sensitivity refinement is deferred to a future bulk killstreak-refinement pass, same as every other mounted-weapon/killstreak control in this release. See `re_notes/known_issues_x64.md` for the full trail.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
