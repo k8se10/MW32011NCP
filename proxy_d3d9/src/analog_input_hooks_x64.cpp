@@ -7506,7 +7506,29 @@ void InstallAnalogInputHooksX64()
     // comment (above Hook_MotionBlurTrigger) for the full discovery trail. This
     // is what was actually missing from the 2026-09-12 motion-blur x64 port --
     // the gates/delta-feed were already real, this hook is the missing trigger.
-    {
+    //
+    // 2026-09-22, live perf isolation test -- direct user theory, tying two
+    // already-confirmed facts together: x86's own issue #100 research found
+    // visionset_pain's native color-blend applier runs through the EXACT SAME
+    // shared per-frame dispatch point this hook sits on (FUN_00693ff0/its x64
+    // equivalent FUN_14018def0), and the native low-health "get to cover"
+    // system is separately confirmed broken/missing its text on the current
+    // x64 build (a real Activision regression, reproduces even fully vanilla).
+    // Until now this hook was installed UNCONDITIONALLY regardless of
+    // MotionBlurEnabled/FsrSharpenEnabled -- Hook_MotionBlurTrigger's own gate
+    // check happens AFTER MinHook's trampoline redirect already ran, so even
+    // with both features off, every single call to this function (every
+    // viewport composite, "menu included" per this hook's own comment) was
+    // still being intercepted and redirected through our code first. This
+    // makes installation itself conditional -- if neither feature is enabled
+    // at startup, the detour is never created at all, testing whether the
+    // mere PRESENCE of a detour on this exact shared dispatch point (not
+    // anything it does) is what's interacting badly with the native blend.
+    // NOTE: neither toggle is hot-reloadable for this specific gate as a
+    // result -- flipping MotionBlurEnabled/FsrSharpenEnabled on after launch
+    // with this hook never installed needs a restart to take effect. Revisit
+    // if this isolation test doesn't confirm the theory.
+    if (g_modConfig.motionBlurEnabled || g_modConfig.fsrSharpenEnabled) {
         SigScan::Result r = SigScan::FindPatternInMainModule(kMotionBlurTriggerSignature);
         if (!r.found) {
             LogFromController("[x64-motionblur] FATAL: motion-blur trigger signature did not resolve -- "
@@ -7534,6 +7556,10 @@ void InstallAnalogInputHooksX64()
                 }
             }
         }
+    } else {
+        LogFromController("[x64-motionblur] Motion blur/FSR both disabled at startup -- trigger hook NOT "
+            "installed this session (2026-09-22 isolation test: installation itself is now conditional, "
+            "not just internal behavior -- see this install site's own comment).");
     }
 
     // Weapnext -- same direct-call pattern as Buttons/Pause above.
