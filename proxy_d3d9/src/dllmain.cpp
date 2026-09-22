@@ -108,9 +108,60 @@ FILE* g_log = nullptr;
 // spam no longer pays a disk-flush cost on every single call.
 constexpr DWORD kLogFlushIntervalMs = 1000;
 
-LONG WINAPI FlushLogOnCrash(EXCEPTION_POINTERS* /*exceptionInfo*/)
+// 2026-09-22 -- LIVE-CONFIRMED root cause of a real, reported per-hit stutter
+// ("lags a shit ton... taking actual player damage") via x64dbg: paused the
+// process at the exact reported lag moment and found the MAIN thread sitting
+// inside this exact function's own fflush() -> _write_internal call chain, not
+// inside anything render/gameplay-related. A vectored exception handler sees
+// EVERY exception raised anywhere in the process -- first-chance, including
+// ones a completely unrelated module (the game's own engine, a C++ exception
+// used for internal control flow, Steam Overlay, a driver) throws and catches
+// internally as normal, benign control flow, not just genuine unhandled
+// crashes. This handler was doing a real, synchronous, blocking disk write
+// (fflush) for every single one of those, unconditionally, on whichever
+// thread happened to raise it -- for the vast majority of exceptions, that's
+// the game's own main thread. A real native code path specifically taken on
+// an unarmored hit (matching this project's own x86-era `visionset_pain`
+// research into native code that only runs on that exact path) raising even
+// one internally-caught SEH/C++ exception would be enough to trigger this,
+// completely independent of anything this project logs or how much of it --
+// explaining why disabling every individual logged feature never helped.
+// Fixed by filtering to exception codes that would ACTUALLY crash the process
+// if left unhandled -- the only case this handler's own stated purpose (a
+// fully flushed log for genuine crash diagnosis) requires -- and skipping the
+// synchronous flush entirely for everything else, same "never handle, only
+// observe" contract as before, just no longer paying a real disk I/O cost for
+// exceptions nothing was ever going to crash from.
+bool IsLikelyFatalExceptionCode(DWORD code)
 {
-    if (g_log) fflush(g_log);
+    switch (code) {
+        case EXCEPTION_ACCESS_VIOLATION:
+        case EXCEPTION_STACK_OVERFLOW:
+        case EXCEPTION_ILLEGAL_INSTRUCTION:
+        case EXCEPTION_PRIV_INSTRUCTION:
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+        case EXCEPTION_IN_PAGE_ERROR:
+        case EXCEPTION_NONCONTINUABLE_EXCEPTION:
+        case 0xC0000409: // STATUS_STACK_BUFFER_OVERRUN -- this project's own recurring
+                          // sprintf_s-overflow crash class, real and worth a flush for.
+            return true;
+        default:
+            // Deliberately excludes 0xE06D7363 (standard MSVC C++ exception, already
+            // documented elsewhere in this codebase as benign/expected -- see the
+            // x64dbg workflow notes on auto-ignoring it) and everything else: normal
+            // SEH-based control flow, debugger first-chance breakpoints, etc. -- none
+            // of these would ever reach this handler as a genuine unhandled crash.
+            return false;
+    }
+}
+
+LONG WINAPI FlushLogOnCrash(EXCEPTION_POINTERS* exceptionInfo)
+{
+    if (g_log && exceptionInfo && exceptionInfo->ExceptionRecord &&
+        IsLikelyFatalExceptionCode(exceptionInfo->ExceptionRecord->ExceptionCode)) {
+        fflush(g_log);
+    }
     return EXCEPTION_CONTINUE_SEARCH; // never handle -- observe-and-flush only
 }
 
