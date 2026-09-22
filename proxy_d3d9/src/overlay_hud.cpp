@@ -2166,8 +2166,24 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
     // wired through -- logged once per distinct (assetName, design cursorX/Y, scale)
     // combination so a live repro's proxy_d3d9.log can be compared directly against a
     // pixel-measured screenshot, instead of guessing at another fix blind.
+    //
+    // BUG FOUND AND FIXED 2026-09-22, live perf investigation ("lags a shit ton...
+    // taking actual player damage"): this dedup used ONE shared static key across
+    // EVERY hint slot (Mantle/Interact/Pickup/ReadyUp/Reload/...), unconditionally,
+    // no toggle gating it at all. This is the EXACT bug class already found and
+    // fixed once on the -x86 line (legacy known_issues.md: `HudGlyphPositionLogging`'s
+    // own single-last-value dedup produced 423,063 log lines in one combat session,
+    // directly explaining a live report worded almost identically to this one --
+    // "stutter when we get shot or are approaching enemies", since combat is exactly
+    // when multiple distinct HUD/hint elements churn fastest, and a dedup keyed to
+    // only the SINGLE most recent value re-fires on every slot switch instead of
+    // actually deduplicating anything). Fixed the same way x86's own fix did: a real
+    // per-slot seen-set (indexed by slotId, matching this file's own existing
+    // per-slot array convention, e.g. s_gpFade in DrawGameplayHintSlotsIfRequested)
+    // instead of one key shared across every distinct hint family.
     {
-        static char s_lastLoggedKey[96] = {};
+        static char s_lastLoggedKeyPerSlot[kGameplayHintSlotCount][96] = {};
+        char* lastLoggedKey = s_lastLoggedKeyPerSlot[static_cast<int>(slotId)];
         // 2026-09-13 safety hardening: theoretical worst-case %f width for a pathological
         // float magnitude exceeds this buffer's old size -- practically these are always
         // sane screen/design-space coordinates, never attacker/game-text-controlled, but
@@ -2176,8 +2192,8 @@ void DrawOneGameplayHintSlot(void* device, GameplayHintSlot& slot, GameplayHintS
         // here specifically).
         char key[160];
         sprintf_s(key, "%s|%.1f|%.1f|%.4f|%.4f", slot.assetName, cursorX, slot.y, scaleX, scaleY);
-        if (strncmp(s_lastLoggedKey, key, sizeof(s_lastLoggedKey) - 1) != 0) {
-            strncpy_s(s_lastLoggedKey, key, _TRUNCATE);
+        if (strncmp(lastLoggedKey, key, 96 - 1) != 0) {
+            strncpy_s(lastLoggedKey, 96, key, _TRUNCATE);
             // 2026-09-13 safety hardening: same rationale as the `key` buffer above --
             // padded above the theoretical worst case for six %f substitutions, cheap
             // insurance rather than a response to an observed crash here specifically.
