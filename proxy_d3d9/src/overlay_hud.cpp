@@ -7399,7 +7399,7 @@ void DrawBuildWatermark(void* device)
     // Bottom-right, close to the very edge (design space, 1920x1080 basis) -- pulled in further after it clipped
     // other UI at a 10px margin.
     constexpr float kWmRightMarginPx = 10.0f;
-    constexpr float kWmBottomMarginPx = 0.0f; // flush with the bottom edge (was 2px; asked for 3px lower, floored at 0)
+    constexpr float kWmBottomMarginPx = -2.0f; // slightly past the bottom edge, per direct request
     const float drawX = 1920.0f - kWmRightMarginPx - static_cast<float>(widthPx);
     const float drawY = 1080.0f - kWmBottomMarginPx - static_cast<float>(kTextureHeight) * wmScale;
     // Grey, ~25% alpha. At low opacity a pale grey blends toward white against a dark background -- darkened the RGB
