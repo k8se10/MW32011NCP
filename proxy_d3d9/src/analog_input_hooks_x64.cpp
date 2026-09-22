@@ -4299,9 +4299,15 @@ void __fastcall Hook_MountedAimTick(int player, void* cmd)
     if (g_missileGuidanceLinkedX64) {
         float lsX = 0.0f, lsY = 0.0f;
         if (!Controller_GetLeftStick(lsX, lsY)) return; // raw, independent of the player's own move/look layout
-        float pitchIn = g_modConfig.invertLook ? -lsY : lsY;
+        // 2026-09-22 live-test correction: the first live playtest confirmed the write pipeline/magnitude are
+        // correct (missile visibly responds to LS) but BOTH axes came out backwards from every direction --
+        // direct user report "it works but is inverted in all directions". Both flipped here (independent of
+        // g_modConfig.invertLook, which is an unrelated normal-gameplay-look setting -- conflating the two was
+        // the bug in the first cut, since a player with invertLook=0 still got a negated pitch above).
+        float pitchIn = -lsY;
+        float yawIn = -lsX;
         cmdBytesEarly[0x3e] = static_cast<unsigned char>(ClampToSByteX64(static_cast<int>(pitchIn * 127.0f)));
-        cmdBytesEarly[0x3f] = static_cast<unsigned char>(ClampToSByteX64(static_cast<int>(lsX * 127.0f)));
+        cmdBytesEarly[0x3f] = static_cast<unsigned char>(ClampToSByteX64(static_cast<int>(yawIn * 127.0f)));
 
         static DWORD s_lastMissileSteerFixDiagMs = 0;
         DWORD nowMsFix = GetTickCount();
