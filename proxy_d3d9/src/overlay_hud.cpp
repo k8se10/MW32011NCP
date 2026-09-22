@@ -1566,12 +1566,56 @@ void PrewarmGlyphIconTextures(void* device)
 // draws solid UI chrome (white bars/panels), the custom cursor, or a real .menu DDS
 // asset deliberately leaves this false -- this is specifically a cosmetic override
 // for text/glyph draws, not a general rendering hook.
+// ---- Mod-wide hold + fade for hint glyphs and their text (2026-09-22, user design) -------------------------------
+// The native draws that trigger our overlay hints are intermittent (extra passes, menu animations), which showed as
+// flicker. Once a hint stops being detected it is held fully visible for kHintHoldMs, then faded out over kHintFadeMs;
+// a hint that appears fades in over kHintFadeMs. A hint that is detected repeatedly therefore looks solid. Applied to
+// every hint drawn through DrawGenericTexturedQuad(isTextOrGlyph=true) via g_hintFadeAlphaMul.
+constexpr DWORD kHintHoldMs = 100;
+constexpr DWORD kHintFadeMs = 50;
+float g_hintFadeAlphaMul = 1.0f;
+struct HintFadeState {
+    DWORD lastSeenMs = 0;
+    DWORD shownSinceMs = 0;
+    bool visible = false;
+};
+// Returns the alpha (0..1) this hint should draw with this frame; 0 = do not draw.
+float UpdateHintFade(HintFadeState& s, bool requestedNow, DWORD now)
+{
+    if (requestedNow) {
+        if (!s.visible || (now - s.lastSeenMs) > kHintHoldMs + kHintFadeMs) s.shownSinceMs = now;
+        s.visible = true;
+        s.lastSeenMs = now;
+    } else if (!s.visible) {
+        return 0.0f;
+    }
+    const DWORD sinceSeen = now - s.lastSeenMs;
+    if (sinceSeen > kHintHoldMs + kHintFadeMs) { s.visible = false; return 0.0f; }
+    float outA = (sinceSeen <= kHintHoldMs) ? 1.0f : 1.0f - static_cast<float>(sinceSeen - kHintHoldMs) / static_cast<float>(kHintFadeMs);
+    float inA = static_cast<float>(now - s.shownSinceMs + 8) / static_cast<float>(kHintFadeMs);
+    if (inA > 1.0f) inA = 1.0f;
+    if (outA < 0.0f) outA = 0.0f;
+    return outA < inA ? outA : inA;
+}
+
 void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, float w, float h, DWORD color = 0xFFFFFFFF,
                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
                               bool premultipliedAlpha = false, bool isTextOrGlyph = false)
 {
     if (isTextOrGlyph && g_pluginTextGlyphColorOverride) {
         color = static_cast<DWORD>(g_pluginTextGlyphColorOverride(static_cast<unsigned long>(color)));
+    }
+    if (isTextOrGlyph && g_hintFadeAlphaMul < 1.0f) {
+        const float m = g_hintFadeAlphaMul < 0.0f ? 0.0f : g_hintFadeAlphaMul;
+        DWORD a = static_cast<DWORD>(static_cast<float>((color >> 24) & 0xFF) * m);
+        if (premultipliedAlpha) {
+            const DWORD r = static_cast<DWORD>(static_cast<float>((color >> 16) & 0xFF) * m);
+            const DWORD g = static_cast<DWORD>(static_cast<float>((color >> 8) & 0xFF) * m);
+            const DWORD b = static_cast<DWORD>(static_cast<float>(color & 0xFF) * m);
+            color = (a << 24) | (r << 16) | (g << 8) | b;
+        } else {
+            color = (a << 24) | (color & 0x00FFFFFFu);
+        }
     }
     void** deviceVtbl = *reinterpret_cast<void***>(device);
     auto setTexture = reinterpret_cast<SetTexture_t>(deviceVtbl[kSetTextureVtableIndex]);
@@ -2266,9 +2310,20 @@ void DrawGameplayHintSlotsIfRequested(void* device)
         }
     }
 #endif
+    // Hold + fade persistence (see UpdateHintFade): requests are consumed here, and each slot keeps drawing through short
+    // detection gaps instead of flickering.
+    static HintFadeState s_gpFade[kGameplayHintSlotCount];
+    float gpAlpha[kGameplayHintSlotCount] = {};
     bool anyRequested = false;
-    for (auto& slot : g_gameplayHintSlots) {
-        if (slot.requestedThisFrame) { anyRequested = true; break; }
+    {
+        const DWORD gpNow = GetTickCount();
+        for (int i = 0; i < kGameplayHintSlotCount; ++i) {
+            GameplayHintSlot& s = g_gameplayHintSlots[i];
+            const bool req = s.requestedThisFrame;
+            s.requestedThisFrame = false; // consume
+            gpAlpha[i] = UpdateHintFade(s_gpFade[i], req, gpNow);
+            if (gpAlpha[i] > 0.0f) anyRequested = true;
+        }
     }
     if (!anyRequested) return;
 
@@ -2314,17 +2369,18 @@ void DrawGameplayHintSlotsIfRequested(void* device)
     // relationship explicit and correct instead of an accidental side effect,
     // and additionally makes Mantle itself suppress the same way Reload does
     // when Interact is showing.
-    bool interactShowing = g_gameplayHintSlots[static_cast<int>(GameplayHintSlotId::Interact)].requestedThisFrame;
+    bool interactShowing = gpAlpha[static_cast<int>(GameplayHintSlotId::Interact)] > 0.0f;
 
     for (int i = 0; i < kGameplayHintSlotCount; ++i) {
         GameplayHintSlot& slot = g_gameplayHintSlots[i];
-        if (!slot.requestedThisFrame) continue;
-        slot.requestedThisFrame = false; // consume regardless of outcome below
+        if (gpAlpha[i] <= 0.0f) continue;
         GameplayHintSlotId thisSlotId = static_cast<GameplayHintSlotId>(i);
         if ((thisSlotId == GameplayHintSlotId::Reload || thisSlotId == GameplayHintSlotId::Mantle) && interactShowing) {
             continue; // the one named suppression rule -- see this function's own comment
         }
+        g_hintFadeAlphaMul = gpAlpha[i];
         DrawOneGameplayHintSlot(device, slot, thisSlotId, scaleX, scaleY);
+        g_hintFadeAlphaMul = 1.0f;
     }
 }
 
@@ -2456,30 +2512,25 @@ void DrawMenuHintsIfRequested(void* device)
 #endif
     int count = g_menuHintSlotCountThisFrame;
     g_menuHintSlotCountThisFrame = 0;
-    // Flicker guard (2026-09-21, live-reported: menu corner-hint glyph flickers on the pause menu and is
-    // missing on other screens). Slots are only filled when the native text draw happens to run inside the
-    // frame that reaches EndScene; a frame where it doesn't (or an extra EndScene) used to drop the glyph
-    // AND leave the native text suppressed. Re-draw the last populated slots for a short grace window.
-    // Slot contents persist across frames (only the count is reset), so this is a pure re-draw.
-    static int s_lastMenuHintCount = 0;
-    static DWORD s_lastMenuHintTick = 0;
+    // Hold + fade persistence per pool slot (see UpdateHintFade). Slot contents persist across frames (only the count is
+    // reset), so a slot that was not re-requested this frame is simply re-drawn from its last contents while it is held
+    // or fading; it fades in when first requested and fades out after it stops being requested.
+    static HintFadeState s_menuFade[kMaxMenuHintSlots];
+    float menuAlpha[kMaxMenuHintSlots] = {};
+    bool anyMenuHint = false;
     const DWORD nowTick = GetTickCount();
-    if (count > 0) {
-        s_lastMenuHintCount = count;
-        s_lastMenuHintTick = nowTick;
-    } else if (s_lastMenuHintCount > 0 && (nowTick - s_lastMenuHintTick) < 120) {
-        count = s_lastMenuHintCount;
-        static int s_graceLogged = 0;
-        if (s_graceLogged < 5) {
-            ++s_graceLogged;
-            LogFromController("[menuhint] frame without a fresh hint request -- re-drawing the previous slots (flicker guard)");
-        }
+    for (int i = 0; i < kMaxMenuHintSlots; ++i) {
+        menuAlpha[i] = UpdateHintFade(s_menuFade[i], i < count, nowTick);
+        if (menuAlpha[i] > 0.0f) anyMenuHint = true;
     }
-    if (count == 0) return;
+    if (!anyMenuHint) return;
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
-    for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < kMaxMenuHintSlots; ++i) {
+        if (menuAlpha[i] <= 0.0f) continue;
+        g_hintFadeAlphaMul = menuAlpha[i];
         DrawOneMenuHintSlot(device, g_menuHintSlots[i], scaleX, scaleY);
+        g_hintFadeAlphaMul = 1.0f;
     }
 }
 

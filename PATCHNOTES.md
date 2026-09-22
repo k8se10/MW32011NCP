@@ -754,6 +754,8 @@ item below.
 
 41. **Gameplay controls no-op while a menu is up and for 400 ms after it closes (`-x64`).** The controller reads made from inside the gameplay hooks (`Hook_MovementTick`/`Hook_SprintTick`) report every button as released while the pause menu is up and for a short grace after any menu closes (menus that leave gameplay running, like Survival buy stations, are not blocked while open), so the press that closes a menu (A on "Resume Game", B for back, buy-station back) can no longer also jump, crouch/prone or fire in gameplay; the unpause can resume the gameplay tick a frame before the menu-active flag drops, which the first (menu-flag-gated) version missed. Menu navigation reads are unaffected. Build-verified; not yet live-tested.
 
+42. **Mod-wide hold + fade for hint glyphs and their text (`-x64`).** Every overlay hint (gameplay hints such as interact/ready-up/mantle, and the menu corner hints) now holds fully visible for 100 ms after its native draw stops being detected, then fades out over 50 ms, and fades in over 50 ms when it first appears. A hint that is detected repeatedly therefore looks solid instead of flickering, and it replaces the earlier fixed 120 ms re-draw guard. Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue
