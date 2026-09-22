@@ -2318,6 +2318,8 @@ extern "C" bool GetReadyUpPromptGlyphX64(char* assetOut, size_t assetOutSize);
 extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize);
 extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t prefixSize, char* suffix, size_t suffixSize,
                                     char* asset, size_t assetSize);
+extern "C" LONG ConsumeBackNativeDrawCountX64();
+extern "C" bool ShouldDrawGlyphOverlay_Exported();
 extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize);
 #endif
 
@@ -2532,7 +2534,8 @@ void DrawMenuHintsIfRequested(void* device)
 {
     // Visible pass only (see IsVisiblePresentationPass): requests wait for it, nothing is consumed or drawn on the
     // offscreen blur/tint EndScenes.
-    if (!IsVisiblePresentationPass(device)) return;
+    static int s_traceSkippedPasses = 0;
+    if (!IsVisiblePresentationPass(device)) { ++s_traceSkippedPasses; return; }
 #if defined(_M_X64) || defined(_WIN64)
     // Pause-menu Back glyph: drawn from the last known-good position every rendered frame while paused, NOT from
     // whether the native Back text happened to draw this frame (that draw runs on offscreen blur passes as well and
@@ -2558,6 +2561,31 @@ void DrawMenuHintsIfRequested(void* device)
         menuAlpha[i] = UpdateHintFade(s_menuFade[i], i < count, nowTick);
         if (menuAlpha[i] > 0.0f) anyMenuHint = true;
     }
+#if defined(_M_X64) || defined(_WIN64)
+    // Per-visible-frame trace of the menu-hint pipeline (dev only: [Experimental] UnboundedDevLog). Answers, for a
+    // flickering hint: was it requested this frame, how many native Back draws happened, how many offscreen passes were
+    // skipped, and what alpha each pool slot ended up with.
+    {
+        static int s_traceLines = 0;
+        static DWORD s_traceLastTick = 0;
+        const LONG nativeBack = ConsumeBackNativeDrawCountX64();
+        if (g_modConfig.unboundedDevLog && s_traceLines < 700 && (anyMenuHint || count > 0 || nativeBack > 0)) {
+            char tl[420];
+            int w = sprintf_s(tl, "[menuhint-trace] dt=%lums req=%d nativeBack=%ld skippedPasses=%d ov=%d", nowTick - s_traceLastTick, count,
+                              nativeBack, s_traceSkippedPasses, ShouldDrawGlyphOverlay_Exported() ? 1 : 0);
+            for (int i = 0; i < kMaxMenuHintSlots && w > 0 && w < 340; ++i) {
+                if (menuAlpha[i] <= 0.0f) continue;
+                w += sprintf_s(tl + w, sizeof(tl) - w, " | s%d a=%.2f %s(%.0f,%.0f)\"%.6s\"", i, menuAlpha[i],
+                               g_menuHintSlots[i].isBackShortcut ? "BACK" : "hint", g_menuHintSlots[i].x, g_menuHintSlots[i].y,
+                               g_menuHintSlots[i].prefixText);
+            }
+            LogFromController(tl);
+            ++s_traceLines;
+        }
+        s_traceLastTick = nowTick;
+        s_traceSkippedPasses = 0;
+    }
+#endif
     if (!anyMenuHint) return;
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);

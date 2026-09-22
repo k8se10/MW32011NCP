@@ -626,6 +626,7 @@ static bool IsGameplayPausedX64()
 // The pause-menu Back glyph is drawn from THIS while paused, independent of whether the native draw ran this
 // frame -- the native draw is what flickered (it runs on the offscreen blur passes too); suppression of the
 // native text stays tied to the native draw, which was already consistent (2026-09-21, user direction).
+static volatile LONG g_backNativeDrawsSinceVisibleX64 = 0;
 static bool g_backHintValidX64 = false;
 static bool g_backHintValidLoggedX64 = false;
 static float g_backHintLoggedXX64 = 0.0f, g_backHintLoggedYX64 = 0.0f;
@@ -6351,6 +6352,7 @@ void Hook_DrawTextX64(
                             hardcodedBackActive = GetPausedBackHintX64(&hbx, &hby, hbp, sizeof(hbp), hbs, sizeof(hbs), hba, sizeof(hba));
                         }
                         if (!hardcodedBackActive && !(isFriendsCornerHint && (IsInsideSpecOpsNestedModalX64() || IsFriendsListOpenX64()))) {
+                            InterlockedIncrement(&g_backNativeDrawsSinceVisibleX64); // per-frame trace counter (overlay_hud)
                             RequestMenuHintOverlay(designX, designY, prefixText, suffixText, assetName,
                                                      0xFFFFFFFFu, /*isBackShortcut=*/isBackCornerHint);
                         }
@@ -6558,6 +6560,9 @@ extern "C" bool IsReadyUpHudElemTextDrawnX64()
     LONG t = g_hudElemReadyTextSeenTickX64;
     return t != 0 && (GetTickCount() - static_cast<DWORD>(t)) < 500;
 }
+
+// Trace support for overlay_hud's [menuhint-trace] (2026-09-22): native Back draws processed since the last visible pass.
+extern "C" LONG ConsumeBackNativeDrawCountX64() { return InterlockedExchange(&g_backNativeDrawsSinceVisibleX64, 0); }
 
 // Pause-menu Back hint, drawn by overlay_hud every rendered frame while the pause menu is up (see g_backHintValidX64).
 // "Paused menu" = a menu is active, the gameplay tick has gone stale, and the client is in a level (clcState != 0),
