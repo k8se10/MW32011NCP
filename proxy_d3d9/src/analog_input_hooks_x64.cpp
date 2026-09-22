@@ -3582,17 +3582,24 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     ApplyPendingDvarSetX64();
 
     // Missile-guidance movement-tick liveness diagnostic (issue #30 follow-up) -- rate-limited, only while
-    // g_missileGuidanceLinkedX64 is true. Directly answers whether THIS hook (and therefore g_pitchAccum/
-    // g_yawAccum) is still being called at all during guidance, independent of whether the tester actually
-    // moved the stick that frame.
+    // g_missileGuidanceLinkedX64 is true. CORRECTED 2026-09-22 (direct user correction: "its ls to control a
+    // missile natively on console") -- the real console control scheme steers the missile with the LEFT
+    // stick, not look/right stick; g_pitchAccum/g_yawAccum (right-stick-only) were the wrong axis to compare
+    // against the whole time, on both architectures' prior investigations. Logs the raw left stick directly
+    // (Controller_GetLeftStick, bypassing the player's own move/look layout preference -- missile steering is
+    // its own native control scheme, not the normal movement mapping) so it can be correlated against
+    // rawAngles/outAngles from Hook_MissileGuidanceDispatchX64 above.
     if (g_missileGuidanceLinkedX64) {
         static DWORD s_lastMissileTickDiagMs = 0;
         DWORD nowMsMissile = GetTickCount();
         if (nowMsMissile - s_lastMissileTickDiagMs >= 200) {
             s_lastMissileTickDiagMs = nowMsMissile;
-            char mtb[200];
+            float lsX = 0.0f, lsY = 0.0f;
+            bool haveLs = Controller_GetLeftStick(lsX, lsY);
+            char mtb[220];
             sprintf_s(mtb, "[x64-missile-tick-diag] Hook_MovementTick fired while guidance linked -- "
-                "pitchAccum=%.4f yawAccum=%.4f",
+                "leftStick=(%.3f,%.3f) haveLs=%d pitchAccum=%.4f yawAccum=%.4f",
+                lsX, lsY, haveLs ? 1 : 0,
                 g_pitchAccum ? *g_pitchAccum : -9999.0f, g_yawAccum ? *g_yawAccum : -9999.0f);
             LogFromController(mtb);
         }
@@ -4492,20 +4499,25 @@ void __fastcall Hook_MissileGuidanceDispatchX64(
     // (fix is writing controller look directly into param_4+8/+0xc/+0x10 while linked).
     float ourPitchAccum = g_pitchAccum ? *g_pitchAccum : 0.0f;
     float ourYawAccum = g_yawAccum ? *g_yawAccum : 0.0f;
+    // CORRECTED 2026-09-22 (direct user correction: missile steering is native LEFT stick, not look) --
+    // logged alongside the raw/out angles above so a single line shows whether the raw side tracks the
+    // left stick directly.
+    float leftStickX = 0.0f, leftStickY = 0.0f;
+    Controller_GetLeftStick(leftStickX, leftStickY);
 
     // Buffer sized for the true worst case, not the expected case, per this
     // project's own standing sprintf_s discipline (CLAUDE.md hard constraint /
     // 2026-09-05 crash postmortem, issue #1): 3x %d (11 chars worst case each,
-    // INT_MIN) + 5x %.4f (45 chars worst case each, FLT_MAX/FLT_MIN as fixed
+    // INT_MIN) + 7x %.4f (45 chars worst case each, FLT_MAX/FLT_MIN as fixed
     // notation: sign + 39 integer digits + '.' + 4 decimals) + %lu (10 chars) +
-    // ~132 literal chars + NUL = ~401 worst case; 512 leaves comfortable margin.
-    char buf[512];
+    // ~160 literal chars + NUL = ~500 worst case; 640 leaves comfortable margin.
+    char buf[640];
     sprintf_s(buf,
         "[x64-missile-guidance-diag] LINKED rawAngles(pml+0x10/0x14/0x18)=%d/%d/%d "
         "outAngles(clientStruct+0x10c/0x110/0x114)=%.4f/%.4f/%.4f "
-        "ourPitchAccum=%.4f ourYawAccum=%.4f t=%lu",
+        "leftStick=(%.4f,%.4f) ourPitchAccum=%.4f ourYawAccum=%.4f t=%lu",
         rawPitch, rawYaw, rawRoll, outPitch, outYaw, outRoll,
-        ourPitchAccum, ourYawAccum, static_cast<unsigned long>(GetTickCount()));
+        leftStickX, leftStickY, ourPitchAccum, ourYawAccum, static_cast<unsigned long>(GetTickCount()));
     LogFromController(buf);
 }
 } // namespace
