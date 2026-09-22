@@ -4602,13 +4602,8 @@ void __fastcall Hook_RenderResCompute(void* self)
                         "64-bit process so that specific ceiling doesn't apply as-is, and the underlying "
                         "high-scale crash/freeze risk has NOT been independently re-tested on x64 -- see the "
                         "on-screen warning");
-                    ShowOverlayMessageUntilDismissed(
-                        "Render resolution is set well above native. x86 builds of this mod hit real "
-                        "crashes/freezes above ~250% scale due to a 32-bit memory ceiling that doesn't apply "
-                        "to this 64-bit build as-is, but high-scale stability has not been independently "
-                        "re-tested here.\n\n"
-                        "Enter / Space / Click to continue anyway:",
-                        OverlayAnimStyle::Plain);
+                    // (The on-screen modal that used to be shown here was removed 2026-09-22: its x86 wording is
+                    // obsolete and the modal is now the once-per-version welcome message, see d3d9_hook.cpp.)
                 }
             }
         }

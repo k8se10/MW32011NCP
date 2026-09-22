@@ -760,6 +760,8 @@ item below.
 
 44. **Unpause re-paused itself, level restart stuck, and the "{GLYPH}" Back text (`-x64`).** (a) The post-menu input block also hid Start from the gameplay tick only; the pause toggle polls Start from both the gameplay tick and the always-on menu tick with one shared edge tracker, so the next real read looked like a new press and the game re-paused immediately after unpausing. Start and Back are now never blocked. (b) After a level restart the once-per-level input sweep was never re-armed (a restart doesn't pass through `clcState` 0), leaving the new level stuck until a focus event; it now also re-arms after a long Pmove silence with no menu open recently, still never re-arming just because the pause menu was open. (c) When the game treats a gamepad as the active input, the menu corner hints draw a literal "{GLYPH}" placeholder ("Back {GLYPH}") that matched nothing; these are now substituted like the "^N key ^7" form. Build-verified; not yet live-tested.
 
+45. **First-launch welcome modal replaces the obsolete high-render-scale warning (`-x64`).** The on-screen warning about x86 32-bit memory ceilings is gone (this project no longer supports x86). The same dismiss-to-continue modal now shows "Thanks for downloading MW32011NCP" with a short feature list, once per mod version (recorded in `mw3ncp_state.ini`). The modal panel and text canvas were enlarged to fit the list. The feature list and version live in `kWelcomeFeatureList` (`d3d9_hook.cpp`) and `kModVersionString` (`mod_config.h`) and are updated per release (rule added to CLAUDE.md/AGENTS.md). Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

@@ -44,6 +44,10 @@ enum class GlyphStyle { Xbox360, XboxModern, PlayStation };
 // One entry per logical action; resolves to whichever physical XInput button/trigger
 // the active ButtonLayout (+ FlipTriggers) currently assigns it to. Scoreboard (Back)
 // is included for completeness even though nothing is wired to it yet (task #5).
+// Version string shown in the first-launch welcome modal (d3d9_hook.cpp). Keep in step with the release heading in
+// PATCHNOTES.md, and update the modal's feature list (kWelcomeFeatureList) on every version -- see CLAUDE.md.
+constexpr const char* kModVersionString = "0.0.1-x64";
+
 enum class PhysicalInput { RT, LT, RB, LB, X, Y, A, B, LS, RS, Start, Back };
 
 struct ButtonMap

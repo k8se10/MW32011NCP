@@ -51,6 +51,7 @@
 #include <cstdlib>
 #include "../third_party/minhook/include/MinHook.h"
 #include "overlay_hud.h"
+#include "mod_config.h"
 #include "game_exe_detect.h"
 
 #pragma comment(lib, "dbghelp.lib")
@@ -700,8 +701,41 @@ void SendPeriodicActivationNudgeX64(HWND hwnd)
 constexpr int kVariantMessageOneInN = 3;
 constexpr int kVariantCount = 4;
 
+// ---- First-launch welcome modal (2026-09-22) -------------------------------------------------------------------
+// Replaces the old high-render-scale warning modal (its x86 wording was obsolete): shown ONCE per mod version, then
+// the version is recorded in a tiny state file beside the game exe so it never reappears until the next release.
+// kWelcomeFeatureList is LIVE CONTENT -- update it whenever the feature set changes (CLAUDE.md / AGENTS.md rule).
+constexpr const char* kWelcomeFeatureList =
+    "Native controller support and menu navigation\n"
+    "Controller button prompts and vibration\n"
+    "Four netcode security fixes\n"
+    "Frame pacing and faster loading\n"
+    "Render scale, FSR, motion blur, anisotropic\n"
+    "Plugin API for sub-mods";
+
+bool ShowWelcomeModalIfNewVersion()
+{
+    char path[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, path, MAX_PATH);
+    char* slash = strrchr(path, '\\');
+    if (slash) *(slash + 1) = '\0';
+    strcat_s(path, "mw3ncp_state.ini");
+    char seen[64] = {};
+    GetPrivateProfileStringA("State", "WelcomeShownVersion", "", seen, sizeof(seen), path);
+    if (strcmp(seen, kModVersionString) == 0) return false;
+
+    char msg[1024];
+    sprintf_s(msg, "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\nThis version includes:\n%s\n\n"
+                   "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
+              kModVersionString, kWelcomeFeatureList);
+    ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
+    WritePrivateProfileStringA("State", "WelcomeShownVersion", kModVersionString, path);
+    return true;
+}
+
 void ShowStartupMessage()
 {
+    if (ShowWelcomeModalIfNewVersion()) return;
     srand(GetTickCount());
     if ((rand() % kVariantMessageOneInN) != 0) {
         ShowOverlayMessage("MW32011NCP Started", 15000, OverlayAnimStyle::Plain);
