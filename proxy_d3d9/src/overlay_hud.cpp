@@ -7377,6 +7377,35 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
 // reintroduce this without first confirming the real EndScene/Present call
 // separation and redesigning the wait's placement accordingly.
 
+// ---- Pre-1.0 dev-build watermark (2026-09-22) ---------------------------------------------------------------------
+// Small, ~70%-opacity, bottom-right build stamp on every frame -- same idea as Fortnite/Rocket League's dev-build
+// corner text, derived from (build date - release version/commit), not hand-maintained (see GetBuildWatermarkString,
+// mod_config.cpp). REMOVE ENTIRELY once 1.0 ships (see CLAUDE.md/AGENTS.md "pre-1.0" rule); every pre-1.0 version
+// must carry it, so this call is intentionally unconditional -- no config toggle.
+void DrawBuildWatermark(void* device)
+{
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+    static void* s_wmTexture = nullptr;
+    static char s_wmRenderedFor[128] = "";
+    static int s_wmLastFontHeight = 0;
+    constexpr int kWmFontHeightPx = 13;
+    const char* text = GetBuildWatermarkString();
+    if (!EnsureLeftAlignedTextTexture(device, s_wmTexture, s_wmRenderedFor, sizeof(s_wmRenderedFor), text,
+                                       s_wmLastFontHeight, kWmFontHeightPx, FontRole::Default))
+        return;
+    const int widthPx = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, kWmFontHeightPx, FontRole::Default);
+    constexpr float kWmMarginPx = 10.0f;
+    const float wmScale = static_cast<float>(kWmFontHeightPx) / 20.0f; // EnsureLeftAlignedTextTexture's own baseline is 20px
+    const float drawX = 1920.0f - kWmMarginPx - static_cast<float>(widthPx);
+    const float drawY = 1080.0f - kWmMarginPx - static_cast<float>(kTextureHeight) * wmScale;
+    constexpr DWORD kWmColor = 0xB3FFFFFFu; // ~70% alpha, white -- "very hard to notice but there"
+    DrawGenericTexturedQuad(device, s_wmTexture, drawX * scaleX, drawY * scaleY,
+                              static_cast<float>(kTextureWidth) * scaleX * wmScale,
+                              static_cast<float>(kTextureHeight) * scaleY * wmScale,
+                              kWmColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+}
+
 HRESULT WINAPI Hook_EndScene(void* device)
 {
     // 2026-08-08 fix (issue #70, round 4): the ONLY real D3D9 device pointer this
@@ -7388,6 +7417,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // hook's conversion and this file's draw-time re-scale used two different
     // resolution sources, so they only cancelled out by coincidence).
     g_lastKnownRenderDevice = device;
+    DrawBuildWatermark(device);
 
     // Issue #95 Round 4 -- reset the once-per-real-frame motion-blur guard here.
     // Hook_EndScene fires exactly once per real frame, always AFTER every

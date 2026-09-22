@@ -216,10 +216,17 @@
     <ClInclude Include="src\staged_settings.h" />
     <ClInclude Include="src\options_render_suppress.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="src\git_version.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
   </ImportGroup>
+
+  <!-- Regenerates src\git_version.h with the current short commit hash before every build (2026-09-22, dev-build
+       watermark); see gen_git_version.bat for the full logic and its own fallback behavior. -->
+  <Target Name="GenerateGitVersion" BeforeTargets="ClCompile">
+    <Exec Command="call &quot;$(ProjectDir)gen_git_version.bat&quot;" WorkingDirectory="$(ProjectDir)" ContinueOnError="true" />
+  </Target>
 </Project>

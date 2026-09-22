@@ -770,6 +770,8 @@ item below.
 
 47. **Three startup messages instead of one (`-x64`).** (1) Once per version: the welcome modal with the feature list. (2) Possibly outdated: on any version below 0.4.0 (the beta milestone) whose build is more than 4 weeks old (compile-time `__DATE__`), a dismiss-to-continue modal asks the player to check GitHub or Nexus for a newer version, at most once per day (recorded in `mw3ncp_state.ini`; `[State] TestOutdated=1` in that file forces it for testing). (3) Every normal launch: the short "MW32011NCP v0.0.1-x64 Started (early release)" toast. Build-verified; not yet live-tested.
 
+48. **Pre-1.0 dev-build watermark (`-x64`).** Every frame draws a small, ~70%-opacity build stamp in the bottom-right corner ("MW32011NCP dev build - DD/MM/YYYY - v0.0.1-x64 (commit)"), the same idea as Fortnite/Rocket League's dev-build corner text. Derived at compile time from the build date, the release version and the exact git commit that built the DLL (a new pre-build step, `gen_git_version.bat`, regenerates a small gitignored header with the short commit hash before every build) -- not a hand-maintained string. Unconditional, no config toggle: remove entirely once 1.0 ships (rule added to CLAUDE.md/AGENTS.md). Build-verified; not yet live-tested.
+
 
 ### Documentation
 1. **`re_notes/known_issues_x64.md` established** as the dedicated x64 issue

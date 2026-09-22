@@ -122,3 +122,4 @@ re_notes/ghidra_project_x64/
 # physically sits in.
 re_notes/INTERNAL_*.md
 re_notes/internal/
+proxy_d3d9/src/git_version.h
