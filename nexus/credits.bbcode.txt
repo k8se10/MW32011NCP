@@ -5,9 +5,11 @@
 [list]
 [*][url=https://github.com/TsudaKageyu/minhook][b]MinHook[/b][/url] — Copyright © 2009–2017 Tsuda Kageyu. BSD 2-Clause-style license. Used for all API hooking (vtable and inline detours) in the proxy DLL.
 [*][b]Hacker Disassembler Engine (HDE) 32/64 C[/b], bundled with MinHook — Copyright © 2008–2009 Vyacheslav Patkov. Same style of license.
+[*][url=https://github.com/iryoku/smaa][b]SMAA[/b][/url] (Jimenez, Gutierrez, Yang, Reshetov, Demoreuille) — MIT license. Reference math for the SMAA 1x edge-smoothing pass ([font=Courier New]SmaaEnabled[/font], parked off by default).
+[*][b]Frame pacing, wait-coalescing/archive-priority-boost, and the persistent .iwd read cache[/b] — techniques absorbed and ported from [url=https://github.com/legoliamneeson/MW3_Standalone_D3D9_Project]legoliamneeson/MW3_Standalone_D3D9_Project[/url], credited on every commit that ports code from it.
 [/list]
 
-Full license text for both is reproduced verbatim in the source repo at [font=Courier New]proxy_d3d9/third_party/minhook/LICENSE.txt[/font].
+Full license text for MinHook/HDE is reproduced verbatim in the source repo at [font=Courier New]proxy_d3d9/third_party/minhook/LICENSE.txt[/font].
 
 [b]Special thanks:[/b] the wider MW3/IW5 modding and reverse-engineering community whose prior public research informed parts of this project's own investigation — see the source repo's [font=Courier New]re_notes/[/font] folder for specific citations where external research is referenced.
 

@@ -17,12 +17,29 @@ This project hooks directly into a live game process. Expect bugs, rough
 edges, and unfinished features. It is being rebuilt from scratch against
 MW3's own recompiled 64-bit binaries (the game's first-ever binary update, a
 hard architectural break for every tool built on the original 32-bit
-executable) — no download is offered yet. Full live status: see this page's
-Source link (GitHub) for `re_notes/known_issues_x64.md` and
+executable) — no download is offered yet. **Survival's own controller
+support is now Gameplay Complete** (2026-09-22) — every core control,
+including Predator Missile guidance, is live-confirmed; a release is close.
+Campaign has never gated release (same as on the prior 32-bit line, which
+also shipped it best-effort) and ships as-is. Full live status: see this
+page's Source link (GitHub) for `re_notes/known_issues_x64.md` and
 `re_notes/x64_feature_parity_audit.md`.
 
 Not affiliated with, endorsed by, or sponsored by Activision, Infinity Ward,
 or any of their affiliates.
+
+## ⚠ Unpatched MW3 (2011) netcode vulnerabilities — this mod fixes them
+
+Real, network-reachable vulnerabilities exist in MW3's own base-game
+netcode (not this mod) — re-confirmed present in the game's most recent
+update, affecting Multiplayer and Spec-Ops/Survival co-op. **This mod now
+closes all four tracked findings.** A vanilla, unmodified Steam install
+remains exactly as vulnerable as before — a real reason to run this mod
+even without interest in its controller/visual features. Exact technical
+detail is withheld while these remain unpatched at the source; a full
+report has been submitted to Activision through their official
+security-disclosure channel. See the Source repo's `security/` component
+for current per-finding status.
 
 ## What this is
 
@@ -57,25 +74,37 @@ anyone who wants the protection without the rest of this mod.
 
 ## Feature status
 
-Confirmed working live by direct playtest: analog movement and look, Jump,
-Interact, Fire, true hold-to-aim ADS, Reload, Melee, Lethal, Tactical,
-weapon switch, the full Crouch/Prone stance ladder, pause menu open/close,
-and the auto-unstick fix.
+**Confirmed working live**: analog movement and look, Fire, true
+hold-to-aim ADS, Reload, Melee, Lethal, Tactical, Jump, Interact,
+Crouch/Prone, Sprint, weapon switch, D-pad (actionslot and squadmate
+call-in), pause menu open/close, Hold Breath, Predator Missile launch and
+post-fire guidance, DPV/Goalpost mortar/Goalpost M2 turret aiming,
+cutscene-skip audio, Campaign QTE button presses, Survival ready-up (full
+on-screen glyph+text prompt, not just the mechanism), buy-station/use-prompt
+glyphs, native controller menu/UI navigation, motion blur, internal render
+scale, and the ported frame-pacing/wait-coalescing/IWD-read-cache
+performance techniques (all default-on). The real fix for the long-standing
+"needs a click/input at launch" bug is also shipped and live-confirmed.
 
-Build-verified and deployed, awaiting live confirmation: Sprint (mechanism
-just changed to a real kbutton), Jump auto-stand, D-pad actionslot
-navigation, a fix for a sniper-class Fire/ADS report, Survival ready-up,
-Hold Breath, native D-pad+A/B menu/UI navigation (main menu, pause, options,
-buy-stations), vibration/rumble, the visual-enhancement suite (render
-scale, FSR sharpening, motion blur), DualSense gyro-aim (preview/WIP), the
-plugin API, and the custom Options screen.
+**One known cosmetic bug**: the pause-menu Back glyph still flickers (Back
+itself still works).
 
-Honestly not yet implemented on this line: gameplay controller-glyph icons,
-on-screen hint prompts, and the custom cursor (blocked on one remaining
-native render hook); Auto-Mantle (blocked on that same hook); and Back's
-`+scores` scoreboard (a real, cheap gap — but note it's a confirmed no-op
-even on the prior line's own final build, since Campaign/Survival has no
-scoreboard UI at all; real value arrives once Multiplayer ships).
+**Build-verified, awaiting live confirmation**: the plugin API, DualSense
+gyro-aim (preview/WIP), FSR sharpening, and K+M safe mode (a toggle that
+disables all controller/mod-side input while keeping visual features).
+
+**Honestly not yet implemented / genuinely open**: sentry/turret-placement
+and Campaign QTE prompt *text* still render native (blocked on an
+unresolved native font offset — the mechanism works, only the on-screen
+text isn't replaced); the Custom Options screen's real vanilla-setting tabs
+(deliberately deferred — the INI config already covers everything this mod
+needs); AC-130 gun-type switching (confirmed GSC/data-driven, no native
+hook point to use); SMAA edge smoothing (implemented, parked off by
+default — a shared internal rendering path looked worse than off even
+without the SMAA math); and Back's `+scores` scoreboard (a real, cheap
+gap — but a confirmed no-op even on the prior line's own final build, since
+Campaign/Survival has no scoreboard UI at all; real value arrives once
+Multiplayer ships).
 
 **Multiplayer** (`iw5mp.exe`) is a separate binary under active, independent
 reverse engineering — not part of the release above, expected as a close
