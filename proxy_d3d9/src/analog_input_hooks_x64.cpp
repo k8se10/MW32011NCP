@@ -783,7 +783,69 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
     // is generic by design, but confirming that cheaply is worth it before
     // assuming it, per this project's own "checking is cheaper than digging"
     // standard.
-    uintptr_t callerGhidraAddr = ToGhidraAddressX64(_ReturnAddress());
+    // 2026-09-22, live perf investigation ("lags a shit ton, correlates with taking
+    // damage"): this whole block previously paid TryResolveGscInternedString's real
+    // SEH-guarded memory walk PLUS a 7-way strcmp chain on EVERY single fire,
+    // regardless of whether the result was ever going to be logged or acted on --
+    // and g_realVmNotify (the real engine call-through) doesn't run until AFTER all
+    // of this, so that cost sits directly in the critical path of GSC script
+    // execution. A combat burst plausibly fires the SAME small handful of distinct
+    // notify names (pain/hit-reaction/death-adjacent) many times in one frame --
+    // exactly the shape that turns "cheap per call" into "real per-frame stall."
+    // Not confirmed as THIS bug's actual cause (still under investigation), but a
+    // real, unconditional inefficiency worth closing regardless: interned stringIds
+    // are stable for the life of a session (SL_GetString's own real refcounted
+    // string-pool table, per this project's own GSC-VM mapping work), so once a
+    // given stringValue has been resolved once, every later fire of that same ID
+    // can skip straight to the cached category/text instead of re-walking memory
+    // and re-running every strcmp.
+    enum class GscNotifyCategoryX64 : uint8_t {
+        Unclassified = 0, Other, WaveEnded, WaveStarted, ArmoryOpen, ArmoryOpened,
+        ArmoryClosed, SurvivalPlayerReady, SurvivalAllReady,
+    };
+    struct GscNotifyCacheEntryX64 { unsigned int stringValue; GscNotifyCategoryX64 category; char text[64]; };
+    constexpr int kGscNotifyCacheSizeX64 = 64;
+    static GscNotifyCacheEntryX64 s_gscNotifyCacheX64[kGscNotifyCacheSizeX64] = {};
+    static int s_gscNotifyCacheCountX64 = 0;
+
+    GscNotifyCacheEntryX64* cached = nullptr;
+    for (int i = 0; i < s_gscNotifyCacheCountX64; ++i) {
+        if (s_gscNotifyCacheX64[i].stringValue == stringValue) { cached = &s_gscNotifyCacheX64[i]; break; }
+    }
+
+    bool resolved;
+    char resolvedStr[64];
+    GscNotifyCategoryX64 category;
+    if (cached) {
+        resolved = cached->category != GscNotifyCategoryX64::Unclassified;
+        category = cached->category;
+        if (resolved) strncpy_s(resolvedStr, cached->text, _TRUNCATE);
+    } else {
+        resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
+        category = GscNotifyCategoryX64::Other;
+        if (resolved) {
+            if (strcmp(resolvedStr, "wave_ended") == 0) category = GscNotifyCategoryX64::WaveEnded;
+            else if (strcmp(resolvedStr, "wave_started") == 0) category = GscNotifyCategoryX64::WaveStarted;
+            else if (strcmp(resolvedStr, "armory_open") == 0) category = GscNotifyCategoryX64::ArmoryOpen;
+            else if (strcmp(resolvedStr, "armory_opened") == 0) category = GscNotifyCategoryX64::ArmoryOpened;
+            else if (strcmp(resolvedStr, "armory_closed") == 0) category = GscNotifyCategoryX64::ArmoryClosed;
+            else if (strcmp(resolvedStr, "survival_player_ready") == 0) category = GscNotifyCategoryX64::SurvivalPlayerReady;
+            else if (strcmp(resolvedStr, "survival_all_ready") == 0) category = GscNotifyCategoryX64::SurvivalAllReady;
+        }
+        // Cache the classification (even "Other"/unresolved) so this exact stringValue
+        // never pays the resolve+classify cost again this session. Fixed-size, wraps
+        // (overwrites oldest) once full -- real GSC notify vocabularies run to a few
+        // dozen distinct names at most, well within 64 slots for any real session.
+        GscNotifyCacheEntryX64& slot = s_gscNotifyCacheX64[s_gscNotifyCacheCountX64 % kGscNotifyCacheSizeX64];
+        slot.stringValue = stringValue;
+        slot.category = resolved ? category : GscNotifyCategoryX64::Unclassified;
+        if (resolved) strncpy_s(slot.text, resolvedStr, _TRUNCATE); else slot.text[0] = '\0';
+        ++s_gscNotifyCacheCountX64;
+    }
+
+    // caller address is diagnostic-only -- only worth computing if this fire is
+    // actually going to be logged below, not on every single call.
+    uintptr_t callerGhidraAddr = 0;
     {
         // Worst case: 41 (literal) + 20 (%lld) + 12 (literal) + 10 (%u) + 10 (literal) +
         // 10 (%u) + 8 (' str="') + 63 (resolved string cap) + 1 ('"') + 10 (' caller=0x') +
@@ -791,13 +853,14 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         // (this project's own standing "compute the real worst case, don't eyeball
         // it" lesson, per the critical LoadModConfig overflow this same session
         // already hit once).
-        char resolvedStr[64];
         char buf[256];
-        bool resolved = TryResolveGscInternedString(stringValue, resolvedStr, sizeof(resolvedStr));
         if (resolved) {
             // Pre-ready scans (prompt should be visible): wave_ended, armory_open, then +5/+12/+20 s.
             // survival_player_ready fires AFTER the player readies (prompt already gone), so its scan
             // is only a CONTROL -- an element present earlier but absent there is the prompt.
+            // Dispatches on the CACHED category now (see above) instead of re-running strcmp against
+            // the resolved text every single fire -- same behavior, just no longer re-paying the
+            // string-comparison cost for an ID already classified on an earlier call.
             static DWORD s_hudScanDueMs[3] = {};
             static const char* const kHudScanTags[3] = { "wave_ended+5s", "wave_ended+12s", "wave_ended+20s" };
             const DWORD nowMs = GetTickCount();
@@ -807,40 +870,53 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
                     ScanHudElems(kHudScanTags[i]);
                 }
             }
-            if (strcmp(resolvedStr, "wave_ended") == 0) {
-                g_quadProbePhase = 1;
-                ScanHudElems("wave_ended");
-                s_hudScanDueMs[0] = nowMs + 5000;
-                s_hudScanDueMs[1] = nowMs + 12000;
-                s_hudScanDueMs[2] = nowMs + 20000;
-            } else if (strcmp(resolvedStr, "wave_started") == 0) {
-                g_quadProbePhase = 2;
-                s_hudScanDueMs[0] = s_hudScanDueMs[1] = s_hudScanDueMs[2] = 0;
-            } else if (strcmp(resolvedStr, "armory_open") == 0) ScanHudElems("armory_open");
-            if (strcmp(resolvedStr, "survival_player_ready") == 0) {
-                s_hudScanDueMs[0] = s_hudScanDueMs[1] = s_hudScanDueMs[2] = 0;
-                ScanHudElems("AFTER_READY(control)");
-                g_quadProbePhase = 0;
-                g_survivalPlayerReadyLastSeenMsX64 = GetTickCount();
-            } else if (strcmp(resolvedStr, "survival_all_ready") == 0) {
-                g_survivalAllReadyLastSeenMsX64 = GetTickCount();
-            } else if (strcmp(resolvedStr, "armory_open") == 0 || strcmp(resolvedStr, "armory_opened") == 0) {
-                g_armoryMenuOpenX64 = true;
-            } else if (strcmp(resolvedStr, "armory_closed") == 0) {
-                g_armoryMenuOpenX64 = false;
+            switch (category) {
+                case GscNotifyCategoryX64::WaveEnded:
+                    g_quadProbePhase = 1;
+                    ScanHudElems("wave_ended");
+                    s_hudScanDueMs[0] = nowMs + 5000;
+                    s_hudScanDueMs[1] = nowMs + 12000;
+                    s_hudScanDueMs[2] = nowMs + 20000;
+                    break;
+                case GscNotifyCategoryX64::WaveStarted:
+                    g_quadProbePhase = 2;
+                    s_hudScanDueMs[0] = s_hudScanDueMs[1] = s_hudScanDueMs[2] = 0;
+                    break;
+                case GscNotifyCategoryX64::ArmoryOpen:
+                    ScanHudElems("armory_open");
+                    g_armoryMenuOpenX64 = true;
+                    break;
+                case GscNotifyCategoryX64::ArmoryOpened:
+                    g_armoryMenuOpenX64 = true;
+                    break;
+                case GscNotifyCategoryX64::ArmoryClosed:
+                    g_armoryMenuOpenX64 = false;
+                    break;
+                case GscNotifyCategoryX64::SurvivalPlayerReady:
+                    s_hudScanDueMs[0] = s_hudScanDueMs[1] = s_hudScanDueMs[2] = 0;
+                    ScanHudElems("AFTER_READY(control)");
+                    g_quadProbePhase = 0;
+                    g_survivalPlayerReadyLastSeenMsX64 = GetTickCount();
+                    break;
+                case GscNotifyCategoryX64::SurvivalAllReady:
+                    g_survivalAllReadyLastSeenMsX64 = GetTickCount();
+                    break;
+                default:
+                    break;
             }
 
             // Rate-limit restored 2026-09-19 (issue #87 convention): first 50, a 2000th-fire
             // heartbeat, and always the rare Survival/armory/wave events worth seeing live.
-            const bool interesting = strncmp(resolvedStr, "survival_", 9) == 0 ||
-                strncmp(resolvedStr, "armory_", 7) == 0 || strncmp(resolvedStr, "wave_", 5) == 0;
+            const bool interesting = category != GscNotifyCategoryX64::Other;
             if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0 || interesting) {
+                callerGhidraAddr = ToGhidraAddressX64(_ReturnAddress());
                 sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u str=\"%s\" caller=0x%llX",
                            g_vmNotifyFireCount, notifyListOwnerId, stringValue, resolvedStr,
                            static_cast<unsigned long long>(callerGhidraAddr));
                 LogFromController(buf);
             }
         } else if (g_vmNotifyFireCount <= 50 || (g_vmNotifyFireCount % 2000) == 0) {
+            callerGhidraAddr = ToGhidraAddressX64(_ReturnAddress());
             sprintf_s(buf, "[x64-gsc-notify] VM_Notify fired (count=%lld): ownerId=%u stringId=%u caller=0x%llX",
                        g_vmNotifyFireCount, notifyListOwnerId, stringValue,
                        static_cast<unsigned long long>(callerGhidraAddr));
