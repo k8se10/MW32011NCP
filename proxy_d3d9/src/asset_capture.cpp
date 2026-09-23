@@ -9,6 +9,7 @@
 #include "mod_config.h"
 #include "frame_benchmark.h"
 #include "../third_party/minhook/include/MinHook.h"
+#include <intrin.h> // _ReturnAddress() -- 2026-09-23, CreateTexture-storm caller-ID diagnostic
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -326,6 +327,101 @@ typedef HRESULT(WINAPI* TextureUnlockRect_t)(void* This, UINT Level);
 void* g_origCreateTexture = nullptr;
 bool g_hookInstalled = false;
 
+// ---- CreateTexture-storm caller-ID diagnostic (2026-09-23) -- see this file's own
+// header's big comment for the full rationale, including the real crash this
+// replaces the unsafe first attempt at (synchronous LogFromController inside the
+// CreateTexture hot path -- see known_issues_x64.md). This struct/array is written
+// to ONLY from inside Hook_CreateTexture below (fast, in-memory, no I/O); it is
+// READ and reset only from AssetCapture_DumpCreateTextureStormIfDue, which the
+// caller must invoke from a low-frequency point outside the hot path entirely.
+struct StormEntry { void* returnAddr; unsigned width; unsigned height; unsigned format; uint64_t area; };
+constexpr int kStormTopN = 12;
+StormEntry g_stormTop[kStormTopN];
+int g_stormTopCount = 0;
+int g_stormWindowCallCount = 0;
+DWORD g_stormWindowStartMs = 0;
+DWORD g_stormLastDumpMs = 0;
+} // namespace
+
+void AssetCapture_RecordCreateTextureForStormDiag(void* returnAddr, unsigned width, unsigned height, unsigned format)
+{
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_stormWindowStartMs > 200) { // real per-frame-ish window, matches the earlier
+        // synchronous version's own ~100ms window but slightly wider to reduce noise
+        g_stormWindowStartMs = nowMs;
+        g_stormWindowCallCount = 0;
+    }
+    ++g_stormWindowCallCount;
+
+    // Keep only the biggest kStormTopN by real pixel area -- fast, fixed-size,
+    // no allocation, no I/O. A plain linear scan for the current minimum is fine
+    // at this size (12 entries), no need for a heap.
+    uint64_t area = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+    if (g_stormTopCount < kStormTopN) {
+        g_stormTop[g_stormTopCount++] = {returnAddr, width, height, format, area};
+        return;
+    }
+    int smallestIdx = 0;
+    for (int i = 1; i < kStormTopN; ++i) {
+        if (g_stormTop[i].area < g_stormTop[smallestIdx].area) smallestIdx = i;
+    }
+    if (area > g_stormTop[smallestIdx].area) {
+        g_stormTop[smallestIdx] = {returnAddr, width, height, format, area};
+    }
+}
+
+void AssetCapture_DumpCreateTextureStormIfDue()
+{
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_stormLastDumpMs < 2000) return; // rate-limited -- this itself does real
+        // (if infrequent) disk I/O, so it must never run from inside a hot per-call path
+    g_stormLastDumpMs = nowMs;
+    if (g_stormWindowCallCount < 200 || g_stormTopCount == 0) {
+        g_stormWindowCallCount = 0;
+        g_stormTopCount = 0;
+        return; // nothing abnormal happened in the last window -- common/expected case, silent
+    }
+
+    static void* s_gameModuleBase = nullptr;
+    static size_t s_gameModuleSize = 0;
+    if (!s_gameModuleBase) {
+        HMODULE exeMod = GetModuleHandleA(nullptr);
+        if (exeMod) {
+            s_gameModuleBase = exeMod;
+            auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(exeMod);
+            auto nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(
+                reinterpret_cast<uintptr_t>(exeMod) + dos->e_lfanew);
+            s_gameModuleSize = nt->OptionalHeader.SizeOfImage;
+        }
+    }
+
+    char buf[220];
+    sprintf_s(buf, "[createtexture-storm-diag] window had %d real CreateTexture calls -- top %d by real pixel area:",
+               g_stormWindowCallCount, g_stormTopCount);
+    LogFromController(buf);
+    for (int i = 0; i < g_stormTopCount; ++i) {
+        const StormEntry& e = g_stormTop[i];
+        auto retAddr = reinterpret_cast<uintptr_t>(e.returnAddr);
+        auto baseAddr = reinterpret_cast<uintptr_t>(s_gameModuleBase);
+        bool inGame = s_gameModuleBase && retAddr >= baseAddr && retAddr < baseAddr + s_gameModuleSize;
+        if (inGame) {
+            sprintf_s(buf, "[createtexture-storm-diag]   caller=%p GAME module-relative=0x%llX size=%ux%u (area=%llu) fmt=0x%08lX",
+                       e.returnAddr, static_cast<unsigned long long>(retAddr - baseAddr),
+                       e.width, e.height, static_cast<unsigned long long>(e.area),
+                       static_cast<unsigned long>(e.format));
+        } else {
+            sprintf_s(buf, "[createtexture-storm-diag]   caller=%p MOD/OTHER size=%ux%u (area=%llu) fmt=0x%08lX",
+                       e.returnAddr, e.width, e.height, static_cast<unsigned long long>(e.area),
+                       static_cast<unsigned long>(e.format));
+        }
+        LogFromController(buf);
+    }
+    g_stormWindowCallCount = 0;
+    g_stormTopCount = 0;
+}
+
+namespace {
+
 HRESULT WINAPI Hook_CreateTexture(void* This, UINT Width, UINT Height, UINT Levels,
                                    DWORD Usage, DWORD Format, DWORD Pool,
                                    void** ppTexture, HANDLE* pSharedHandle)
@@ -358,6 +454,10 @@ HRESULT WINAPI Hook_CreateTexture(void* This, UINT Width, UINT Height, UINT Leve
         (static_cast<double>(realCallEnd.QuadPart - realCallStart.QuadPart) * 1000.0) /
         static_cast<double>(realCallFreq.QuadPart),
         Width, Height, Format);
+    // Fast, in-memory-only -- see this file's own header comment above
+    // AssetCapture_RecordCreateTextureForStormDiag for why this replaced a
+    // synchronous-logging version that very likely caused a real crash.
+    AssetCapture_RecordCreateTextureForStormDiag(_ReturnAddress(), Width, Height, Format);
 
     // Timer below starts AFTER the real call above, deliberately: that call's own
     // duration is now accounted separately (above), not overhead THIS project's

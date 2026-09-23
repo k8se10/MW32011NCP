@@ -7462,6 +7462,13 @@ HRESULT WINAPI Hook_EndScene(void* device)
     g_lastKnownRenderDevice = device;
     DrawBuildWatermark(device);
 
+    // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every
+    // real frame, internally rate-limited to ~2s and a fast no-op otherwise (see
+    // asset_capture.h's own big comment for why this replaced a version that
+    // logged synchronously inside the CreateTexture hot path and very likely
+    // caused a real crash).
+    AssetCapture_DumpCreateTextureStormIfDue();
+
     // Issue #95 Round 4 -- reset the once-per-real-frame motion-blur guard here.
     // Hook_EndScene fires exactly once per real frame, always AFTER every
     // FUN_00497210 call this frame already happened (see

@@ -42,3 +42,22 @@ void AssetCapture_PopMaterialName();
 // time a device is (re)created -- internally a "one install for this device"
 // guard, matching InstallEndSceneHook's own convention.
 void AssetCapture_InstallHookIfEnabled(void* realDevice);
+
+// ---- CreateTexture-storm caller-ID diagnostic (2026-09-23) -----------------------
+// Damage/pause/level-transition lag investigation. Captures the biggest few
+// textures (by real pixel area) created THIS window purely in memory -- no
+// disk I/O, no LogFromController call, inside Hook_CreateTexture's own hot
+// path. A prior version logged synchronously on every hit inside that hot
+// path and very likely caused a real, previously-never-seen crash (a Bink
+// video-codec race condition on its own audio thread, exposed by the added
+// per-call delay right during an intro-movie skip) -- see
+// known_issues_x64.md's newest round. This version only ever WRITES to a
+// small fixed array (fast, no syscalls); the actual log write happens from
+// AssetCapture_DumpCreateTextureStormIfDue, which the caller must invoke
+// from a genuinely low-frequency point (once per real frame at most, e.g.
+// Hook_EndScene, itself internally rate-limited further) -- never from
+// inside the CreateTexture hook itself.
+void AssetCapture_RecordCreateTextureForStormDiag(void* returnAddr, unsigned width, unsigned height, unsigned format);
+// Call from a low-frequency point (e.g. once per Hook_EndScene). Internally
+// rate-limited to roughly once every 2 seconds; a safe no-op otherwise.
+void AssetCapture_DumpCreateTextureStormIfDue();
