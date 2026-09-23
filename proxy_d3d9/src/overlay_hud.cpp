@@ -3593,10 +3593,6 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     auto drawPrimitiveUP = reinterpret_cast<DrawPrimitiveUP_t>(deviceVtbl[kDrawPrimitiveUPVtableIndex]);
     auto setStreamSource = reinterpret_cast<SetStreamSource_t>(deviceVtbl[kSetStreamSourceVtableIndex]);
     auto getStreamSource = reinterpret_cast<GetStreamSource_t>(deviceVtbl[kGetStreamSourceVtableIndex]);
-#if defined(_M_X64) || defined(_WIN64)
-    auto setFVF = reinterpret_cast<SetFVF_t>(deviceVtbl[kSetFVFVtableIndex]);
-    auto getFVF = reinterpret_cast<GetFVF_t>(deviceVtbl[kGetFVFVtableIndex]);
-#endif
 
     void* backSurface = nullptr;
     // GetRenderTarget(0) IS the real backbuffer surface, already fully rendered
@@ -3752,56 +3748,46 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     }
 
     setTexture(device, 0, g_fsInputTex ? g_fsInputTex : g_fullscreenCaptureTexture);
-    // x86: REVERTED 2026-08-28 -- SetVertexDeclaration caused a real, repeatable
+    // REVERTED 2026-08-28 -- SetVertexDeclaration caused a real, repeatable
     // crash (Event Viewer: iw5sp.exe / d3d9.dll, 0xc0000005, same exact
     // fault offset both times -- confirmed via the deployed DLL's own
     // timestamp that the SECOND crash was already running the
     // ReleaseAllCachedTextures fix, ruling out the dangling-pointer-after-
-    // Reset theory as the explanation). SetFVF was ALSO ruled out on x86
-    // specifically, via a real 9-round live isolation-test bisection (issue
-    // #100): calling it from this exact function -- even perfectly restored
-    // afterward -- broke the native "you are hurt, get to cover" low-health
-    // warning, most likely because the native x86 renderer keeps its own
-    // FVF cache separate from the real D3D9 device state, and this
-    // function's own SetFVF call desyncs that cache in a way a plain
-    // restore can't fix. x86 deliberately calls NEITHER SetFVF nor
-    // SetVertexDeclaration here -- reproduces stage 9 of the original
-    // isolation test exactly, the one combination LIVE-CONFIRMED both to
-    // fix the native warning and to never crash. See known_issues.md issue
-    // #100 for the complete trail.
+    // Reset theory as the explanation). Deliberately NOT calling SetFVF
+    // *or* SetVertexDeclaration at all here -- reproduces stage 9 of the
+    // original isolation test exactly, the one combination LIVE-CONFIRMED
+    // both to fix the native low-health warning AND to never crash. Our
+    // own quad draws using whatever vertex format is already ambient at
+    // this exact point in the frame -- occasionally visually wrong for
+    // OUR OWN pass specifically (a "pixelated" look, already reported and
+    // understood, right at the moment of an unarmored hit or on level
+    // entry) but never unsafe. Fixing that cosmetic gap without
+    // reintroducing a crash is real, unstarted follow-up work -- not
+    // attempted again this pass given the crash risk just confirmed live.
+    // See known_issues.md issue #100 for the complete trail.
     //
-    // x64: RE-ADDED 2026-09-23 -- the native warning issue #100's own SetFVF
-    // finding was protecting no longer exists on this architecture at all.
-    // Independently confirmed (known_issues_x64.md, 2026-09-14): with this
-    // mod's own DLL renamed OUT of the game install directory entirely (zero
-    // mod code running), the "you are hurt, get to cover" warning is STILL
-    // missing -- a genuine Activision x64-port regression from the
-    // 2026-09-03 recompile, not something this project's own SetFVF calls
-    // ever caused on x64. issue #100's x86-era constraint is therefore moot
-    // here; the real, separate root cause of "our own quad draws using
-    // whatever vertex format is already ambient" (this function's own
-    // long-standing, still-real x86 limitation, occasionally producing a
-    // "pixelated" look at an unarmored hit or level entry) is worth fixing
-    // properly on x64 instead of carrying the x86 workaround forward for no
-    // real reason. Real motivation: the first GraphicsApi=Vulkan live test
-    // found motion blur runs (gates pass, shader compiles, DrawFullScreenPass
-    // is reached) but produces NO visible effect at all -- a real, plausible
-    // explanation is DXVK's own from-scratch vertex-state tracking resolving
-    // "ambient" FVF differently than a native D3D9 driver would at this
-    // exact point in the frame, pushing this pre-transformed (D3DFVF_XYZRHW)
-    // screen-space quad through the wrong pipeline entirely (e.g. the active
-    // 3D transform, sending it off-frustum) rather than drawing it directly
-    // as intended. `kFVF` (D3DFVF_XYZRHW|D3DFVF_DIFFUSE|D3DFVF_TEX1, matching
-    // ScreenVertex exactly) is already used safely at four other quad-draw
-    // sites in this same file with no crash history -- this is the same,
-    // already-proven-safe call, saved/restored like everything else this
-    // function touches. Not yet independently confirmed live as the actual
-    // fix for the missing-blur symptom -- built and deployed same session.
-#if defined(_M_X64) || defined(_WIN64)
-    DWORD oldFVF = 0;
-    getFVF(device, &oldFVF);
-    setFVF(device, kFVF);
-#endif
+    // x64 SetFVF EXPERIMENT, TRIED AND REVERTED 2026-09-23: the native
+    // warning issue #100's own SetFVF finding protects no longer exists on
+    // x64 at all (independently confirmed, known_issues_x64.md 2026-09-14 --
+    // renaming this mod's own DLL out of the install directory entirely
+    // still shows the warning missing, a genuine Activision x64-port
+    // regression). On that basis, SetFVF(kFVF) was re-added on x64 only as a
+    // real candidate fix for "motion blur runs but produces no visible
+    // effect under GraphicsApi=Vulkan" (a real, plausible hypothesis: DXVK's
+    // own from-scratch vertex-state tracking resolving "ambient" FVF
+    // differently than a native driver). Live-tested same session: NO
+    // CHANGE -- blur still invisible. Direct instruction reverting it: "dont
+    // fix what aint broken, setfvf could create unknown issues down the
+    // line" -- correct call, since this added a real (if same-file-
+    // precedented) state-mutation risk for zero confirmed benefit once the
+    // hypothesis was live-disproven. x64 now matches x86 exactly again: no
+    // SetFVF/SetVertexDeclaration call at all. The real missing-blur cause
+    // is still open -- see the diagnostic logging added the same investigation
+    // (EnsureMotionBlurShader's CreatePixelShader-failure log, and the
+    // first-DrawFullScreenPass-reached log) for what's confirmed so far:
+    // the pass genuinely runs, shader creation succeeds, only the visible
+    // result is missing -- points at the actual capture/composite/sample
+    // step as the next real suspect, not this function's vertex-format state.
 
     float w = static_cast<float>(desc.Width);
     float h = static_cast<float>(desc.Height);
@@ -3866,15 +3852,9 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
         void** vtbl = *reinterpret_cast<void***>(oldTexture0);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(oldTexture0);
     }
-    // x86: REVERTED 2026-08-28 -- no SetVertexDeclaration/SetFVF restore needed;
-    // neither was ever called above. See the call site's own comment.
-    // x64: RE-ADDED 2026-09-23 -- restores the FVF this function found bound on
-    // entry, same "leave the device exactly as found" standard as everything
-    // else here. See the call site's own comment for why this is safe on x64
-    // specifically (unlike x86).
-#if defined(_M_X64) || defined(_WIN64)
-    setFVF(device, oldFVF);
-#endif
+    // REVERTED 2026-08-28 -- no SetVertexDeclaration/SetFVF restore needed;
+    // neither was ever called above. See the call site's own comment (including
+    // the 2026-09-23 x64 SetFVF experiment, tried and reverted the same session).
 
     if (haveOldViewport) setViewport(device, &oldViewport);
 
