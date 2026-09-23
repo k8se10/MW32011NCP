@@ -3384,6 +3384,28 @@ bool EnsureFullscreenCaptureTexture(void* device, int width, int height)
     // g_fullscreenCaptureTexture (shared between Phase B's RCAS and Phase E's
     // motion blur, called from two different points in the frame) is NOT
     // thrashing. Diagnostic logging removed once that was confirmed.
+    //
+    // 2026-09-23 -- RE-ADDED, read-only, damage-triggered-lag investigation.
+    // That 2026-08-26 finding predates today's confirmed backbuffer-size
+    // instability (GetViewport observed oscillating between native and the
+    // InternalRenderScalePercent-scaled size within the same tight window --
+    // see known_issues_x64.md's newest round) and predates the user's own
+    // live isolation (101% render scale = barely noticeable lag, 300% =
+    // severe -- cost scales with the target's real pixel area, exactly what
+    // a genuine CreateTexture/Release thrash at THIS size would cost). If
+    // this texture is now recreating repeatedly (not once at startup) while
+    // FsrSharpenEnabled/MotionBlurEnabled are both on (confirmed live config
+    // this session), that's the real mechanism; if it still only fires once,
+    // this specific theory is cleanly ruled out too.
+    {
+        static int s_recreateCount = 0;
+        ++s_recreateCount;
+        char buf[220];
+        sprintf_s(buf, "[fs-capture-tex-diag] recreate #%d: %dx%d -> %dx%d (prior tex %s)",
+                   s_recreateCount, g_fullscreenCaptureTexW, g_fullscreenCaptureTexH, width, height,
+                   g_fullscreenCaptureTexture ? "existed" : "null");
+        LogFromController(buf);
+    }
     if (g_fullscreenCaptureTexture) {
         void** vtbl = *reinterpret_cast<void***>(g_fullscreenCaptureTexture);
         reinterpret_cast<Release_t>(vtbl[kSurfaceReleaseVtableIndex])(g_fullscreenCaptureTexture);
