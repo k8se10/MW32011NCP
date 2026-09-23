@@ -410,8 +410,8 @@ bool TryLoadVendoredDxvk()
     char dxvkPath[MAX_PATH];
     sprintf_s(dxvkPath, "%sdxvk\\d3d9.dll", dllDir);
 
-    g_realD3D9 = LoadLibraryA(dxvkPath);
-    if (!g_realD3D9) {
+    HMODULE dxvkModule = LoadLibraryA(dxvkPath);
+    if (!dxvkModule) {
         char buf[600];
         sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but no "
             "vendored DXVK build was found at '%s' (err=%lu) -- falling back to the real "
@@ -419,6 +419,29 @@ bool TryLoadVendoredDxvk()
         Log(buf);
         return false;
     }
+
+    // Real safety net, 2026-09-23: ResolveRealExports() (called right after this
+    // function returns) treats a missing Direct3DCreate9 export as FATAL and fails
+    // this DLL's entire init -- correct behavior for the real system d3d9.dll (it
+    // genuinely can never be missing this export), but wrong for a real, this-mod-
+    // vendored third-party binary that could in principle be corrupted, wrong-
+    // architecture, or a stale/bad file a future rebuild leaves behind. Validate the
+    // one export this whole pipeline actually depends on BEFORE committing to this
+    // module as g_realD3D9, so a broken DXVK build degrades to the safe LegacyD3D9
+    // fallback (matching this function's own "always logged, never silently broken"
+    // design) instead of taking the entire game down at DLL init.
+    if (!GetProcAddress(dxvkModule, "Direct3DCreate9")) {
+        char buf[600];
+        sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan: vendored DXVK build at '%s' loaded "
+            "but is missing its Direct3DCreate9 export (corrupted/wrong-architecture file?) "
+            "-- falling back to the real system d3d9.dll instead of risking a broken init.",
+            dxvkPath);
+        Log(buf);
+        FreeLibrary(dxvkModule);
+        return false;
+    }
+
+    g_realD3D9 = dxvkModule;
     char buf[600];
     sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan: loaded vendored DXVK build from '%s' "
         "-- every d3d9 export from here on routes through DXVK's own D3D9-to-Vulkan "
