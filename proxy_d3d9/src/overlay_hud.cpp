@@ -164,6 +164,11 @@ namespace {
 // ---- Vtable indices (stable D3D9 COM layout, see file header comment) -------------
 constexpr int kEndSceneVtableIndex = 42;          // IDirect3DDevice9::EndScene
 constexpr int kResetVtableIndex = 16;             // IDirect3DDevice9::Reset
+constexpr int kGetAvailableTextureMemoryVtableIndex = 4; // IDirect3DDevice9::GetAvailableTextureMemory --
+    // 2026-09-23, real driver-reported VRAM headroom (bytes, rounded to the nearest MB per
+    // MSDN), distinct from dllmain.cpp's own ResourceLogThreadProc resource-diag (which is
+    // CPU-side process commit via K32GetProcessMemoryInfo, not GPU memory at all -- see
+    // known_issues_x64.md issue #4's newest round for why this distinction matters).
 constexpr int kCreateTextureVtableIndex = 23;     // IDirect3DDevice9::CreateTexture
 constexpr int kSetTextureVtableIndex = 65;        // IDirect3DDevice9::SetTexture
 constexpr int kSetFVFVtableIndex = 89;            // IDirect3DDevice9::SetFVF
@@ -268,6 +273,8 @@ typedef HRESULT(WINAPI* GetSurfaceLevel_t)(void* This, UINT Level, void** ppSurf
 // proportional to, immune to any window/DPI-vs-backbuffer mismatch GetClientRect can't
 // see.
 struct D3DViewport9 { DWORD X, Y, Width, Height; float MinZ, MaxZ; };
+typedef UINT(WINAPI* GetAvailableTextureMemory_t)(void* This); // real MSDN signature -- no
+    // params beyond the implicit `this`, returns available VRAM in bytes rounded to nearest MB
 typedef HRESULT(WINAPI* GetViewport_t)(void* This, D3DViewport9* pViewport);
 typedef HRESULT(WINAPI* SetViewport_t)(void* This, const D3DViewport9* pViewport);
 typedef HRESULT(WINAPI* GetTexture_t)(void* This, DWORD Stage, void** ppTexture);
@@ -7468,6 +7475,28 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // logged synchronously inside the CreateTexture hot path and very likely
     // caused a real crash).
     AssetCapture_DumpCreateTextureStormIfDue();
+
+    // Real driver-reported VRAM diagnostic (2026-09-23) -- SP damage/pause/level-transition
+    // stutter investigation, direct user question: the resource-diag thread in dllmain.cpp
+    // only ever measured CPU-side process commit (K32GetProcessMemoryInfo), never actual GPU
+    // memory. GetAvailableTextureMemory is the real, standard D3D9 API for this -- a single,
+    // cheap, read-only call, safe every frame in principle but rate-limited to ~1s to match
+    // the existing resource-diag cadence and keep log volume sane.
+    {
+        static DWORD s_lastVramLogMs = 0;
+        DWORD nowMs = GetTickCount();
+        if (nowMs - s_lastVramLogMs >= 1000) {
+            s_lastVramLogMs = nowMs;
+            void** deviceVtbl = *reinterpret_cast<void***>(device);
+            auto getAvailableTextureMemory = reinterpret_cast<GetAvailableTextureMemory_t>(
+                deviceVtbl[kGetAvailableTextureMemoryVtableIndex]);
+            UINT availBytes = getAvailableTextureMemory(device);
+            char vramBuf[128];
+            sprintf_s(vramBuf, "[vram-diag] GetAvailableTextureMemory=%.1fMB (real driver-reported estimate, rounded to nearest MB)",
+                       static_cast<double>(availBytes) / (1024.0 * 1024.0));
+            LogFromController(vramBuf);
+        }
+    }
 
     // Issue #95 Round 4 -- reset the once-per-real-frame motion-blur guard here.
     // Hook_EndScene fires exactly once per real frame, always AFTER every
