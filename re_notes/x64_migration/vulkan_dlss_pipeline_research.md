@@ -889,11 +889,21 @@ risk category `Vulkan` mode introduces.
 
 **Real, honest mitigation plan, matching this project's own already-trusted
 pattern rather than a new argument that the risk is low**:
-1. **`Vulkan` mode gated SP-only initially**, mirroring this project's own
-   established rollout pattern for every other major feature (Sprint,
-   D-pad, menu navigation, MP itself) — VAC's confirmed-active surface is
-   `iw5mp.exe`; keeping this mode out of MP entirely removes it from VAC's
-   actual enforcement domain to start, not just in theory.
+1. **`Vulkan` mode gated SP-only initially — IMPLEMENTED, 2026-09-23**,
+   mirroring this project's own established rollout pattern for every other
+   major feature (Sprint, D-pad, menu navigation, MP itself) — VAC's
+   confirmed-active surface is `iw5mp.exe`; keeping this mode out of MP
+   entirely removes it from VAC's actual enforcement domain to start, not
+   just in theory. Direct instruction, same day: "make sure its
+   conditional only SP for now... this is qol not an essential feature for
+   mp, so until we have real precedent from sp we will bring it to mp."
+   Two independent, redundant enforcement points, both build-verified: `d3d9_hook.cpp`'s
+   `IsGraphicsApiVulkanModeAllowed()` (checked at `CreateDevice` time) and
+   `dllmain.cpp`'s `TryLoadVendoredDxvk()` (checked before `d3d9.dll` is
+   even loaded, the real point where DXVK would be substituted in). The
+   `GraphicsApi` config value itself stays a single global setting (not
+   per-binary) — a player CAN set `Vulkan` while playing MP, it simply has
+   no effect there yet, logged clearly either way.
 2. **Default OFF, explicit opt-in with a real, honest risk acknowledgment** —
    same shape as the existing MP VAC-risk gate, worded from DXVK's own direct
    disclosure above rather than a softened or reassuring paraphrase.

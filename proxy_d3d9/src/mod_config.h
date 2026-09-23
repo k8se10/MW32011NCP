@@ -723,13 +723,22 @@ struct ModConfig
     // [Video] GraphicsApi (see the enum's own comment above for the full
     // rationale) -- LegacyD3D9 (default) keeps this project's existing,
     // already-proven native D3D9 hook pipeline completely unchanged. Vulkan
-    // is the new, not-yet-implemented DXVK-in-process translation pipeline
-    // this project will use to unlock real Streamline/DLSS integration.
-    // Selecting Vulkan today is a real, opt-in no-op (InitGraphicsApiMode()
-    // logs the selection and falls back to LegacyD3D9 behavior) until that
-    // implementation actually lands -- never silently ignored, always
-    // logged, so a player who sets this early gets an honest "not ready
-    // yet, falling back" rather than an unexplained non-effect.
+    // is the DXVK-in-process translation pipeline this project will use to
+    // unlock real Streamline/DLSS integration -- real loading logic exists
+    // (dllmain.cpp's TryLoadVendoredDxvk()) but DXVK itself isn't bundled
+    // with this mod yet, so selecting Vulkan today falls back to
+    // LegacyD3D9 behavior, always logged so a player who sets this early
+    // gets an honest "not ready yet, falling back" rather than an
+    // unexplained non-effect. **SP-ONLY, direct instruction (2026-09-23)**:
+    // this value is a single global setting (not per-binary), but Vulkan
+    // mode only actually takes effect under iw5sp.exe regardless of what
+    // this is set to -- real precedent needed on Campaign/Survival first,
+    // since this is a genuine module-replacement technique this project's
+    // own VAC research (vulkan_dlss_pipeline_research.md S5) flags as a
+    // materially different risk category, and this is QoL, not essential,
+    // for Multiplayer. See IsGraphicsApiVulkanModeAllowed() (d3d9_hook.cpp)
+    // and TryLoadVendoredDxvk() (dllmain.cpp), both independently enforcing
+    // the identical SP-only gate.
     GraphicsApi graphicsApi = GraphicsApi::LegacyD3D9;
 
     // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,

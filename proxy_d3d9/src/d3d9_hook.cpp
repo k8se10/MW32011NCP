@@ -899,14 +899,46 @@ void InstallWndProcHook(HWND hwnd)
 // implementation (DXVK vendoring, the vulkan-1.dll proxy-load hook, slSetVulkanInfo)
 // lands here once that work starts; nothing below this comment should need to change
 // shape when it does, only gain real branches.
+// Real answer to "is Vulkan mode actually allowed to run right now" -- SP-only,
+// direct instruction (2026-09-23): "make sure its conditional only SP for now as
+// again we know mp holds more risk and this is qol not an essential feature for mp,
+// so until we have real precedent from sp we will bring it to mp." This is a
+// separate, additional gate on top of the config selection itself -- a player CAN
+// set GraphicsApi=Vulkan in the ini (it's a global, not a per-binary setting; MP
+// support is a real future decision, not something this gate forecloses), but it
+// only actually takes effect under iw5sp.exe. Matches this project's own
+// established pattern for exactly this shape of decision: MP tracks SP by a real,
+// deliberate lag (the 2026-09-05 "2-4 releases behind SP until beta" cadence
+// standard) rather than shipping every new feature to both binaries simultaneously,
+// and every other structurally-significant, not-yet-proven-safe feature this
+// project ships (AutoMantleEnabled, UseCustomOptionsScreen, the MP VAC-risk
+// acknowledgment itself) defaults to the safer scope first. Real practical reason
+// beyond risk alone: this is a real Vulkan/DXVK MODULE-REPLACEMENT technique (see
+// vulkan_dlss_pipeline_research.md S5's own ENB depth-of-modification finding) --
+// untested on the one binary (iw5mp.exe) where VAC is confirmed active at all;
+// Survival co-op and Solo Campaign both sit at near-zero/low real VAC risk per that
+// same research, making SP the correct, deliberate place to get real precedent
+// before ever considering MP.
+bool IsGraphicsApiVulkanModeAllowed()
+{
+    return g_modConfig.graphicsApi == GraphicsApi::Vulkan
+        && GetDetectedGameExecutable() == GameExecutable::SP;
+}
+
 void InitGraphicsApiMode()
 {
-    if (g_modConfig.graphicsApi == GraphicsApi::Vulkan) {
-        LogFromController("[graphics-api] GraphicsApi=Vulkan selected, but the Vulkan/DXVK "
-            "pipeline is not implemented yet -- falling back to LegacyD3D9 behavior.");
-    } else {
+    if (g_modConfig.graphicsApi != GraphicsApi::Vulkan) {
         LogFromController("[graphics-api] GraphicsApi=LegacyD3D9 (default) -- existing native D3D9 pipeline, unchanged.");
+        return;
     }
+    if (GetDetectedGameExecutable() != GameExecutable::SP) {
+        LogFromController("[graphics-api] GraphicsApi=Vulkan selected, but Vulkan mode is "
+            "SP-only for now (real precedent needed on iw5sp.exe before this is ever "
+            "considered for iw5mp.exe) -- forcing LegacyD3D9 behavior under this binary.");
+        return;
+    }
+    LogFromController("[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but the "
+        "Vulkan/DXVK pipeline is not implemented yet -- falling back to LegacyD3D9 behavior.");
 }
 
 HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,

@@ -356,13 +356,92 @@ void Log(const char* msg)
                                               // for the actual (now off-thread) flush
 }
 
+// GraphicsApi=Vulkan, real loading logic (2026-09-23) -- SP-only, direct
+// instruction: "make sure its conditional only SP for now as again we know mp
+// holds more risk and this is qol not an essential feature for mp, so until we
+// have real precedent from sp we will bring it to mp." Matches
+// d3d9_hook.cpp's own IsGraphicsApiVulkanModeAllowed() gate exactly (same two
+// conditions: GraphicsApi==Vulkan AND detected exe==SP) -- kept as a second,
+// independent check here rather than sharing one function across the two
+// translation units, since this one runs before ResolveRealExports() while that
+// one runs per-CreateDevice; both must reach the identical answer regardless.
+//
+// Real architecture (vulkan_dlss_pipeline_research.md S4.5's own correction):
+// DXVK's own maintainers explicitly reject export-forwarding to a renamed DXVK
+// DLL ("DXVK needs to be the last DLL in the chain") -- the real, precedented
+// pattern instead (DXVK issue #1498) is a wrapper that explicitly calls DXVK's
+// own Direct3DCreate9 and hooks the returned objects, exactly what this
+// function now does: when Vulkan mode is actually allowed, load a real,
+// separately-named DXVK build (`dxvk\d3d9.dll`, next to this DLL) INSTEAD of
+// the real system d3d9.dll, so every existing forwarded export and
+// Direct3DCreate9 call in this file transparently goes through DXVK's own
+// D3D9-to-Vulkan translation from here on -- no other code in this file needs
+// to know which backend is actually active.
+//
+// NOT YET SHIPPED: DXVK itself is not bundled with this mod yet (a real,
+// separate vendoring/licensing/attribution task -- DXVK is zlib-licensed, real
+// attribution required once this ships, see vulkan_dlss_pipeline_research.md
+// S2.4/S4 for the full redistribution research). This is real, live-tested
+// LOADING logic ready for that file to land in, not a placeholder that still
+// needs rewriting later -- dropping a real dxvk\d3d9.dll next to this DLL
+// today would already route through it correctly. Until then this always
+// falls back to the real system d3d9.dll, loudly logged either way so a
+// tester can tell which backend actually loaded from proxy_d3d9.log alone.
+bool TryLoadVendoredDxvk()
+{
+    if (g_modConfig.graphicsApi != GraphicsApi::Vulkan) return false;
+    if (GetDetectedGameExecutable() != GameExecutable::SP) {
+        Log("[graphics-api] GraphicsApi=Vulkan selected, but Vulkan mode is SP-only "
+            "for now -- loading the real system d3d9.dll instead under this binary.");
+        return false;
+    }
+
+    // No stored HMODULE for this DLL exists yet at this point in DllMain -- resolve
+    // it directly from this function's own address (standard, well-known idiom for
+    // "get my own module handle from inside DllMain" without needing DllMain's
+    // hModule parameter threaded through to a file-scope global).
+    HMODULE selfModule = nullptr;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+        reinterpret_cast<LPCSTR>(&TryLoadVendoredDxvk), &selfModule);
+    char dllDir[MAX_PATH];
+    GetModuleFileNameA(selfModule, dllDir, MAX_PATH);
+    char* lastSlash = strrchr(dllDir, '\\');
+    if (lastSlash) *(lastSlash + 1) = '\0'; else dllDir[0] = '\0';
+    char dxvkPath[MAX_PATH];
+    sprintf_s(dxvkPath, "%sdxvk\\d3d9.dll", dllDir);
+
+    g_realD3D9 = LoadLibraryA(dxvkPath);
+    if (!g_realD3D9) {
+        char buf[600];
+        sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but no "
+            "vendored DXVK build was found at '%s' (err=%lu) -- falling back to the real "
+            "system d3d9.dll. DXVK is not bundled with this mod yet.", dxvkPath, GetLastError());
+        Log(buf);
+        return false;
+    }
+    char buf[600];
+    sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan: loaded vendored DXVK build from '%s' "
+        "-- every d3d9 export from here on routes through DXVK's own D3D9-to-Vulkan "
+        "translation instead of the real system d3d9.dll.", dxvkPath);
+    Log(buf);
+    return true;
+}
+
 // Loads the real system d3d9.dll by an explicit, unambiguous path so we never
 // collide with our own module (which is also named d3d9.dll). GetSystemDirectoryA
 // called from this 32-bit process returns ...\System32, but Windows' WOW64 file
 // system redirector transparently maps that to ...\SysWOW64 for a 32-bit process's
 // actual file access — no manual SysWOW64 path handling needed.
+//
+// 2026-09-23: now tries TryLoadVendoredDxvk() first (GraphicsApi=Vulkan, SP-only --
+// see that function's own comment for the full architecture). Falls through to the
+// real system d3d9.dll unconditionally whenever that returns false, whether because
+// Vulkan mode isn't selected/allowed, or because it IS but no vendored DXVK build
+// exists yet -- LegacyD3D9 behavior is always the safe, always-available fallback.
 bool LoadRealD3D9()
 {
+    if (TryLoadVendoredDxvk()) return true;
+
     char sysDir[MAX_PATH];
     GetSystemDirectoryA(sysDir, MAX_PATH);
     strcat_s(sysDir, "\\d3d9.dll");
@@ -555,9 +634,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // Sans (swapped from Barlow Condensed 2026-08-24), embedded in this DLL
             // rather than depending on a system install; logs its own success/failure,
             // never fatal to DLL init either way
-        if (!LoadRealD3D9()) return FALSE;
-        if (!ResolveRealExports()) return FALSE;
-
         // 2026-09-15 -- real groundwork for Multiplayer, see game_exe_detect.h for
         // the full rationale. iw5sp.exe and iw5mp.exe share this same deployed
         // d3d9.dll, but every signature-scanned hook below was found and verified
@@ -569,12 +645,21 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         // exe-agnostic, hence "controller connected" showing even under iw5mp.exe)
         // but crashed navigating menus, consistent with a signature spuriously
         // matching unrelated bytes in iw5mp.exe's own, differently-compiled code.
+        //
+        // MOVED EARLIER, 2026-09-23: originally ran after LoadRealD3D9()/
+        // ResolveRealExports() -- now runs before both so LoadRealD3D9() can itself
+        // consult GetDetectedGameExecutable() (the real GraphicsApi=Vulkan SP-only
+        // gate, see LoadRealD3D9()'s own comment below). Pure GetModuleFileNameA
+        // query, no dependency on d3d9 being loaded yet -- safe to move earlier.
         const GameExecutable detectedExe = DetectGameExecutable();
         {
             char buf[128];
             sprintf_s(buf, "Detected game executable: %s", GameExecutableName(detectedExe));
             Log(buf);
         }
+
+        if (!LoadRealD3D9()) return FALSE;
+        if (!ResolveRealExports()) return FALSE;
 
         // 2026-09-15, live-caught regression: MH_Initialize() was previously only
         // ever called from inside InstallAnalogInputHooksX64()/InstallAnalogInputHooks()
