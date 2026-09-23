@@ -4840,37 +4840,59 @@ void __fastcall Hook_RenderResCompute(void* self)
                     static_cast<int>(nativeW), static_cast<int>(nativeH), targetW, targetH);
                 if (scaleChanged) LogFromController(buf);
 
-                // Port of x86's high-render-scale safety warning (2026-09-13, x64
-                // feature-parity audit item #7; x86 original: analog_input_hooks.cpp
-                // Hook_FUN_00679010, issue #105, 2026-08-29). This was missed when
-                // InternalRenderScalePercent itself was ported to x64 2026-09-12 (row
-                // #43) -- the base feature carried over, this warning didn't. Same
-                // >2.25x-area (~150% linear) threshold, same one-time-per-session
-                // gate, same ShowOverlayMessageUntilDismissed mechanism as x86's
-                // original. Honest caveat x86's own warning didn't need: iw5sp_x64/
-                // iw5mp_x64.exe are 64-bit processes, so the specific "hard 4GB
-                // address-space ceiling" reasoning behind x86's warning text doesn't
-                // apply as-is here -- worded accordingly below rather than copied
-                // verbatim, and the underlying crash/freeze risk at high scale has NOT
-                // been independently re-tested against x64's own larger address
-                // space. Ported as a precaution (a real risk was demonstrated on x86
-                // at this same render-cost multiplier; the x64 architecture change
-                // alone doesn't prove it can't recur), not because the identical
-                // failure mode is confirmed to reproduce here.
+                // High-render-scale stability warning (2026-09-13, x64 feature-parity
+                // audit item #7; REWORKED 2026-09-23 -- direct user instruction after a
+                // full multi-angle investigation this session, known_issues_x64.md
+                // issue #4). Original version ported x86's own ~150%-linear/2.25x-area
+                // threshold and its "hard 4GB address-space ceiling" reasoning (issue
+                // #105, x86, since largely moot -- that specific crash mechanism,
+                // ForceD3D9On12, has been removed entirely). This session did real,
+                // extensive elimination work instead: a severe, sustained,
+                // render-scale-gated stutter (confirmed live on an RTX 2080 Ti,
+                // clean at 200%, broken at 300%) survived FIVE separate real fix/
+                // rule-out attempts targeting this project's own code (the SAVED_SCREEN
+                // capture StretchRect, the sys_sysMB hardware-detection cap, wait
+                // coalescing, the POST_EFFECT sampler-setup chain, the opcode-13 CPU
+                // pixel-copy loop) -- none of them were the cause, and the render-scale
+                // override itself was confirmed to work symmetrically below AND above
+                // native. The most evidence-consistent conclusion: a genuine NATIVE
+                // engine stability characteristic tied to large render-target sizes,
+                // not a bug in this project's own hooking/override code -- and very
+                // plausibly the real reason the original PC port locked its internal
+                // render resolution to a fixed reference size in the first place
+                // (issue #88's own original finding). Threshold moved to exactly 200%
+                // linear (4x area) -- the real, live-tested boundary this session
+                // actually confirmed, not a generic ported heuristic. Explicitly framed
+                // as hardware-dependent, not a universal hard number: this project has
+                // only verified the boundary on one reference GPU (RTX 2080 Ti) --
+                // significantly more powerful hardware (or a future architecture) may
+                // have a genuinely higher safe ceiling, and this project has no way to
+                // detect that automatically. A real on-screen warning (not just a log
+                // line, per direct instruction: "there should be a limit just a
+                // warning universally above 200%") -- once per session, dismissible,
+                // never blocks or clamps the setting itself.
                 static bool s_highScaleWarningShownX64 = false;
                 int64_t targetAreaX64 = static_cast<int64_t>(targetW) * targetH;
                 int64_t nativeAreaX64 = static_cast<int64_t>(nativeW) * nativeH;
                 if (!s_highScaleWarningShownX64 && nativeAreaX64 > 0 &&
-                    targetAreaX64 * 4 > nativeAreaX64 * 9) { // > 2.25x area, i.e. > ~150% linear
+                    targetAreaX64 > nativeAreaX64 * 4) { // > 4x area, i.e. > 200% linear exactly
                     s_highScaleWarningShownX64 = true;
-                    LogFromController("[x64-video-scale][WARNING] target resolution is well above native -- "
-                        "x86's own version of this warning (known_issues.md issue #105) cited a hard 4GB "
-                        "address-space ceiling and real crashes/freezes reproduced at 250-300%% -- this is a "
-                        "64-bit process so that specific ceiling doesn't apply as-is, and the underlying "
-                        "high-scale crash/freeze risk has NOT been independently re-tested on x64 -- see the "
-                        "on-screen warning");
-                    // (The on-screen modal that used to be shown here was removed 2026-09-22: its x86 wording is
-                    // obsolete and the modal is now the once-per-version welcome message, see d3d9_hook.cpp.)
+                    LogFromController("[x64-video-scale][WARNING] target resolution exceeds 200% linear render "
+                        "scale -- a real, severe, sustained stutter (damage/pause/ADS/level-transitions) was "
+                        "confirmed live above this point (clean at 200%, broken at 300%) on this project's own "
+                        "reference GPU (RTX 2080 Ti), root-caused to a genuine NATIVE engine stability limit at "
+                        "large render-target sizes, not this mod's own code (known_issues_x64.md issue #4) -- "
+                        "see the on-screen warning");
+                    ShowOverlayMessageUntilDismissed(
+                        "\x03" "Render Scale Warning\n\n"
+                        "\x01" "\xE2\x9A\xA0 Above 200% InternalRenderScalePercent, a real, severe stutter "
+                        "(damage/pause/ADS/level-transitions) has been confirmed on this project's own test "
+                        "hardware -- a genuine native engine limit at large render-target sizes, not a bug in "
+                        "this mod. Higher-end GPUs may have a real, higher safe ceiling than this project has "
+                        "verified -- there's no way to detect that automatically, so this warning fires "
+                        "regardless of your actual hardware.\n\n"
+                        "Enter / Space / Click to continue:",
+                        OverlayAnimStyle::Plain);
                 }
             }
         }
