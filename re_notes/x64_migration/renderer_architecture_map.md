@@ -711,6 +711,45 @@ motion-vector work needs.
 `stage_listener_invoker2.txt` (the ~2000-line `FUN_1401e9f70` dump — case
 `0x12` starts at line 1578).
 
+**Follow-up, same pass: case `0x11` (`add scene ent`) read — the per-entity
+identity question is ANSWERED.** Case `0x11`'s real code (line 1368 of the
+same raw dump) is a real, confirmed per-entity iteration — not one loop, but
+**five separate entity-category loops**, each with the identical real shape:
+a plain integer index (`uVar56`, incrementing per iteration, bounded by a
+per-category count stored in the event record), gating each iteration on a
+parallel byte array (`*pcVar52 == '\x01'`, an "active/visible this frame"
+flag keyed by that same index), and — only for indices flagged active —
+calling a real, category-specific processing function
+(`FUN_1401c7aa0`/`FUN_1401c7b70`/`FUN_1401c7b30`/`FUN_1401a7450`, one per
+category) that reads/writes a fixed-stride record array at that exact index
+(confirmed strides: `0x90`/144 bytes at `0x141c23028`, `0x58`/88 bytes at
+`0x141c36278`, `0x30`/48 bytes at `0x141c4de84`, plus two smaller
+indirect-16-bit-index categories reading through
+`lRam...887c30+0x380`/`+0x280`). **This IS the real, stable per-entity
+identity this project's own motion-vector work (`vulkan_dlss_pipeline_research.md`
+§2.6) needs**: a plain integer array index, per entity category, gated by
+the engine's own already-maintained "active this frame" boolean array — not
+something this project needs to invent or infer, the engine already tracks
+exactly this. **Real, concrete implication for the motion-vector cache
+design**: key the current/previous-frame transform cache by
+`(entityCategory, arrayIndex)`, reading the SAME "active this frame" byte
+array this stage already consults to know when an index's history is
+invalid (a newly-active index this frame — i.e. was `\0` last frame, `\x01`
+now — has no valid previous transform, exactly the `motionVectorsInvalidValue`
+case Streamline's own contract already has a sentinel for). **Not yet
+determined**: which of these five categories corresponds to which real
+engine concept (dynamic/skinned models vs. FX vs. sound emitters vs.
+something else) — the category at `0x141c23028` (stride 0x90, the largest
+of the five, called via `FUN_1401c7aa0`, and the only one whose record
+includes an explicit model-transform-adjacent field check, `puVar55 & 0x100000`)
+is the strongest candidate for "dynamic models," worth confirming before
+committing to it as the motion-vector work's real target. Not yet read:
+case `0x03` (`cell scene ent`), which may feed these same index arrays one
+stage earlier rather than being a separate identity scheme — a real,
+cheap, worthwhile cross-check before starting the capture-cache
+implementation, to confirm these two stages share one identity space
+rather than each entity type having category-local, stage-local numbering.
+
 ---
 
 *Status: early, first-pass mapping. Real architectural shape established

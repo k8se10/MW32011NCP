@@ -511,27 +511,30 @@ not deep engine internals" philosophy (§2.3):**
    project would need to newly discover the existence of. **Not yet
    confirmed**: the exact vertex-format/bone-count-per-vertex convention this
    engine's skinning shaders expect — real, scoped native RE, not started.
-4. **Real, still-open native RE requirement: stable per-object identity
-   across frames.** Draw ORDER is not a safe key — state-sorting and
-   visibility culling can reorder or drop draws frame to frame, so a
-   "previous frame's transform" cache keyed by draw index would silently
-   mismatch the wrong object's history to the wrong current draw, corrupting
-   results in a way that could look plausible rather than obviously broken.
-   A real, stable per-entity key is needed instead — a genuinely promising,
-   not-yet-confirmed lead already on record from the same renderer-mapping
-   pass: `renderer_architecture_map.md` describes real, named per-entity
-   scene-processing stages (`cell scene ent`, `add scene ent`, `gen
-   drawsurfs` — the last one explicitly flagged as "almost certainly the
-   direct bridge... into the render command buffer: 'generate draw surfaces'
-   is the classic id-Tech term for converting the culled/visible entity list
-   into the actual per-surface draw commands the backend consumes") —
-   strongly suggesting the engine's own draw-command stream already carries
-   real entity/model handles this project could key a cache by, rather than
-   needing to invent an identity scheme from nothing. **This is the single
-   most important unconfirmed lead for this whole feature** — the same
-   document honestly flags "the actual draw-call path itself, shadow pass,
-   and material/shader binding remain unmapped" as of this pass, so this is
-   real, scoped, not-yet-started RE work, not a solved problem.
+4. **Stable per-object identity across frames — RESOLVED, 2026-09-23,
+   `renderer_architecture_map.md` §7.** Draw ORDER is not a safe key —
+   state-sorting and visibility culling can reorder or drop draws frame to
+   frame, so a "previous frame's transform" cache keyed by draw index would
+   silently mismatch the wrong object's history to the wrong current draw.
+   The real answer, found by fully tracing `add scene ent` (stage `0x11`,
+   now located and decompiled — `FUN_1401e9f70`'s own `case 0x11`): the
+   engine ALREADY maintains exactly the identity this project needs — five
+   separate entity-category arrays, each indexed by a plain integer (0 to a
+   per-category count), each gated by a parallel "active/visible this
+   frame" boolean array the engine itself already updates every frame. A
+   newly-active index (inactive last frame, active now) is directly
+   observable from that same boolean array, mapping 1:1 onto Streamline's
+   own `motionVectorsInvalidValue` sentinel case (item 5 below) — the
+   engine's own "did this entity just appear" signal doubles as exactly the
+   signal this project's own cache needs to know when NOT to trust a
+   previous-frame entry. **Real, concrete design this unlocks**: key the
+   capture/retain transform cache by `(entityCategory, arrayIndex)`,
+   reading the same active-flag array `add scene ent` already consults.
+   **Not yet determined**: which of the five categories is "dynamic/skinned
+   models" specifically (the strongest candidate, by stride/field shape, is
+   the one at `0x141c23028`, stride `0x90`) — real, cheap, next
+   confirmation step, not a blocker. This closes what was the single most
+   important unconfirmed lead for this whole feature.
 5. **Real, standard handling for objects with no valid previous-frame
    history** (just spawned, just entered view, or the very first frame after
    a level load / camera cut): write `motionVectorsInvalidValue` at those
