@@ -242,20 +242,50 @@ DWORD WINAPI ResourceLogThreadProc(LPVOID)
         ms.dwLength = sizeof(ms);
         BOOL gotMs = GlobalMemoryStatusEx(&ms);
 
+        // Real disk I/O diagnostic (2026-09-23) -- direct user observation: GPU usage,
+        // system RAM, and VRAM (now confirmed via the real DXGI vram-diag-real numbers)
+        // all stay flat during the reported ADS/damage/pause/transition lag -- nothing
+        // is visibly WORKING hard during the stutter, which is the classic signature of
+        // a blocking STALL (e.g. a synchronous disk read on the main thread for an asset
+        // not yet resident) rather than genuine compute cost. GetProcessIoCounters is a
+        // real, standard, cheap Win32 API (same class as K32GetProcessMemoryInfo above)
+        // giving cumulative-since-process-start read/write operation counts and byte
+        // totals -- logged both as running totals and as the DELTA since the last ~1s
+        // sample, since a real stall during one specific window should show up as a
+        // clear spike in bytes-read-this-second relative to the otherwise-near-zero
+        // baseline once initial level load finishes (most assets already cached in RAM).
+        IO_COUNTERS io{};
+        BOOL gotIo = GetProcessIoCounters(GetCurrentProcess(), &io);
+        static ULONGLONG s_lastReadBytes = 0, s_lastReadOps = 0;
+        double readBytesDeltaMB = 0.0;
+        ULONGLONG readOpsDelta = 0;
+        if (gotIo) {
+            if (s_lastReadBytes != 0) { // skip the first sample -- no prior baseline yet
+                readBytesDeltaMB = static_cast<double>(io.ReadTransferCount - s_lastReadBytes) / (1024.0 * 1024.0);
+                readOpsDelta = io.ReadOperationCount - s_lastReadOps;
+            }
+            s_lastReadBytes = io.ReadTransferCount;
+            s_lastReadOps = io.ReadOperationCount;
+        }
+
         QueryPerformanceCounter(&resBenchEnd);
         FrameBenchmark_AddResourceLogThreadMs(
             (static_cast<double>(resBenchEnd.QuadPart - resBenchStart.QuadPart) * 1000.0) / static_cast<double>(resBenchFreq.QuadPart));
 
-        char buf[400];
+        char buf[500];
         sprintf_s(buf,
             "[resource-diag] workingSetMB=%.1f privateBytesMB=%.1f pagefileUsageMB=%.1f | "
-            "sysMemLoad=%lu%% availPhysMB=%.1f availVirtualMB=%.1f (this process' own remaining virtual address space)",
+            "sysMemLoad=%lu%% availPhysMB=%.1f availVirtualMB=%.1f (this process' own remaining virtual address space) | "
+            "diskReadMBThisSecond=%.2f diskReadOpsThisSecond=%llu diskReadTotalMB=%.1f",
             gotPmc ? pmc.WorkingSetSize / (1024.0 * 1024.0) : -1.0,
             gotPmc ? pmc.PrivateUsage / (1024.0 * 1024.0) : -1.0,
             gotPmc ? pmc.PagefileUsage / (1024.0 * 1024.0) : -1.0,
             gotMs ? ms.dwMemoryLoad : 0UL,
             gotMs ? ms.ullAvailPhys / (1024.0 * 1024.0) : -1.0,
-            gotMs ? ms.ullAvailVirtual / (1024.0 * 1024.0) : -1.0);
+            gotMs ? ms.ullAvailVirtual / (1024.0 * 1024.0) : -1.0,
+            gotIo ? readBytesDeltaMB : -1.0,
+            gotIo ? static_cast<unsigned long long>(readOpsDelta) : 0ULL,
+            gotIo ? static_cast<double>(io.ReadTransferCount) / (1024.0 * 1024.0) : -1.0);
         if (g_log) fprintf(g_log, "%s\n", buf); // Log() itself isn't declared yet at this
                                                   // point in the file -- same buffered
                                                   // write Log() does, LogFlushThreadProc
