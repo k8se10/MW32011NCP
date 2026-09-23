@@ -388,9 +388,39 @@ consistent with a deferred or semi-deferred lighting accumulation
 scheme), and **`$ssao`/`$ssao_blurred`/`$ssao_float_z`** — real, confirmed
 evidence this engine has a native SSAO implementation, never previously
 documented anywhere in this project's own RE history (the existing
-visual-enhancement suite has no SSAO-related feature or dvar at all) — a
-genuine, concrete new lead for a future visual-enhancement or
-renderer-replacement feature.
+visual-enhancement suite has no SSAO-related feature or dvar at all).
+
+**Follow-up the same day, direct user connection ("native ssao makes
+sense to as why our aa stuff made everything look worse")**: dumped
+every string in the binary (`DumpAllStrings.java`) and found this is a
+COMPLETE, real, fully-named native SSAO feature, not just three orphaned
+render targets — a full dvar set and shader-technique table:
+
+- `r_supportsSSAO` — "True if the videocard supports features needed for SSAO"
+- `r_ssao` — "Screen Space Ambient Occlusion mode" (the real master toggle/mode dvar)
+- `r_ssaoStrength` — "Strength of Screen Space Ambient Occlusion effect"
+- `r_ssaoPower` — "Power curve applied to SSAO factor"
+- `r_ssaoBlurRadius` — "Apply gaussian blur with this radius to calculated SSAO values"
+- `r_ssaoDownsample` — "Perform SSAO calculation on downsampled depth buffer"
+- `r_ssaoDebug` — **"Render calculated or applied Screen Space Ambient Occlusion values"** — a real debug VISUALIZATION mode, directly useful for testing the SMAA-interaction theory below without needing to guess
+- Real technique names: `ssao_calc_slow`/`ssao_calc_fast`, `ssao_apply_fullres`/`ssao_apply_downsampled`, `ssao_debug_apply_fullres`/`ssao_debug_calc_fullres`/`ssao_debug_apply_downsampled`/`ssao_debug_calc_downsampled`, `ssao_zdownsample`
+- Render-target registration strings: `R_RENDERTARGET_SSAO`/`R_RENDERTARGET_SSAO_BLURRED`/`R_RENDERTARGET_SSAO_FLOAT_Z` (the real registration-time names behind the `$ssao`/`$ssao_blurred`/`$ssao_float_z` table entries above)
+
+This is a genuine, dormant, fully-built native feature this project has
+never touched — not a stub, not a leftover fragment, a complete
+calc/blur/apply pipeline with its own quality tiers (full-res vs.
+downsampled) and debug tooling already built by the original developers.
+**Directly relevant to `known_issues_x64.md` issue #2** (SMAA parked
+after even a no-op capture-and-redraw looked worse than off) — logged
+there as a real, testable lead: forcing `r_ssaoDebug` on would show
+whether the existing full-screen capture/redraw path's own "looks worse"
+symptom correlates with SSAO specifically. **Currently untestable**:
+forcing this (or any) dvar on x64 needs the real x64 `SetDvarBool`/
+`SetDvarInt` native, which `known_issues_x64.md` issue #6 already
+identified as missing entirely — this SSAO dvar set is a second,
+independent, concrete reason to prioritize finding it (unlocks a real,
+substantial, genuinely native visual-enhancement feature, not just the
+three smaller forced-quality toggles issue #6 already named).
 
 **Not yet found: the function that walks this table and issues the real
 `CreateTexture`/`CreateRenderTarget` calls.** Real, multi-technique
