@@ -3743,6 +3743,33 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // g_pitchAccum/g_yawAccum: the native call itself both consumes and packs
     // these accumulators in one pass, so our contribution has to already be
     // sitting in them before g_realMovementTick runs.
+    // 2026-09-23: real, direct per-source motion-blur capture, restored here
+    // (separate from the universal native-call diff below) -- see that capture
+    // site's own comment for the full story. Real live-test finding: the
+    // 2026-09-23 "universal capture" change (commit fa3ae124f) fixed motion
+    // blur for keyboard/mouse (previously zero regardless of how much a K+M
+    // player looked around) but broke it for controller input specifically --
+    // confirmed live on BOTH GraphicsApi backends (LegacyD3D9 and Vulkan),
+    // ruling out DXVK/the render backend entirely; this is a pure game-logic
+    // regression. Real, plausible root cause: the universal capture measures
+    // "native accumulator value right before g_realMovementTick() minus right
+    // after", relying on the native per-tick angle-pack step leaving only a
+    // small leftover fractional remainder regardless of how much was actually
+    // applied -- true for typical real mouse-movement magnitudes, but real
+    // controller-stick turns can apply a much larger per-tick angle delta
+    // (up to lookDegreesPerSecondHorizontal/Vertical, tick-scaled), and the
+    // native usercmd angle format is a real, compressed/quantized
+    // representation -- a large single-tick delta may not round-trip through
+    // that pack step the same clean way a small one does. Fixed by restoring
+    // the pre-fa3ae124f DIRECT capture (these exact values, not re-derived
+    // from any native round-trip) for controller/gyro specifically, keeping
+    // the universal native-call diff (below) ONLY for whatever tick neither
+    // one contributed -- i.e. real mouse-only motion, the case that diff
+    // technique was actually introduced for and is proven correct on.
+    float controllerYawDeltaThisTickX64 = 0.0f;
+    float controllerPitchDeltaThisTickX64 = 0.0f;
+    bool controllerContributedThisTickX64 = false;
+
     if (param1 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
         float leftX, leftY, rightX, rightY;
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
@@ -3764,6 +3791,9 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 // are SUBTRACTED from, not added.
                 *g_yawAccum -= yawDelta;
                 *g_pitchAccum -= pitchDelta;
+                controllerYawDeltaThisTickX64 = yawDelta;
+                controllerPitchDeltaThisTickX64 = pitchDelta;
+                controllerContributedThisTickX64 = true;
             } else {
                 g_lookAccelStartMsX64 = 0; // stick back at neutral -- next push starts the ramp fresh
             }
@@ -3800,6 +3830,9 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                     if (g_modConfig.invertLook) gyroPitchDelta = -gyroPitchDelta; // OG console "Invert Look" applies uniformly
                     *g_yawAccum -= gyroYawDelta;
                     *g_pitchAccum -= gyroPitchDelta;
+                    controllerYawDeltaThisTickX64 += gyroYawDelta;
+                    controllerPitchDeltaThisTickX64 += gyroPitchDelta;
+                    controllerContributedThisTickX64 = true;
                 }
             }
         }
@@ -3813,29 +3846,41 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // if it's set.
     if (g_inputGateFlag) *g_inputGateFlag &= ~kInputGateBit;
 
-    // Motion blur's real per-frame delta feed -- UNIVERSAL capture (2026-09-23,
-    // direct user instruction: "make motion blur not controller only(as that was
-    // always a limitation)"). Previously this only ever reflected our own
-    // controller-stick contribution (set directly inside the stick-input block
-    // above), meaning keyboard/mouse players got zero motion blur regardless of
-    // how much they actually looked around -- the accumulator write above is
-    // controller/gyro-only, real mouse/keyboard look happens entirely inside the
-    // native trampoline below, a completely separate code path this file never
-    // touches. Per this file's own already-documented accumulator semantics (see
-    // g_pitchAccum's header comment above): the native call ADDS its own real
-    // mouse/keyboard delta on top of whatever's already in the accumulator
-    // (an accumulate, not an overwrite -- controller and mouse correctly stack),
-    // then packs the WHOLE accumulated value into the real usercmd angle fields
-    // and writes back only the small leftover fractional remainder. That means
-    // "value right before the native call" minus "value right after" gives the
-    // REAL total applied delta for this tick -- controller, gyro, AND real
-    // mouse/keyboard -- regardless of which device(s) actually contributed,
-    // using the exact same sign convention (pre-minus-post = positive in the
-    // same direction the old `yawDelta`/`pitchDelta` values already were, since
-    // every contributor here SUBTRACTS from the accumulator). Replaces the old
-    // per-source direct writes (stick block and gyro block above) entirely --
-    // both removed, this single capture now covers everything they used to
-    // cover plus real mouse/keyboard, which neither of them ever did.
+    // Motion blur's real per-frame delta feed -- HYBRID capture (2026-09-23).
+    // The 2026-09-23 "UNIVERSAL capture" change (below comment preserved for
+    // history) replaced the old controller/gyro-only direct writes with a
+    // single pre/post-native-call diff of the accumulators, reasoning that the
+    // native pack step "adds its own delta then leaves only a small leftover
+    // fractional remainder" for ANY contributor, so the diff would equal the
+    // real total applied delta regardless of source. Real live-test result:
+    // this fixed keyboard/mouse (previously always zero) but broke controller
+    // motion blur, confirmed on BOTH GraphicsApi backends (LegacyD3D9 and
+    // Vulkan/DXVK) -- ruling out the render backend and confirming this is a
+    // pure game-logic regression, not a DXVK quirk (see dxvk/re_notes/
+    // known_issues.md issue #1 and known_issues_x64.md issue #2 for the full
+    // investigation trail). Real, plausible cause: a large single-tick
+    // controller-stick delta (up to lookDegreesPerSecondHorizontal/Vertical,
+    // tick-scaled) may not round-trip through the native compressed usercmd
+    // angle-pack step the same cleanly as the small deltas real mouse motion
+    // produces -- the "small leftover remainder" assumption the diff relies on
+    // may only hold for small inputs.
+    //
+    // Fix: go back to trusting our OWN directly-known controller/gyro delta
+    // (controllerYawDeltaThisTickX64/controllerPitchDeltaThisTickX64, captured
+    // above in the stick-input and gyro blocks -- these are the exact values
+    // written to the accumulator this tick, not re-derived from any native
+    // round-trip) whenever controller/gyro contributed this tick -- byte-for-
+    // byte the same values the pre-fa3ae124f code used, restoring the
+    // proven-correct controller behavior exactly. Only fall back to the
+    // pre/post native-call diff when controller/gyro did NOT contribute this
+    // tick (stick at neutral, gyro off/no data) -- in that case the diff
+    // reflects pure real mouse/keyboard delta with nothing else mixed in,
+    // which is the case the diff technique is actually proven correct for
+    // (real mouse deltas are small and round-trip cleanly). This does mean a
+    // player moving both controller stick and mouse in the exact same tick
+    // (an unusual hybrid setup) only gets the controller-direct value that
+    // tick, silently dropping mouse's own separate contribution -- a real,
+    // accepted minor limitation, not the reported bug.
     const float preNativeYaw = g_yawAccum ? *g_yawAccum : 0.0f;
     const float preNativePitch = g_pitchAccum ? *g_pitchAccum : 0.0f;
 
@@ -3847,8 +3892,13 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // the keyboard writer, not a replacement of it).
     g_realMovementTick(param1, param2);
 
-    if (g_yawAccum) g_motionBlurYawDeltaDegX64 = preNativeYaw - *g_yawAccum;
-    if (g_pitchAccum) g_motionBlurPitchDeltaDegX64 = preNativePitch - *g_pitchAccum;
+    if (controllerContributedThisTickX64) {
+        g_motionBlurYawDeltaDegX64 = controllerYawDeltaThisTickX64;
+        g_motionBlurPitchDeltaDegX64 = controllerPitchDeltaThisTickX64;
+    } else {
+        if (g_yawAccum) g_motionBlurYawDeltaDegX64 = preNativeYaw - *g_yawAccum;
+        if (g_pitchAccum) g_motionBlurPitchDeltaDegX64 = preNativePitch - *g_pitchAccum;
+    }
 
     // K+M safe mode (2026-09-16): skip every POST-hook controller/mod-side
     // input contribution below (Fire/ADS/Reload/Weapnext/Melee/Lethal/

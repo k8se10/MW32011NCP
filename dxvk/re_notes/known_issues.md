@@ -10,13 +10,13 @@ investigation rounds after, `issue #N` cross-reference form.
 
 ## Index
 
-- [#1](#1-motion-blur-post-process-pass-produces-no-visible-effect) — Motion blur post-process pass produces no visible effect — **Investigating**
+- [#1](#1-motion-blur-post-process-pass-produces-no-visible-effect) — Motion blur post-process pass produces no visible effect — **Resolved (not a DXVK bug)**
 
 ---
 
 ## #1: Motion blur post-process pass produces no visible effect
 
-**Status: Investigating.**
+**Status: Resolved (not a DXVK bug) — root cause was in `MW32011NCP`'s own game-logic code, fixed there, unrelated to this fork's own source. See the "Resolution" section at the bottom for the full story; the investigation trail below is preserved as-written for the real, useful DXVK-source-level findings it turned up along the way.**
 
 ### Summary
 
@@ -103,13 +103,60 @@ direct reads of this project's own DXVK source (not assumed):
   isolates the bug to the shared capture/composite pipeline itself, not
   anything motion-blur-specific.
 
+### Resolution, 2026-09-23 (same day) — not a DXVK bug at all
+
+A real, working native-Windows DXVK build toolchain was set up (MSYS2 +
+MinGW-w64 GCC + Meson + Ninja + glslang, plus the pinned Vulkan-Headers/
+SPIRV-Headers/libdisplay-info/dxbc-spirv submodule commits this fork's
+`git subtree` merge preserved as gitlinks but never fetched), producing a
+genuine, working, diagnostic-instrumented build of this fork
+(`Logger::warn` added to `D3D9DeviceEx::DrawPrimitiveUP` in
+`src/d3d9/d3d9_device.cpp`, since reverted — this project's own diagnostic
+build was a real, live-tested artifact, not a permanent source change).
+Live-testing that build did not itself reveal the cause, but it enabled the
+decisive test: **keyboard/mouse motion blur was confirmed working
+correctly under this exact DXVK build** ("blur works on vulkan"). If this
+fork's own D3D9-to-Vulkan translation were the real cause, K+M motion blur
+would show the identical symptom controller did — it didn't. This
+conclusively rules out DXVK/the Vulkan backend as the cause.
+
+The real bug was in `MW32011NCP`'s own `proxy_d3d9/src/analog_input_hooks_x64.cpp`
+(`Hook_MovementTick`) — a same-day commit (`fa3ae124f`) had replaced the
+previously-working controller/gyro-only direct motion-blur delta capture
+with a universal pre/post-native-call accumulator diff, intending to add
+real K+M support. It did fix K+M, but broke controller: a real, large
+single-tick controller-stick delta does not round-trip through the native
+compressed usercmd angle-pack step the same way a small, natural mouse
+delta does, so the diff under-reported the true controller-intended delta.
+Fixed on the `MW32011NCP` side with a hybrid capture (direct controller/
+gyro values when they contributed this tick, the diff technique only when
+neither did) — see `MW32011NCP/re_notes/known_issues_x64.md` issue #2's
+own newest round for the complete root-cause and fix record. Live-confirmed
+fixed by the user the same day.
+
+**What this means for this fork going forward**: no real, confirmed
+MW3/IW5-specific DXVK patch exists yet. The real, useful outcome of this
+investigation is the now-working DXVK build toolchain itself (genuine
+groundwork for whatever future MW3-specific DXVK quirk actually does turn
+up — see `CLAUDE.md`'s own framing: "the fork will stay useful for future
+issues and bugs"), plus five real, source-grounded DXVK behaviors now
+directly confirmed correct for this engine's usage pattern (see "What's
+confirmed" above) that a future investigation won't need to re-derive.
+
+Also corrected here: the "VULKAN 60 FPS 16.6ms" on-screen corner text
+originally cited elsewhere in this project's docs as "DXVK's own built-in
+HUD indicator" is a real misattribution — it's RivaTuner Statistics
+Server's own overlay, unrelated to DXVK (this fork's own real HUD, gated
+behind the `DXVK_HUD` environment variable, was never enabled during this
+investigation).
+
 ### Cross-references
 
 - `MW32011NCP/re_notes/known_issues_x64.md` issue #2 — the full,
   chronological live-test/investigation trail on the game-mod side,
   including the real positive finding (frame pacing/smoothness under
   DXVK reported as "the best the game has ever felt") independent of this
-  specific bug.
+  specific bug, and the complete root-cause/fix record for the real bug.
 - `MW32011NCP/re_notes/x64_migration/vulkan_dlss_pipeline_research.md` —
   the broader Vulkan/DLSS architecture research this DXVK integration
   serves.

@@ -12,9 +12,12 @@ investigation/reverse-engineering trail behind each entry.
 ## Unreleased
 
 No patches to upstream DXVK source yet — this fork currently ships
-byte-for-byte identical to upstream `v3.1.1`. Real, active investigation
-into the first candidate fix (see `re_notes/known_issues.md` issue #1: a
-motion-blur post-process pass, real in the sibling `MW32011NCP` project,
-runs correctly by every external signal under this DXVK build but produces
-no visible effect) is underway; nothing has been isolated to a specific
-DXVK source change yet.
+byte-for-byte identical to upstream `v3.1.1`. The first candidate
+investigation (see `re_notes/known_issues.md` issue #1: a motion-blur
+post-process pass in the sibling `MW32011NCP` project produced no visible
+effect under this DXVK build) is resolved — the real bug was in
+`MW32011NCP`'s own game-logic code, not this fork's own DXVK source, so no
+patch landed here. A real, working native-Windows DXVK build toolchain
+(MSYS2/MinGW-w64/Meson/Ninja/glslang) was set up in the course of that
+investigation and stays in place as real groundwork for a future,
+genuinely IW5-specific DXVK quirk.
