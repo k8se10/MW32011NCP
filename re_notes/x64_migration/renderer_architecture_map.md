@@ -9,12 +9,16 @@ and rt is becuase the mod mw3 remastered claims to do this all, but on
 review of the files looks like not much more than a reshade preset" — i.e.
 a competing community mod claims a comprehensive renderer overhaul but
 inspection suggests it's a post-process-only (ReShade-preset-tier) effort,
-not a real replacement. This project's own existing visual-enhancement
-suite (render scale, motion blur, FSR, forced-quality dvars) is itself
-still fundamentally a post-process/dvar-tweak layer on top of the native
-D3D9 pipeline, not a replacement — this new effort is explicitly aiming
-higher than that, and higher than what the competing mod appears to
-actually ship.
+not a real replacement. **Named and confirmed, same day**: the competing mod
+is "MW3 Remastered" on Nexus Mods
+(`nexusmods.com/callofdutymodernwarfare3/mods/10`) — direct user
+confirmation, having already reviewed its files: "this is the current mw3
+remastered mod which does this via reshade." This project's own existing
+visual-enhancement suite (render scale, motion blur, FSR, forced-quality
+dvars) is itself still fundamentally a post-process/dvar-tweak layer on top
+of the native D3D9 pipeline, not a replacement — this new effort is
+explicitly aiming higher than that, and higher than what MW3 Remastered
+appears to actually ship.
 
 This document is the master reference for the native renderer's real
 architecture, to be filled in incrementally across sessions. Unlike
