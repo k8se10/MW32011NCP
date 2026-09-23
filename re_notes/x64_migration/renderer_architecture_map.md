@@ -507,9 +507,13 @@ not for the renderer-mapping effort as a whole.
 
 ## 6. What's still completely unmapped
 
-- **The actual render-command consumer/backend** (section 4's open
-  question #2) — nothing in this pass's trace reaches it.
-- **Whoever actually performs the named phases in section 5's table**
+- ~~**The actual render-command consumer/backend** (section 4's open
+  question #2) — nothing in this pass's trace reaches it.~~ **RESOLVED this
+  pass, 2026-09-23 — see the new section 7 below.**
+- ~~**Whoever actually performs the named phases in section 5's table**~~
+  **RESOLVED this pass, see section 7.** Kept below for the full
+  investigation trail. **Whoever actually performs the named phases in
+  section 5's table**
   (`cell dyn brush/model`, `dpvs ent` culling, `spot shadow ent` gathering,
   `gen drawsurfs`) — confirmed NOT to be inline in `FUN_1401d7480` itself,
   almost certainly a separate thread. **The prior "inconclusive" CreateThread
@@ -550,20 +554,25 @@ not for the renderer-mapping effort as a whole.
     parsing via `func_0x000140390ae4`). The 26MB allocation is Bink's own
     frame-decode buffer pool, not a render command buffer. A real, useful
     negative — rules out slot 5 specifically, doesn't touch slots 0-4.
-  - **Real, concrete, not-yet-done next step**: the other four "spawn slot
-    N" wrapper functions (adjacent to `FUN_14024a420` in `.text`, found via
-    the same direct-E8-call scan against `FUN_140249e80` — VAs
-    `0x14024a4ae`/`0x14024a562`/`0x14024a5ba`/`0x14024a60d` are the CALL
-    sites, each inside its own tiny sibling wrapper, not yet individually
-    resolved to their own function-start addresses or job functions) each
-    need the same treatment slot 5 just got: find the wrapper's own
-    tail-call/LEA caller, decompile the registrant to find the job-function
-    pointer, decompile that job function. One of the remaining four is a
-    real, live candidate for the render/scene-setup worker this whole
-    investigation is chasing — not confirmed yet, but the mechanism and
-    method are now proven end-to-end on a real example (slot 5), so this is
-    now a mechanical repeat of an already-validated process, not an open
-    methodological question.
+  - **FOUND, same pass, immediately after slot 5**: of the remaining wrapper
+    functions, three resolved to real, concrete, NON-render subsystems —
+    slot 6 (`FUN_14024a450`) and slot 1 (`FUN_14024a4f0`) are generic
+    multi-sync-event worker spawners, not yet individually traced further;
+    slot 7 (`FUN_14024a590`, the only wrapper that raises thread priority)
+    is the **real Win32 window-message-pump thread**
+    (`FUN_14030fce0` → `GetMessageA`/`TranslateMessage`/`DispatchMessageA`,
+    genuinely useful to know for this project's own `WndProc`-subclass input
+    architecture, but not the render worker). **The real render/scene-setup
+    worker was found via the fourth, parameterized wrapper**
+    (`FUN_14024a600(jobFuncPtr, param_2)`, a generic "spawn slot N+2"
+    variant supporting a variable slot count) — its own caller
+    (`FUN_1401e9be0`) spawns **TWO** identical worker threads (slots 2 and 3,
+    via a `for i in 0..2` loop) both running the SAME job function,
+    `FUN_1401ea560` — see the new section 7 below for the full, now-complete
+    trace from there down to the real, confirmed `gen drawsurfs`
+    implementation. The investigation originally framed as "one of the
+    remaining four, not yet confirmed" is now fully resolved, not a
+    remaining open item.
   - **Tooling note for future sessions**: the repo-tracked
     `re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr` project failed to
     resolve `-process iw5sp.exe` this session (`"Requested project program
@@ -624,8 +633,91 @@ not for the renderer-mapping effort as a whole.
 
 ---
 
+## 7. The real render/scene-setup worker thread, fully traced end to end — `gen drawsurfs` FOUND (2026-09-23)
+
+**Direct instruction to keep pushing this exact question** (bundled with the
+concurrent jitter/motion-vector research the same day — finding a stable
+per-entity draw identity, needed for real per-object motion vectors, was the
+original motivation for restarting this specific investigation). Full chain,
+every link independently confirmed via decompile against the real x64
+binary, not inferred:
+
+1. **`FUN_140249e80(jobFuncPtr, slotIndex)`** — the generic worker-spawn
+   utility (section 6). Calls `CreateThread(..., FUN_14024a810, slotIndex,
+   CREATE_SUSPENDED, ...)`.
+2. **`FUN_14024a600(jobFuncPtr, param_2)`** — the one PARAMETERIZED "spawn
+   slot N+2" wrapper (distinct from the five fixed-slot wrappers already
+   resolved — slots 1/5/6/7 all confirmed non-render). Its own caller:
+3. **`FUN_1401e9be0`** — loops `param_2 = 0, 1` (real, confirmed: `while
+   (uVar2 < 2)`), spawning **two** identical worker threads, slots 2 and 3,
+   both running the same job function:
+4. **`FUN_1401ea560`** — the real worker-thread main loop. Confirmed
+   definitively (not just plausibly) to be the stage-dispatch worker: its
+   own global addresses (`0x141cc2b10`, `0x141cc3898`, `0x141cc389c`) are
+   the EXACT same addresses already independently documented in section 5's
+   own (superseded-but-accurate) original pseudocode for the per-stage
+   listener-count gate and the min-running-stage tracker. This loop picks
+   the next pending stage ID (scanning the per-stage counter table) and
+   calls:
+5. **`FUN_1401e9c40(stageId, flushAll)`** — a real, generic ring-buffer
+   event-queue drain: pops queued event records for the given stage
+   (`0x141cc2b18` = ring buffer base, `iVar3` = per-stage record stride,
+   `0x141cc2b00`/`+0x04` = read/write cursors) and, for each one, calls:
+6. **`FUN_1401e9f70(stageId, eventRecordPtr)`** — **the real per-stage work
+   implementation**, confirmed via decompile to be a giant (~2000-line)
+   `switch(stageId)` whose case IDs match section 5's own stage-ID table
+   exactly (case `0x10` = `skin model`, `0x11` = `add scene ent`, `0x12` =
+   `gen drawsurfs`, `0x13` = `cell glass`, and lower cases for `physics`
+   through `spot shadow ent`). **`gen drawsurfs`'s real case (`0x12`) is a
+   multi-phase state machine** (a 0-3 phase counter stored in the event
+   record itself, re-queuing itself via `FUN_1401e95b0(0x12, param_2)`
+   until phase 3 — i.e. `gen drawsurfs` runs across multiple dispatch
+   cycles, not in one shot), allocating draw-surface array slots from a
+   large shared per-frame scratch buffer (`lRam0000000141896b80`, offsets
+   up to `+0x110400`, entries at `(count + 0x4a80)*0x18` — a real,
+   concrete, reusable fact: **draw-surface records in this buffer are 0x18
+   (24) bytes each**) via helper functions (`FUN_1401a3c70` seen twice,
+   `FUN_1401cfab0`, `FUN_1401bff30`/`FUN_1401bf210`).
+
+**This resolves BOTH of section 6's "completely unmapped" items at once**:
+the render-command consumer/backend (section 4's open question #2) and
+whoever performs the named stage phases (section 5's open question) are the
+SAME mechanism — a 2-worker job pool draining a shared stage-event ring
+buffer, with `FUN_1401e9f70`'s giant switch statement as the actual backend
+that turns culled/visible entities into real draw commands.
+
+**Real, honest assessment against the original motivation (stable per-entity
+identity for real, engine-sourced motion vectors, `vulkan_dlss_pipeline_research.md`
+§2.6)**: case `0x12`'s own code, read this pass, does NOT itself show an
+obvious per-entity iteration with a visible stable handle — it reads as
+draw-surface-ARRAY-SLOT bookkeeping (how many slots were allocated, from
+which shared buffer, this dispatch cycle), not a per-entity walk. The real
+per-entity iteration is more likely to live in an EARLIER stage this pass
+did not read in depth — case `0x03` (`cell scene ent`) or case `0x11` (`add
+scene ent`) are the much stronger candidates by name alone, since "add
+scene ent" is exactly the kind of stage that would walk a visible-entity
+list and hand each one a stable slot/handle that `gen drawsurfs` then
+consumes downstream. **Real, concrete, not-yet-done next step**: read case
+`0x11` (found at file line ~1368 in this pass's own raw decompile dump,
+`re_notes/x64_migration/stage_listener_invoker2.txt`) and case `0x03` with
+the same scrutiny `0x12` just got, specifically looking for a per-entity
+loop and what identity (index, pointer, handle) it assigns or reads per
+entity — that identity, if stable frame-to-frame, is the real answer the
+motion-vector work needs.
+
+**Full raw decompile trail**: `re_notes/x64_migration/worker_pool_init.txt`,
+`worker_wrappers_other4.txt`, `worker_slot_registrants2.txt`,
+`worker_2pool_jobfunc.txt`, `stage_listener_invoker.txt`,
+`stage_listener_invoker2.txt` (the ~2000-line `FUN_1401e9f70` dump — case
+`0x12` starts at line 1578).
+
+---
+
 *Status: early, first-pass mapping. Real architectural shape established
 (command-buffer frontend/backend split, a stage-based notify/coordination
 layer distinct from the actual draw submission) — the actual draw-call
 path itself, shadow pass, and material/shader binding remain unmapped.
-Continue from section 6's open items.*
+Section 7 (2026-09-23) resolves the render-command consumer/backend and the
+named-stage-worker questions completely; the per-entity-identity question
+for `gen drawsurfs`/`add scene ent` specifically is the new, narrower open
+item to continue from.*

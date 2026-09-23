@@ -1,0 +1,149 @@
+================================================================
+Function: FUN_1401e9c40 @ 1401e9c40
+----------------------------------------------------------------
+
+undefined8 FUN_1401e9c40(int param_1,int param_2)
+
+{
+  int *piVar1;
+  int iVar2;
+  int iVar3;
+  code *pcVar4;
+  int iVar5;
+  longlong lVar6;
+  undefined8 uVar7;
+  longlong lVar8;
+  uint uVar9;
+  int iVar10;
+  uint uVar11;
+  longlong lVar12;
+  bool bVar13;
+  undefined1 auStack_cb8 [3200];
+  
+  lVar6 = (longlong)param_1;
+  lVar8 = lVar6 * 0x80;
+  iVar2 = *(int *)(lVar8 + 0x141cc2b24);
+  iVar3 = *(int *)(lVar8 + 0x141cc2b14);
+  LOCK();
+  piVar1 = (int *)(lVar8 + 0x141cc2b10);
+  iVar10 = *piVar1;
+  *piVar1 = *piVar1 + -1;
+  UNLOCK();
+  uVar9 = 1;
+  while (iVar10 < 1) {
+    LOCK();
+    piVar1 = (int *)(lVar8 + 0x141cc2b10);
+    iVar10 = *piVar1;
+    *piVar1 = *piVar1 + 1;
+    UNLOCK();
+    if (iVar10 < 0) {
+      return 0;
+    }
+    LOCK();
+    piVar1 = (int *)(lVar8 + 0x141cc2b10);
+    iVar10 = *piVar1;
+    *piVar1 = *piVar1 + -1;
+    UNLOCK();
+  }
+  if (*(longlong *)(lVar6 * 8 + 0x1404d0c20) == 0) {
+    if ((param_2 != 0) && (8 < *(int *)(lVar8 + 0x141cc2b10))) {
+      LOCK();
+      piVar1 = (int *)(lVar8 + 0x141cc2b10);
+      iVar10 = *piVar1;
+      *piVar1 = *piVar1 + -9;
+      UNLOCK();
+      if (iVar10 < 9) {
+        if (iVar10 < 0) {
+          iVar10 = 0;
+        }
+        uVar9 = iVar10 + 1;
+        LOCK();
+        *(int *)(lVar8 + 0x141cc2b10) = *(int *)(lVar8 + 0x141cc2b10) + (9 - iVar10);
+        UNLOCK();
+      }
+      else {
+        uVar9 = 10;
+      }
+    }
+    do {
+      iVar10 = *(int *)(lVar8 + 0x141cc2b00);
+      lVar6 = *(longlong *)(lVar8 + 0x141cc2b18);
+      uVar11 = iVar2 - iVar10;
+      if (uVar9 < uVar11) {
+        iVar5 = uVar9 + iVar10;
+        uVar11 = uVar9;
+      }
+      else {
+        iVar5 = uVar9 - uVar11;
+        FUN_14038ffd0(auStack_cb8 + uVar11 * iVar3,lVar6,iVar5 * iVar3);
+      }
+      FUN_14038ffd0(auStack_cb8,(ulonglong)(uint)(iVar10 * iVar3) + lVar6,uVar11 * iVar3);
+      LOCK();
+      bVar13 = iVar10 == *(int *)(lVar8 + 0x141cc2b00);
+      if (bVar13) {
+        *(int *)(lVar8 + 0x141cc2b00) = iVar5;
+      }
+      UNLOCK();
+    } while (!bVar13);
+    func_0x0001401e94f0(0xffffffff,&UNK_1404234dc,
+                        *(undefined8 *)((longlong)param_1 * 8 + 0x1404d0b50),uVar9);
+    uVar11 = 0;
+    if (uVar9 != 0) {
+      do {
+        FUN_1401e9f70(param_1,auStack_cb8 + uVar11 * iVar3);
+        uVar11 = uVar11 + 1;
+      } while (uVar11 < uVar9);
+    }
+    LOCK();
+    *(int *)(lVar8 + 0x141cc2b0c) = *(int *)(lVar8 + 0x141cc2b0c) - uVar9;
+    UNLOCK();
+code_r0x0001401e9f35:
+    if (iRam0000000141cc389c != 0) {
+      func_0x00014024a400();
+    }
+    uVar7 = 1;
+  }
+  else {
+    iVar10 = *(int *)(lVar8 + 0x141cc2b00);
+    lVar12 = (ulonglong)(uint)(iVar10 * iVar3) + *(longlong *)(lVar8 + 0x141cc2b18);
+    iVar5 = (**(code **)(lVar6 * 8 + 0x1404d0c20))(lVar12);
+    if (iVar5 == 0) {
+      do {
+        FUN_14038ffd0(auStack_cb8,lVar12,(longlong)iVar3);
+        iVar5 = 0;
+        if (iVar10 + 1 != iVar2) {
+          iVar5 = iVar10 + 1;
+        }
+        LOCK();
+        bVar13 = iVar10 == *(int *)(lVar8 + 0x141cc2b00);
+        if (bVar13) {
+          *(int *)(lVar8 + 0x141cc2b00) = iVar5;
+        }
+        UNLOCK();
+        if (bVar13) {
+          func_0x0001401e94f0(0xffffffff,&UNK_1403f051c,*(undefined8 *)(lVar6 * 8 + 0x1404d0b50));
+          FUN_1401e9f70(param_1,auStack_cb8);
+          LOCK();
+          *(int *)(lVar8 + 0x141cc2b0c) = *(int *)(lVar8 + 0x141cc2b0c) + -1;
+          UNLOCK();
+          goto code_r0x0001401e9f35;
+        }
+        pcVar4 = *(code **)(lVar6 * 8 + 0x141cf0650);
+        if (pcVar4 != (code *)0x0) {
+          (*pcVar4)();
+        }
+        iVar10 = *(int *)(lVar8 + 0x141cc2b00);
+        lVar12 = (ulonglong)(uint)(iVar10 * iVar3) + *(longlong *)(lVar8 + 0x141cc2b18);
+        iVar5 = (**(code **)(lVar6 * 8 + 0x1404d0c20))(lVar12);
+      } while (iVar5 == 0);
+    }
+    LOCK();
+    *(int *)(lVar8 + 0x141cc2b10) = *(int *)(lVar8 + 0x141cc2b10) + 1;
+    UNLOCK();
+    uVar7 = 0;
+  }
+  return uVar7;
+}
+
+
+

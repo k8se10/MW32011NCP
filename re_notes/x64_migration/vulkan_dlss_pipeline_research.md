@@ -568,6 +568,20 @@ whatever (a) finds. None of this is native-RE-blocked in principle — it's
 real, scoped, sequenced work, not an open question about whether it's
 possible.
 
+**Step (a) substantially advanced, same day (2026-09-23)**: `gen drawsurfs`
+is no longer an unlocated stage — it's fully traced to a real function and
+case (`FUN_1401e9f70`, `switch(stageId)` case `0x12`, on a dedicated
+2-worker job-pool thread draining a shared stage-event ring buffer), full
+chain documented in `renderer_architecture_map.md` §7. Its own code, read
+this pass, is draw-surface-array-SLOT bookkeeping, not an obvious per-entity
+walk with a visible stable handle — the real per-entity identity this
+project needs is now believed to live one stage earlier, in case `0x11`
+(`add scene ent`) or case `0x03` (`cell scene ent`), not yet read with the
+same scrutiny. Step (a) is therefore precisely re-scoped, not blocked: read
+those two specific cases (raw dump already captured,
+`stage_listener_invoker2.txt`, case `0x11` at line ~1368) for a per-entity
+loop and whatever identity it assigns/reads per entity.
+
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
 Directly listed `src/games/` in `github.com/clshortfuse/renodx` (main branch,

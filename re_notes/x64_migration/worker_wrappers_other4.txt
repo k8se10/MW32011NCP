@@ -1,0 +1,74 @@
+================================================================
+Function: FUN_14024a450 @ 14024a450
+----------------------------------------------------------------
+
+undefined1 FUN_14024a450(undefined8 param_1)
+
+{
+  uRam0000000142005938 = CreateEventA(0,1,0);
+  uRam0000000142005940 = CreateEventA(0,1,1,0);
+  uRam0000000142005948 = CreateEventA(0,1,1,0);
+  FUN_140249e80(param_1,6);
+  if (lRam00000001420058e0 == 0) {
+    return 0;
+  }
+  SetThreadPriority(lRam00000001420058e0,0xffffffff);
+  ResumeThread(lRam00000001420058e0);
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_14024a4f0 @ 14024a4f0
+----------------------------------------------------------------
+
+undefined1 FUN_14024a4f0(undefined8 param_1)
+
+{
+  uRam0000000142005968 = CreateEventA(0,0,0,0);
+  uRam0000000142005970 = CreateEventA(0,1,0);
+  uRam0000000142005978 = CreateEventA(0,1,1,0);
+  uRam0000000142005988 = CreateEventA(0,0,0,0);
+  FUN_140249e80(param_1,1);
+  if (lRam00000001420058b8 == 0) {
+    return 0;
+  }
+  ResumeThread();
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_14024a590 @ 14024a590
+----------------------------------------------------------------
+
+undefined1 FUN_14024a590(undefined8 param_1)
+
+{
+  uRam0000000142005950 = CreateEventA(0,1,0);
+  FUN_140249e80(param_1,7);
+  if (lRam00000001420058e8 == 0) {
+    return 0;
+  }
+  SetThreadPriority(lRam00000001420058e8,2);
+  ResumeThread(lRam00000001420058e8);
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_14024a600 @ 14024a600
+----------------------------------------------------------------
+
+undefined8 FUN_14024a600(undefined8 param_1,int param_2)
+
+{
+  FUN_140249e80(param_1,param_2 + 2U);
+  return CONCAT71(0x1420058,*(longlong *)((ulonglong)(param_2 + 2U) * 8 + 0x1420058b0) != 0);
+}
+
+
+

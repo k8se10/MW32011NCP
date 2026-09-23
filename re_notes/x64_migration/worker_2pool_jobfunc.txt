@@ -1,0 +1,90 @@
+================================================================
+Function: FUN_1401ea560 @ 1401ea560
+----------------------------------------------------------------
+
+void FUN_1401ea560(void)
+
+{
+  bool bVar1;
+  bool bVar2;
+  int iVar3;
+  int iVar4;
+  int iVar5;
+  undefined8 uVar6;
+  int *piVar7;
+  undefined1 auStack_48 [32];
+  
+  uVar6 = func_0x000140249fe0(2);
+  iVar3 = FUN_1403de2e0(uVar6,auStack_48);
+  if (iVar3 != 0) {
+    func_0x00014023c950();
+  }
+  do {
+    LOCK();
+    iRam0000000141cc389c = iRam0000000141cc389c + 1;
+    UNLOCK();
+    FUN_14024aa20();
+    LOCK();
+    iRam0000000141cc389c = iRam0000000141cc389c + -1;
+    UNLOCK();
+    bVar2 = true;
+code_r0x0001401ea5d0:
+    iVar3 = iRam00000001404d0c18;
+    bVar1 = false;
+    if ((-1 < iRam00000001404d0c18) &&
+       (0 < *(int *)((longlong)iRam00000001404d0c18 * 0x80 + 0x141cc2b10))) {
+      iVar4 = FUN_1401e9c40(iRam00000001404d0c18,1);
+      if (iVar4 != 0) {
+        bVar1 = true;
+        do {
+          iVar4 = FUN_1401e9c40(iVar3,1);
+        } while (iVar4 != 0);
+      }
+      if (bVar1) {
+code_r0x0001401ea6a8:
+        LOCK();
+        if (iVar3 == iRam0000000141cc3898) {
+          iRam0000000141cc3898 = 0x7fffffff;
+        }
+        UNLOCK();
+        goto code_r0x0001401ea5d0;
+      }
+    }
+    bVar1 = false;
+    iVar4 = iRam0000000141cc3898;
+    if (iRam0000000141cc3898 == 0x7fffffff) {
+      iVar4 = 0;
+    }
+    if (iVar4 < 0x19) {
+      piVar7 = (int *)((longlong)iVar4 * 0x80 + 0x141cc2b10);
+      iVar3 = iVar4;
+      do {
+        if (0 < *piVar7) {
+          iVar5 = FUN_1401e9c40(iVar3,1);
+          while (iVar5 != 0) {
+            if (iRam0000000141cc3898 < iVar3) goto code_r0x0001401ea5d0;
+            bVar1 = true;
+            iVar5 = FUN_1401e9c40(iVar3,1);
+          }
+          if (bVar1) goto code_r0x0001401ea6a8;
+        }
+        LOCK();
+        if (iVar3 == iRam0000000141cc3898) {
+          iRam0000000141cc3898 = 0x7fffffff;
+        }
+        UNLOCK();
+        iVar3 = iVar3 + 1;
+        piVar7 = piVar7 + 0x20;
+      } while (iVar3 < 0x19);
+    }
+    if (iVar4 != 0) goto code_r0x0001401ea5d0;
+    if (bVar2) {
+      func_0x00014024a3a0();
+      bVar2 = false;
+      goto code_r0x0001401ea5d0;
+    }
+  } while( true );
+}
+
+
+
