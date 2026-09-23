@@ -70,6 +70,11 @@ license, unmodified in license terms:
 - MinHook (`proxy_d3d9/third_party/minhook/`), including the bundled Hacker
   Disassembler Engine (HDE) 32/64 C — see
   `proxy_d3d9/third_party/minhook/LICENSE.txt` for full terms.
+- DXVK (`proxy_d3d9/third_party/dxvk/`), v3.1.1, a D3D9-to-Vulkan translation
+  layer — Copyright (c) 2017 Philip Rebohle and contributors, zlib/libpng
+  license, see `proxy_d3d9/third_party/dxvk/LICENSE.txt` for full terms.
+  Vendored as prebuilt official release binaries, unmodified, powering the
+  opt-in `[Video] GraphicsApi=Vulkan` mode.
 - Isotherm Sans (`assets/fonts/`), a modernized derivative of Manrope
   (Copyright 2018 The Manrope Project Authors) this project maintains as
   [`k8se10/isotherm-sans`](https://github.com/k8se10/isotherm-sans), embedded

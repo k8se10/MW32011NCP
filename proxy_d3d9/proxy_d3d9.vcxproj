@@ -190,6 +190,17 @@
   <ItemGroup>
     <None Include="def\proxy_d3d9.def" />
     <None Include="third_party\minhook\LICENSE.txt" />
+    <!-- DXVK (zlib/libpng license, see third_party\dxvk\LICENSE.txt), vendored
+         2026-09-23 as prebuilt official v3.1.1 release binaries; see the
+         DeployDxvk target below for how the x64 build actually reaches the game
+         install directory. Win32's own d3d9.dll is intentionally not vendored:
+         GraphicsApi=Vulkan is real, SP-only, x64-only groundwork
+         (IsGraphicsApiVulkanModeAllowed()/TryLoadVendoredDxvk()), and this
+         project's own x86 line is frozen/unsupported (CLAUDE.md's emergency
+         2026-09-03 discontinuation); no reason to vendor a binary nothing
+         will ever load. -->
+    <None Include="third_party\dxvk\LICENSE.txt" />
+    <None Include="third_party\dxvk\x64\d3d9.dll" Condition="'$(Platform)'=='x64'" />
     <!-- Barlow Condensed (SIL OFL 1.1), bundled font source, embedded via
          proxy_d3d9.rc; see resource.h for the licensing note. -->
     <None Include="..\assets\fonts\BarlowCondensed-OFL.txt" />
@@ -233,5 +244,17 @@
        watermark); see gen_git_version.bat for the full logic and its own fallback behavior. -->
   <Target Name="GenerateGitVersion" BeforeTargets="ClCompile">
     <Exec Command="call &quot;$(ProjectDir)gen_git_version.bat&quot;" WorkingDirectory="$(ProjectDir)" ContinueOnError="true" />
+  </Target>
+
+  <!-- Deploys the vendored DXVK x64 build to $(OutDir)dxvk\d3d9.dll after every
+       x64 build; the exact path TryLoadVendoredDxvk() (dllmain.cpp) looks for,
+       next to this mod's own deployed d3d9.dll. x64-only (see the None item's own
+       condition above); a no-op for Win32 configs. GraphicsApi stays default
+       LegacyD3D9 and this file sitting there does nothing unless a player
+       explicitly opts into GraphicsApi=Vulkan under iw5sp.exe; see
+       TryLoadVendoredDxvk()'s own comment for the full SP-only gate. -->
+  <Target Name="DeployDxvk" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <MakeDir Directories="$(OutDir)dxvk" Condition="!Exists('$(OutDir)dxvk')" />
+    <Copy SourceFiles="third_party\dxvk\x64\d3d9.dll" DestinationFolder="$(OutDir)dxvk\" SkipUnchangedFiles="true" />
   </Target>
 </Project>

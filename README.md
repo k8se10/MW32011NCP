@@ -656,6 +656,16 @@ This project vendors and links the following third-party library:
 - **Hacker Disassembler Engine (HDE) 32/64 C**, bundled with MinHook —
   Copyright (c) 2008-2009, Vyacheslav Patkov. Same style of license (see the
   same `LICENSE.txt`).
+- **[DXVK](https://github.com/doitsujin/dxvk)** (`proxy_d3d9/third_party/dxvk/`,
+  v3.1.1) — Copyright (c) 2017 Philip Rebohle and contributors, zlib/libpng
+  license (see `proxy_d3d9/third_party/dxvk/LICENSE.txt`). A real, independently-
+  maintained D3D9-to-Vulkan translation layer, powering the opt-in, SP-only
+  `[Video] GraphicsApi=Vulkan` mode this project uses to unlock native NVIDIA
+  Streamline/DLSS integration — see `re_notes/x64_migration/vulkan_dlss_pipeline_research.md`
+  for the full research and architecture behind this feature. Native-Windows use
+  of DXVK is real but explicitly unofficial per the upstream project's own docs;
+  this mod loads it directly (not layered under ReShade or any other framework)
+  the same way this project already hooks the real system `d3d9.dll`.
 
 The x64 line's `[Video] FramePacingEnabled` frame-pacing limiter
 (`proxy_d3d9/src/frame_pacing_x64.cpp`), `[Video] WaitCoalescingEnabled`
