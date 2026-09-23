@@ -80,8 +80,15 @@ enum. The relevant tags for basic DLSS Super Resolution:
 - **`kBufferTypeMotionVectors`** — the one piece with no existing native source
   (confirmed absent from the render-target table) and no third-party shader
   being reused (LumeniteFX's LumaFlow was explicitly cut along with ReShade,
-  per this session's own correction) — this needs a genuine, new, from-scratch
-  motion-vector reconstruction implementation, real work not yet started.
+  per this session's own correction). **REAL, MAJOR UNLOCK, found this session
+  (2026-09-23) reading `sl_consts.h`/`sl_matrix_helpers.h` directly**:
+  Streamline has a real, first-class, explicitly-documented mode for exactly
+  this situation — see the new §2.5 below. This does not eliminate the need
+  for a motion-vector buffer, but it means "from-scratch motion-vector
+  reconstruction" can mean "camera-only reprojection math this project
+  already has the real inputs for," not "a full per-object optical-flow
+  implementation" — a materially smaller, more tractable piece of real work
+  than this doc previously scoped it as.
 - **`kBufferTypeHUDLessColor`** — "Color buffer with all post-processing effects
   applied but without any UI/HUD elements." A real, easy-to-miss requirement:
   DLSS must never see the HUD, or it will try to temporally reconstruct crisp
@@ -105,15 +112,106 @@ render/present threads) — a real, explicit "frame identity" contract, not
 implicit frame-counting. Straightforward to integrate given this project's own
 existing per-frame hook structure.
 
-**Sub-pixel camera jitter is NOT resolved by this research** — the original
-`known_issues_x64.md` blocker ("no per-frame sub-pixel camera jitter, a
-projection-matrix change") stands. Streamline's core programming guide doesn't
-appear to supply this for the host (it's a per-feature, DLSS-specific
-requirement, expected to live in `docs/ProgrammingGuideDLSS.md`, not yet read
-in full — real next step). This is real, still-needed native RE work: finding
-and hooking IW5's own projection-matrix construction to inject the DLSS-mandated
-jitter offset each frame, on top of whatever this project's own render-scale
-hook already controls for internal resolution.
+**Real, substantial progress this session (2026-09-23), following direct
+instruction to keep researching jitter and motion vectors** — both blockers
+are now precisely specified from real, primary sources (`docs/ProgrammingGuideDLSS.md`,
+`include/sl_consts.h`, `include/sl_matrix_helpers.h`, all read in full this
+pass) plus one real external precedent. Neither is "solved" — the actual
+native RE (finding IW5's own projection-matrix-build function and hooking it)
+is still real, unstarted work — but the previously-open question "what exactly
+does Streamline need, and in what form" is now answered precisely, not just in
+general terms.
+
+**Jitter — the exact contract, confirmed directly from `sl_consts.h`/`ProgrammingGuide.md` §2.11.1:**
+- `sl::Constants::jitterOffset` (a `float2`, pixel-space) is a **separate**
+  field from the projection matrices — the matrices handed to Streamline
+  (`cameraViewToClip`, `clipToPrevClip`, `prevClipToClip`) must explicitly
+  **NOT** contain the jitter baked in ("must NOT contain temporal AA jitter
+  offset... should be provided as the additional parameter
+  `Constants::jitterOffset`"). This means two logically separate things have
+  to happen every frame, not one: (1) the ACTUAL low-res render pass itself
+  must use a jittered projection matrix (confirmed by `sl_consts.h`'s own
+  comment on `kBufferTypeScalingInputColor`: "Color buffer containing
+  **jittered** input data for the image scaling pass"), while (2) the
+  `Constants` struct handed to `slSetConstants` reports the same frame's
+  jitter value separately AND carries the clean, un-jittered matrices for
+  Streamline's own internal reprojection math. A naive "just add the offset to
+  the matrix I already send SL" implementation would be wrong on both counts.
+- Troubleshooting section (`ProgrammingGuide.md` §14, "jitter offset values
+  are in pixel space") independently confirms the same unit convention.
+- **Real, standard formula for computing the actual per-frame offset**
+  (canonical technique, not SL-specific — Alex Tardif's widely-cited TAA
+  reference, `alextardif.com/TAA.html`, read directly this session): a
+  Halton(2,3) low-discrepancy sequence, cycled over a window (8 samples is a
+  common, reasonable default), each sample mapped to `[-1,1]` via
+  `2*Halton(i,base)-1`, then divided by the render-resolution dimension
+  (`jitterX = haltonX / renderWidth`, `jitterY = haltonY / renderHeight`) to
+  get a genuine sub-pixel NDC offset — added into the projection matrix's
+  `[2][0]`/`[2][1]` (row-major) translation-ish terms for the actual jittered
+  render pass, while the SAME per-frame `(jitterX, jitterY)` pair (converted
+  to pixel space per SL's own convention) is what gets reported via
+  `Constants::jitterOffset`. **Real, easy-to-miss correctness requirement,
+  same source**: any velocity/motion-vector math must explicitly SUBTRACT
+  each frame's own jitter before differencing current vs. previous
+  clip-space position — a static camera/object must still resolve to a
+  zero motion vector once jitter is un-applied, or results ghost/blur; get
+  this wrong and both a from-scratch TAA test and DLSS itself will visibly
+  smear even on a completely still frame.
+- **Real, separate, commonly-required companion setting not yet in this
+  doc**: negative mipmap LOD bias on texture sampling while rendering at
+  reduced internal resolution (a standard DLSS/TAAU best practice, roughly
+  `log2(renderWidth / outputWidth) - 1.0`) — without it, textures read at
+  the correct jittered UV but the wrong (too-blurry) mip level for the
+  target's real output resolution. Real, cheap, likely tractable via this
+  project's own existing `SetSamplerState`-adjacent hook surface once
+  `Vulkan` mode exists — flagged here as a real requirement, not yet
+  scoped as its own work item.
+- **Real methodology finding, from a live open-source precedent
+  (`github.com/nicolas-maman/ae3d`, issue #324, "DLSS through NVIDIA
+  Streamline on Vulkan (needs motion vectors and a jittered projection
+  first)")**: that project — a different small custom engine independently
+  working through this exact same integration shape (jitter + motion
+  vectors + Streamline) — explicitly plans to implement its OWN plain TAA
+  pass first, using it purely as a correctness test rig for jitter and
+  motion vectors, before attempting DLSS proper. Their own stated reasoning
+  (direct quote via this session's own read of the issue): incorrect motion
+  vectors cause visible TAA ghosting, making a from-scratch TAA
+  implementation a fast, cheap, directly-observable validation loop —
+  versus debugging jitter/motion-vector correctness indirectly through
+  DLSS's own opaque NGX network output, where a bad result could be jitter,
+  motion vectors, buffer tagging, OR the network itself. **Worth adopting as
+  this project's own staged plan once `Vulkan` mode's DXVK foundation
+  exists**: build and validate a simple from-scratch reprojection/TAA pass
+  against this project's own jitter+mvec output before wiring Streamline at
+  all — reuses the same real buffers either way (depth, jittered color,
+  motion vectors, clean matrices), and turns "is DLSS broken" into "is our
+  own TAA broken," a much easier bug class to isolate.
+- **Real, still-unstarted native RE**: finding and hooking IW5's own
+  projection-matrix-build function to (a) inject the jitter offset into the
+  actual render pass and (b) capture the clean, un-jittered matrix + camera
+  basis vectors for `Constants`. One real, not-yet-confirmed lead already on
+  record from this project's own renderer-architecture mapping the same day
+  (`renderer_architecture_map.md` §3): `FUN_1401d8f70`, called from the
+  per-player frame-setup chain (`FUN_1401d7480`), "computes FOV-scale-derived
+  aspect constants written into `param_1+0x9ec`/`+0x9e8`/`+0x9e4`, real
+  floating-point camera math" — a real, plausible candidate for where
+  FOV/aspect/projection setup happens, not yet decompiled in enough depth to
+  confirm it owns the actual projection-matrix construction (vs. just
+  consuming FOV to compute aspect-ratio-adjacent constants used elsewhere).
+  **Two real, architecturally distinct injection strategies, either viable,
+  neither yet chosen**: (1) hook this native CPU-side function (or whichever
+  one actually builds the matrix) and modify the matrix in place before it's
+  uploaded — more invasive, needs the real function found via further
+  decompile; (2) hook at the D3D9 API boundary instead (`SetVertexShaderConstantF`,
+  intercepting whichever constant-register range the engine's own vertex
+  shaders read the projection matrix from) — lower native-RE burden (no need
+  to fully understand the CPU-side math, just intercept the value already
+  being uploaded to the GPU), and architecturally consistent with this
+  project's own existing pattern of hooking at the D3D9 device-call boundary
+  rather than deep inside engine internals wherever that's sufficient. Real
+  next step, not yet started: identify the actual constant-register index
+  IW5's shaders use for the projection matrix (a live-debugger or RenderDoc-
+  frame-capture task, not a static-analysis one).
 
 ### 2.4 Signing/security — real, non-optional requirements
 
@@ -134,6 +232,78 @@ DIFFERENT Windows-level signature-enforcement point (not SL's own internal
 automatically), possibly related to loading the NGX runtime DLLs specifically
 in a context NVIDIA's own driver doesn't recognize as an officially-integrated
 title. Not yet independently confirmed — flagged as a real open question.
+
+### 2.5 Camera-only motion vectors — a real, documented Streamline mode, and a direct connection to this project's own existing motion-blur data
+
+**The core finding, confirmed directly from `include/sl_consts.h` (both the
+header itself and the identical struct documented in `ProgrammingGuide.md`
+§2.11.1) — read in full this session for the first time**: `sl::Constants`
+carries a `Boolean cameraMotionIncluded` field, documented as "Specifies if
+camera motion is included in the MVec buffer," alongside
+`motionVectorsInvalidValue` ("This is only required if `cameraMotionIncluded`
+is set to false and SL needs to compute it"). Read together, this describes a
+real, first-class, explicitly-supported mode: **the host is not required to
+supply a motion-vector buffer that already accounts for camera movement.** If
+`cameraMotionIncluded` is set to `eFalse`, Streamline computes the
+camera-induced portion of motion itself — from the same `clipToPrevClip`/
+`prevClipToClip` matrices already required for jitter/reprojection (§2.3
+above) plus the depth buffer already being tagged (`kBufferTypeDepth`) — and
+combines it with whatever (if anything) the host's own motion-vector buffer
+supplies for object-level motion. **This means a functioning, real
+`kBufferTypeMotionVectors` tag does not require solving per-object motion at
+all as a first step.**
+
+**A real, viable staged implementation this unlocks, not previously
+scoped**:
+1. **Stage 1 — camera-only**: tag a motion-vector buffer that is genuinely
+   all-zero (or simply don't populate per-object motion at all, per whatever
+   `motionVectorsInvalidValue` convention is chosen), set
+   `cameraMotionIncluded = eFalse`, and supply real, correct camera
+   matrices/vectors every frame. Streamline reconstructs full-quality motion
+   vectors for the static world and background purely from camera transform +
+   depth — genuinely correct, not an approximation, for anything that isn't
+   itself moving independently of the camera (which is the overwhelming
+   majority of any given frame's pixels in a shooter — level geometry,
+   terrain, static props). This is a REAL, complete, shippable motion-vector
+   solution for a first `Vulkan`-mode release, not a stopgap being framed as
+   more than it is.
+2. **Stage 2 — object motion, deferred, real future work**: dynamic
+   entities (other players, vehicles, projectiles) would still reconstruct as
+   if static relative to the camera (a visible smear/ghost trail specifically
+   on fast-moving foreground objects during camera-relative motion) until a
+   real per-object motion-vector source is added — the actual "from-scratch
+   optical-flow or engine-side per-object velocity" work this doc originally
+   scoped as the whole problem. Deferred, not solved, but now correctly
+   framed as an INCREMENTAL quality improvement on top of an already-working
+   baseline, not a blocking prerequisite for shipping DLSS support at all.
+
+**Direct connection to this project's own already-shipped code, worth
+recording precisely**: this project's own visual-enhancement suite already
+computes real, live, per-frame camera-only motion data for an unrelated
+feature — motion blur (`v0.3.5`, issue #95, "camera-only motion blur driven
+by this project's own real per-frame look data"), which works from exactly
+the same category of input (per-tick camera angle/orientation delta) that
+`sl::Constants`'s `cameraPos`/`cameraUp`/`cameraRight`/`cameraFwd` fields and
+`sl_matrix_helpers.h`'s own `calcCameraToPrevCamera`/`recalculateCameraMatrices`
+reference implementation need. **`sl_matrix_helpers.h` (read in full this
+session, MIT-licensed, part of the public Streamline SDK) is real, working,
+directly-adaptable reference code** — `calcCameraToPrevCamera` computes a
+numerically-stable (camera-centered, avoiding the large-world-translation
+float32 precision loss a naive `invert(prevViewMatrix) * currentViewMatrix`
+would hit) previous-to-current camera transform from nothing but a
+camera-to-world matrix for the current and previous frame, and
+`recalculateCameraMatrices` chains that into the exact `clipToPrevClip`/
+`prevClipToClip` matrices `Constants` needs, from nothing but per-frame
+camera position + forward/right/up basis vectors and the projection matrix —
+the same shape of data this project's own controller-look injection code
+already produces every tick for a completely different purpose. This does
+not mean the existing motion-blur code can be reused unmodified (it drives a
+different, screen-space blur effect, not a matrix contract), but it confirms
+the REAL, primary inputs Stage 1 above needs are already the project's own
+native currency, not a new category of data requiring fresh native RE to
+obtain — only the matrix-construction math (present here, ready to adapt)
+and the actual jitter/projection hook point (§2.3's own still-open native RE
+item) are the real remaining work.
 
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
@@ -486,12 +656,8 @@ blocker.
    confirmed earlier. **New open item from this research, not previously
    tracked**: the export-forwarding architecture must change (section 4.5) —
    real implementation work, not just a docs update, once this is built.
-2. **Sub-pixel jitter injection** — still needs real native RE work against
-   IW5's own projection-matrix construction; not resolved by any of this
-   session's research (section 2.3).
-3. **Motion-vector reconstruction** — needs a genuine, from-scratch
-   implementation (ReShade-hosted LumeniteFX/LumaFlow explicitly cut); real,
-   non-trivial new shader/compute work (section 2.2).
+2. **Sub-pixel jitter injection — REVISED 2026-09-23, contract fully specified, native RE still not started.** The exact data contract (separate `jitterOffset` field, un-jittered matrices, the Halton(2,3)/render-resolution formula, the mip-bias companion requirement, a real methodology precedent for validating it via a from-scratch TAA test rig) is now fully researched (section 2.3) — the one real remaining item is finding and hooking IW5's own projection-matrix-build function (one plausible, unconfirmed lead on record: `FUN_1401d8f70`) or, as a lower-native-RE-burden alternative, intercepting the relevant `SetVertexShaderConstantF` register directly. Not resolved, but no longer an open research question — a scoped RE task now.
+3. **Motion-vector reconstruction — REVISED 2026-09-23, real scope reduction found, not fully resolved.** Streamline's own `cameraMotionIncluded = eFalse` mode (section 2.5) means a first, real, shippable implementation only needs camera-only reprojection (matrices + depth, no per-object motion) — genuinely correct for the majority of any frame's pixels, not an approximation being oversold as more. Per-object motion for fast-moving dynamic entities (other players, vehicles, projectiles) stays real, deferred, from-scratch future work, but is now correctly framed as an incremental improvement rather than a blocking prerequisite.
 4. **Streamline's own real license terms** ("Other," not yet read in full) and
    the exact redistribution requirements for the signed `sl.*.dll`/NGX runtime
    binaries in a shipped release (section 2.4).
