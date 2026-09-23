@@ -5147,6 +5147,50 @@ void __fastcall Hook_ScreenCaptureCmdDiag(void* param_1)
     LogFromController(buf);
 }
 
+// PURE DIAGNOSTIC hook -- FUN_1401dfd80, 2026-09-23. Direct continuation of the
+// SAVED_SCREEN cross-reference: x86's own already-documented finding (issue #88,
+// known_issues.md) confirmed SAVED_SCREEN is a discretely quality-tier-clamped
+// capture/thumbnail render target (1280x720 at its lowest real tier), completely
+// independent of render-scale/InternalRenderScalePercent -- a DIRECT match for
+// the fixed-size textures this session's own CreateTexture-storm capture found
+// during a real explosion/downed-state repro (the single most severe lag
+// trigger tested). x64 mirrors the identical split architecture (confirmed via
+// this session's own decompile of FUN_1401d44f0): DAT_141888670/674 (unclamped,
+// render-scale-driven) feeds the real scene/post-effect chain, while
+// DAT_141888678/67c (tier-clamped) feeds ONLY SAVED_SCREEN.
+//
+// FUN_1401dfd80 is the real "activate render view N" dispatcher (x64 equivalent
+// of x86's own documented FUN_0049bf50, a generic per-view-index bind function,
+// NOT specific to SAVED_SCREEN alone -- called with a different index for every
+// render target/pass). This hook is a pure observer (zero behavior change,
+// always calls through with the real arguments untouched) logging only on a
+// CHANGE in the requested view index (param_2), to show the real sequence of
+// view activations without flooding -- the real question this answers is
+// whether SAVED_SCREEN's own index appears (or appears unusually often/
+// expensively) specifically during the explosion/downed-state moment.
+constexpr const char* kRenderViewSelectSignature =
+    "40 56 41 54 41 57 48 83 EC 30 48 8B 71 08 4C 8B E1 4C 63 FA 44 3B BE D8 0B 00 00 "
+    "0F 84 ?? ?? ?? ?? 8B 86 9C 0B 00 00 48 89 5C 24 50 48 89 6C 24 58 48 89 7C 24 60 "
+    "4C 89 6C 24 28 4C 89 74 24 20 0F BA E0 1E 73 ?? 48 8B 8E 10 01 00 00 0F BA F0 1E "
+    "81 A6 94 0B 00 00 FF FF FF BF 45 33 C0 89 86 9C 0B 00 00 BA C2 00 00 00 48 8B 01";
+
+using RenderViewSelectFn = void(__fastcall*)(void* param_1, int param_2);
+RenderViewSelectFn g_origRenderViewSelect = nullptr;
+
+void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
+{
+    static int s_lastLoggedIndex = -12345; // sentinel, guaranteed to differ from any real first value
+    static int s_fireCount = 0;
+    ++s_fireCount;
+    if (param_2 != s_lastLoggedIndex) {
+        s_lastLoggedIndex = param_2;
+        char buf[128];
+        sprintf_s(buf, "[x64-renderview-select-diag] view index changed -> %d (call #%d)", param_2, s_fireCount);
+        LogFromController(buf);
+    }
+    g_origRenderViewSelect(param_1, param_2);
+}
+
 // In-level time-delta flag -- x64 equivalent of x86's kInLevelFlagAddr
 // (0x00A98ACC). Found via the same per-frame orchestrator chain this project's own
 // movement/look work already confirmed: x86's writer, FUN_0057e5b0, computes
@@ -7914,6 +7958,33 @@ void InstallAnalogInputHooksX64()
                 } else {
                     LogFromController("[x64-screencapture-cmd-diag] Diagnostic hook installed on FUN_14018b6c0, opcode 13 in the "
                         "per-viewport 2D/HUD command stream (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kRenderViewSelectSignature);
+        if (!r.found) {
+            LogFromController("[x64-renderview-select-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_RenderViewSelectDiag),
+                                                    reinterpret_cast<void**>(&g_origRenderViewSelect));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-renderview-select-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-renderview-select-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-renderview-select-diag] Diagnostic hook installed on FUN_1401dfd80, the real "
+                        "render-view-select dispatcher (read-only, changes no behavior).");
                 }
             }
         }
