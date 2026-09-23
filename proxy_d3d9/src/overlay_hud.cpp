@@ -43,6 +43,7 @@
 #include "controller_input.h"
 #include "vanilla_settings_table.h"
 #include "asset_capture.h"
+#include "vram_diag.h"
 #include "frame_benchmark.h"
 #if defined(_M_X64) || defined(_WIN64)
 #include "frame_pacing_x64.h"
@@ -7492,9 +7493,15 @@ HRESULT WINAPI Hook_EndScene(void* device)
                 deviceVtbl[kGetAvailableTextureMemoryVtableIndex]);
             UINT availBytes = getAvailableTextureMemory(device);
             char vramBuf[128];
-            sprintf_s(vramBuf, "[vram-diag] GetAvailableTextureMemory=%.1fMB (real driver-reported estimate, rounded to nearest MB)",
+            sprintf_s(vramBuf, "[vram-diag] GetAvailableTextureMemory=%.1fMB (LEGACY D3D9 API, widely known unreliable -- see [vram-diag-real] for the authoritative DXGI number)",
                        static_cast<double>(availBytes) / (1024.0 * 1024.0));
             LogFromController(vramBuf);
+
+            // Real, authoritative VRAM diagnostic (2026-09-23) -- vram_diag.cpp,
+            // IDXGIAdapter3::QueryVideoMemoryInfo. Same ~1s rate limit as the legacy
+            // call above, kept side by side for direct comparison rather than replacing
+            // it outright.
+            LogRealVramDiagIfDue();
         }
     }
 

@@ -83,8 +83,11 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <!-- hid.lib/setupapi.lib: 2026-08-11, issue #76. dualsense_input.cpp's raw-HID
            DualSense backend needs SetupDiGetClassDevs/HidD_GetAttributes/
-           HidD_GetPreparsedData/HidP_GetCaps; nothing in this project needed these before. -->
-      <AdditionalDependencies>hid.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+           HidD_GetPreparsedData/HidP_GetCaps; nothing in this project needed these before.
+           dxgi.lib: 2026-09-23, vram_diag.cpp's real IDXGIAdapter3::QueryVideoMemoryInfo
+           diagnostic (CreateDXGIFactory1/EnumAdapters1/QueryInterface); see that file's
+           own header comment. -->
+      <AdditionalDependencies>hid.lib;setupapi.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -158,6 +161,7 @@
     <ClCompile Include="src\staged_settings.cpp" />
     <ClCompile Include="src\options_render_suppress.cpp" />
     <ClCompile Include="src\asset_capture.cpp" />
+    <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
   </ItemGroup>
@@ -206,6 +210,7 @@
     <ClInclude Include="src\mod_config.h" />
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\asset_capture.h" />
+    <ClInclude Include="src\vram_diag.h" />
     <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\plugin_loader.h" />
     <ClInclude Include="src\mw3ncp_plugin_api.h" />
