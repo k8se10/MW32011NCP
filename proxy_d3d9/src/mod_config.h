@@ -46,7 +46,7 @@ enum class GlyphStyle { Xbox360, XboxModern, PlayStation };
 // is included for completeness even though nothing is wired to it yet (task #5).
 // Version string shown in the first-launch welcome modal (d3d9_hook.cpp). Keep in step with the release heading in
 // PATCHNOTES.md, and update the modal's feature list (kWelcomeFeatureList) on every version -- see CLAUDE.md.
-constexpr const char* kModVersionString = "0.0.1-x64";
+constexpr const char* kModVersionString = "0.0.2-x64";
 // Pre-1.0 dev-build watermark string (Fortnite/Rocket League style), drawn small and low-opacity in a screen
 // corner every frame -- REMOVE once 1.0 ships (see CLAUDE.md/AGENTS.md). Built from compile-time __DATE__/__TIME__,
 // so it always reflects the actual running build, not a hand-maintained string.

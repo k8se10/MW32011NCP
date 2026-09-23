@@ -710,8 +710,14 @@ constexpr const char* kWelcomeFeatureList =
     "\x02" "\xE2\x9C\x94 Controller button prompts and vibration\n"
     "\x02" "\xE2\x9C\x94 Four netcode security fixes\n"
     "\x02" "\xE2\x9C\x94 Frame pacing and faster loading\n"
-    "\x02" "\xE2\x9C\x94 Render scale, FSR, motion blur, anisotropic\n"
+    "\x02" "\xE2\x9C\x94 Render scale (now including MP), FSR, motion blur\n"
     "\x02" "\xE2\x9C\x94 Plugin API for sub-mods";
+    // 2026-09-23: "anisotropic" REMOVED from this list -- known_issues_x64.md issue #6
+    // found ForceAnisotropicFiltering/ForceHighQualityShadows/ForceHighQualityLighting
+    // are silent no-ops on x64 (the underlying native dvar-write function has no x64
+    // equivalent yet) -- this list had been claiming a broken feature as working since
+    // the port. "motion blur" stays a real claim -- confirmed working (2026-09-12/13)
+    // and now also fixed for keyboard/mouse this same release.
 
 bool ShowWelcomeModalIfNewVersion()
 {
