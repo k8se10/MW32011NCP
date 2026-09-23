@@ -70,6 +70,7 @@ gun-type switching (confirmed GSC/data-driven, no native hook point). See
 - [#2](#2-roadmap-anti-aliasing-and-a-modern-renderer-path-smaa--dlss--path-tracing--dx12vulkan) — ROADMAP: anti-aliasing and a modern-renderer path (SMAA -> DLSS/FSR2 -> path tracing -> DX12/Vulkan) — **Roadmap Idea; SMAA 1x built and shipped 2026-09-21, then PARKED off by default (capture/redraw path itself suspect, independent of the SMAA shaders); FXAA also shipped 2026-09-21 as a limited fallback; nothing else started**
 - [#3](#3-mp-launch-crash-frame-pacings-hardcoded-dvar-lookup-address) — MP launch crash (frame pacing's hardcoded dvar-lookup address) — **Resolved, live-confirmed 2026-09-23**
 - [#4](#4-sp-damagepauselevel-transition-stutter----render-scale-proportional-real-hardcoded-memory-pool-constants-found-genuine-but-do-not-explain-the-full-4gb-ceiling-on-their-own) — SP damage/pause/level-transition stutter, render-scale-proportional — **Investigating; real hardcoded Hunk/Zone allocator constants confirmed (~311MB total, zero system-memory-adaptive sizing on either arch) but do NOT alone explain the ~4GB ceiling observed live; next step is a live `ResourceUsageLogging` capture during repro**
+- [#5](#5-motion-blur-was-controller-only----now-reacts-to-real-per-tick-view-angle-change-from-any-input-device) — Motion blur was controller-only — **Resolved (build-verified 2026-09-23, not yet live-tested)**
 
 ---
 
@@ -10674,3 +10675,31 @@ Traced the real writer (not a simple string-keyed dvar write -- found via the ca
 **Current working conclusion (2026-09-23), direct user synthesis**: with the mod's own render-scale override mechanism confirmed to work symmetrically in both directions (the same `Hook_RenderResCompute` override applies whether the target is above OR below native -- the only real constraint is the engine's own 640x480 floor, e.g. 25% at 2560x1440 native computes to 640x360 and silently fails that floor on height alone, while ~34%+ clears it cleanly) and every mod-side theory now eliminated via direct live testing (SAVED_SCREEN capture, the sys_sysMB cap, wait coalescing) or exhaustive static tracing (the POST_EFFECT setup functions, the opcode-13 CPU pixel-copy loop, the generic CreateTexture/asset-loader chain), the most evidence-consistent remaining explanation is a **genuine native engine stability characteristic tied to large render-target/texture sizes specifically**, not a bug in this project's own code or hooking mechanism. Direct user theory, plausible but not independently provable from RE alone: this is very likely *why* the original PC port's internal render resolution was locked to a fixed reference size (1920x1080 default, tier-clamped `SAVED_SCREEN` at 1280x720) regardless of actual display/backbuffer size in the first place (issue #88's own original 2026-08-25 finding) -- a genuine, real stability boundary the original developers already knew about and engineered around, that this project's own `InternalRenderScalePercent` supersampling feature (by design, deliberately uncapped above native, see issue #88's "REAL fix" entry) reopens by construction whenever pushed far enough above what the engine was ever validated at. Consistent with, not contradicted by, the real x86-era precedent this session cross-referenced (issue #105): x86 had its own real crashes/freezes above 250% too, though that specific case's root cause (a `ForceD3D9On12`-driven lingering driver corruption) was different and that feature has since been removed entirely -- the underlying "high render scale is where this engine's real stability envelope ends" pattern recurring independently on both architectures, via different specific mechanisms, is itself supporting evidence for a genuine engine-level rather than mod-code-level boundary.
 
 **Practical implication, not yet actioned**: if this conclusion holds, the productive path forward is likely narrowing the actual SAFE maximum `InternalRenderScalePercent` (confirmed clean at 200%, confirmed broken at 300%, exact boundary between the two not yet tested) rather than continuing to hunt for a single patchable bug -- a real, bounded next step if resumed, not a technical dead end.
+
+---
+
+## 5. Motion blur was controller-only -- now reacts to real per-tick view-angle change from any input device
+
+**Status: Resolved (build-verified 2026-09-23, not yet live-tested).**
+
+Direct user instruction: "also we should make motion blur not controller only(as that was always a limitation)."
+
+**Root cause**: `g_motionBlurYawDeltaDegX64`/`g_motionBlurPitchDeltaDegX64` (`analog_input_hooks_x64.cpp`, consumed by `RunPreOverlayMotionBlurPassIfEnabled` in `overlay_hud.cpp`) were only ever written from two places inside `Hook_MovementTick`: the controller-stick-input block and the gyro block. Real mouse/keyboard look happens entirely inside the native `g_realMovementTick` trampoline this hook calls through to -- a completely separate code path neither of those blocks ever touches -- so a keyboard/mouse player got zero motion blur regardless of how hard they looked around, purely because nothing ever fed the delta variables for that input class. The gating logic itself (`RunPreOverlayMotionBlurPassIfEnabled`) was NOT device-gated; the bug was entirely in how the blur *amount* got computed.
+
+**Fix**: removed the per-source direct writes (both the active-branch/neutral-branch pair in the stick block, and the `+=` pair in the gyro block) and replaced them with a single universal before/after capture wrapped around the `g_realMovementTick(...)` call:
+
+```cpp
+const float preNativeYaw = g_yawAccum ? *g_yawAccum : 0.0f;
+const float preNativePitch = g_pitchAccum ? *g_pitchAccum : 0.0f;
+
+g_realMovementTick(param1, param2);
+
+if (g_yawAccum) g_motionBlurYawDeltaDegX64 = preNativeYaw - *g_yawAccum;
+if (g_pitchAccum) g_motionBlurPitchDeltaDegX64 = preNativePitch - *g_pitchAccum;
+```
+
+This relies on `g_yawAccum`/`g_pitchAccum`'s own already-documented real semantics (see that variable's header comment in the same file): controller/gyro write directly into these shared native accumulators BEFORE the native call; the native call itself ALSO adds real mouse/keyboard delta on top (accumulate, not overwrite -- controller and mouse correctly stack); then it packs the whole accumulated value into the real `usercmd_t` angle fields and writes back only a small leftover fractional remainder. So "value right before the native call" minus "value right after" equals the real TOTAL applied delta for that tick from every contributing input device at once, using the exact same sign convention the old per-source writes already used (every contributor here subtracts from the accumulator, so pre-minus-post comes out positive in the same direction the old `yawDelta`/`pitchDelta` values were).
+
+The capture is placed unconditionally, before the K+M-safe-mode controller gate (`!g_modConfig.disableControllerInputX64`) -- so with `DisableControllerInputX64=1` (no controller/gyro contribution at all that tick), the capture still correctly isolates the real mouse-only delta, since the native call is the only remaining writer to the accumulator in that case.
+
+Build-verified (x64 Release, 0 errors, deployed). Not yet live-tested with a keyboard/mouse-only session. Commit `fa3ae124`.
