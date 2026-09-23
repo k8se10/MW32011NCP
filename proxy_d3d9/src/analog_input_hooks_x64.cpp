@@ -5147,7 +5147,67 @@ void __fastcall Hook_ScreenCaptureCmdDiag(void* param_1)
     LogFromController(buf);
 }
 
-// ---- FIX ATTEMPT (2026-09-23) -- SAVED_SCREEN capture cost at high render scale ----
+// ---- FIX ATTEMPT #2 (2026-09-23) -- the real sys_sysMB hardcoded 3072MB cap ----
+// Full decompile of FUN_1402ea710 (the real hardware-memory-detection function,
+// traced from the live config: players2/config.cfg's own `sys_sysMB "3072"`,
+// confirmed to be ACTIVELY RECOMPUTED every launch -- not a stale cached value,
+// since directly editing it in config.cfg got silently reverted back to 3072 on
+// the very next launch, with sys_configSum also resetting, proving a genuine
+// fresh detection pass re-ran and re-derived the same wrong number) confirms the
+// user's own standing hypothesis exactly, now with real decompiled source, not
+// inference: this function correctly calls the real GlobalMemoryStatusEx/
+// GlobalMemoryStatus APIs, computes a real MB value from the genuine detected
+// system RAM -- then unconditionally clamps it:
+//
+//   if (((float)iVar1 * DAT_1403fcbd8 < (float)local_98.dwTotalPhys) || (0xc00 < iVar1)) {
+//       iVar1 = 0xc00;   // 0xc00 == 3072 decimal
+//   }
+//
+// A genuine, confirmed, unchanged-since-32-bit-era hardcoded 3072MB (3GB)
+// ceiling -- any real system with more RAM than that (virtually all systems
+// built in the last 15 years) gets its real detected value thrown away and
+// replaced with 3072 regardless. This dvar (sys_sysMB) is then read by the
+// real hardware-tier auto-detect logic (FUN_1401b9980/FUN_1401b9d50, already
+// traced this session) to drive internal quality/budget decisions.
+//
+// Fix: a POST-hook -- the real trampoline runs completely unmodified first
+// (preserving its own legitimate logic, including the real low-memory-warning
+// dialog for genuinely low-RAM systems), and only when its result is EXACTLY
+// 0xc00 (the precise signature of the cap having fired, not a coincidentally
+// real 3072MB system) does this override it with a real, freshly-computed,
+// uncapped value from this project's own GlobalMemoryStatusEx call.
+constexpr const char* kMemDetectSignature =
+    "40 53 48 81 EC B0 00 00 00 48 8D 0D ?? ?? ?? ?? "
+    "0F 29 B4 24 A0 00 00 00 FF 15 ?? ?? ?? ?? 48 85 C0 74 ??";
+
+using MemDetectFn = int(__fastcall*)();
+MemDetectFn g_origMemDetect = nullptr;
+
+int __fastcall Hook_MemDetectFix()
+{
+    int origResult = g_origMemDetect();
+    if (origResult == 0xc00) {
+        MEMORYSTATUSEX ms{};
+        ms.dwLength = sizeof(ms);
+        if (GlobalMemoryStatusEx(&ms)) {
+            uint64_t realMB = ms.ullTotalPhys / (1024ULL * 1024ULL);
+            // Same upper sanity bound the real dvar registration itself already
+            // uses (INT32_MAX, see FUN_1402eef80's own "sys_sysMB",0,0x80000000,
+            // 0x7fffffff registration) -- never hand back something the dvar
+            // system itself couldn't represent.
+            if (realMB > 0xc00 && realMB <= 0x7FFFFFFFULL) {
+                char buf[128];
+                sprintf_s(buf, "[x64-memdetect-fix] sys_sysMB cap corrected: 3072 (hardcoded) -> %llu (real)",
+                           static_cast<unsigned long long>(realMB));
+                LogFromController(buf);
+                return static_cast<int>(realMB);
+            }
+        }
+    }
+    return origResult;
+}
+
+// ---- FIX ATTEMPT #1 (2026-09-23) -- SAVED_SCREEN capture cost at high render scale ----
 // FUN_14018a780, the real SAVED_SCREEN capture function, confirmed via full decompile:
 // StretchRects the CURRENTLY ACTIVE render view's surface (at InternalRenderScalePercent's
 // full supersampled size, e.g. 7680x4320 at 300%) down into SAVED_SCREEN's own small,
@@ -8098,6 +8158,39 @@ void InstallAnalogInputHooksX64()
                         LogFromController("[x64-savedscreen-fix] Fix hook installed on FUN_14018a780 -- skips the "
                             "SAVED_SCREEN StretchRect capture above InternalRenderScalePercent=150, no-op below it.");
                     }
+                }
+            }
+        }
+    }
+
+    // sys_sysMB hardcoded 3072MB cap fix -- MinHook detour on FUN_1402ea710. See
+    // Hook_MemDetectFix's own comment for the full mechanism/rationale. Always
+    // calls the real trampoline first (unmodified); only overrides the exact
+    // 0xc00 (3072) cap-fired result.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMemDetectSignature);
+        if (!r.found) {
+            LogFromController("[x64-memdetect-fix] FATAL: signature did not resolve -- the sys_sysMB "
+                "hardcoded-cap fix will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MemDetectFix),
+                                                    reinterpret_cast<void**>(&g_origMemDetect));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-memdetect-fix] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-memdetect-fix] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-memdetect-fix] Fix hook installed on FUN_1402ea710 -- corrects the "
+                        "hardcoded 3072MB sys_sysMB cap to a real, uncapped detected value.");
                 }
             }
         }
