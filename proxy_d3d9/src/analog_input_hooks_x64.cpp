@@ -3927,6 +3927,17 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 bool adsHeld = IsPhysicalHeld_Exported(g_buttonMap.ads, xiButtons, leftTrigger, rightTrigger);
                 if (adsHeld != g_adsHeldX64) {
                     g_adsHeldX64 = adsHeld;
+                    // ADS-state-change diagnostic (2026-09-23) -- direct user report of a
+                    // sustained ~2x FPS drop while ADS is held, with no other diagnostic
+                    // (CreateTexture storm, frame pacer, GPU/VRAM usage) yet explaining it.
+                    // A real, timestamped edge marker here lets the next SLOW FRAME/
+                    // resource-diag/vram-diag entries be directly correlated against the
+                    // exact real ADS-held window instead of guessed at after the fact.
+                    {
+                        char adsBuf[64];
+                        sprintf_s(adsBuf, "[ads-state-diag] ADS %s", adsHeld ? "ENGAGED" : "released");
+                        LogFromController(adsBuf);
+                    }
                     // Sniper Fire/ADS fix attempt -- see kNotifyBindFuncOffset's own
                     // comment. Purely additive alongside the existing kbutton call.
                     if (g_notifyBindDispatch) g_notifyBindDispatch(0, adsHeld ? kAdsBindCaseDown : kAdsBindCaseUp);
