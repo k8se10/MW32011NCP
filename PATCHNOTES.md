@@ -10,6 +10,13 @@ patch history is preserved in
 
 ## Unreleased
 
+**Summary:** First real work toward native Vulkan/DLSS support (see `re_notes/x64_migration/vulkan_dlss_pipeline_research.md`): a new `[Video] GraphicsApi` selector, SP-only-gated real DXVK loading, and a live-confirmed first result — the game genuinely launches and renders correctly through DXVK's D3D9-to-Vulkan translation.
+
+### Groundwork
+1. **`[Video] GraphicsApi` config selector added** (`LegacyD3D9` default / `Vulkan` opt-in) — the locked architecture decision for native Vulkan/Streamline/DLSS support. **SP-only, direct instruction**: Vulkan mode only actually takes effect under `iw5sp.exe`, enforced independently at two points (`CreateDevice` time and before `d3d9.dll` even loads) — Multiplayer holds more VAC risk for a QoL feature that isn't essential there, so this stays SP-only until real precedent exists.
+2. **Real DXVK (v3.1.1) vendored and wired to load automatically** when Vulkan mode is selected — the real, maintainer-confirmed integration pattern (a wrapper calling DXVK's own `Direct3DCreate9` directly, not export-forwarding to a renamed DLL), with a validated fallback to the real system `d3d9.dll` if the vendored build is ever missing or corrupted, so a bad DXVK file can never take the whole game down.
+3. **First live confirmation: DXVK's D3D9-to-Vulkan translation genuinely works against this game.** With `GraphicsApi=Vulkan` set, the game launches straight to the main menu correctly rendered, cursor working, a stable 60fps/16.6ms — DXVK's own built-in corner indicator confirms Vulkan is actually the active backend. This is the real go/no-go milestone the rest of the Vulkan/DLSS roadmap depends on; deeper gameplay/Survival/visual-suite-compatibility testing is still needed before this is considered broadly stable, and no Streamline/DLSS integration exists yet on top of it.
+
 ---
 
 ## v0.0.2-x64 — Alpha (2026-09-23)
