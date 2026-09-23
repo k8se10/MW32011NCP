@@ -221,6 +221,7 @@ constexpr DWORD kD3DRS_ZENABLE = 7;
 constexpr DWORD kD3DRS_CULLMODE = 22;
 constexpr DWORD kD3DRS_LIGHTING = 137;
 constexpr DWORD kD3DRS_ALPHABLENDENABLE = 27;
+constexpr DWORD kD3DRS_FOGENABLE = 28; // 2026-09-23, DrawFullScreenPass's own real fog-disable fix
 constexpr DWORD kD3DRS_SRCBLEND = 19;
 constexpr DWORD kD3DRS_DESTBLEND = 20;
 constexpr DWORD kD3DBLEND_ONE = 2;
@@ -3661,11 +3662,31 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     setSamplerState(device, 0, kD3DSAMP_MAGFILTER, g_fullScreenPassLinear ? kD3DTEXF_LINEAR : kD3DTEXF_POINT);
     setSamplerState(device, 0, kD3DSAMP_MINFILTER, g_fullScreenPassLinear ? kD3DTEXF_LINEAR : kD3DTEXF_POINT);
 
-    DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldCull = 0;
+    DWORD oldZEnable = 0, oldLighting = 0, oldAlphaBlend = 0, oldCull = 0, oldFogEnable = 0;
     getRenderState(device, kD3DRS_ZENABLE, &oldZEnable);
     getRenderState(device, kD3DRS_LIGHTING, &oldLighting);
     getRenderState(device, kD3DRS_ALPHABLENDENABLE, &oldAlphaBlend);
     getRenderState(device, kD3DRS_CULLMODE, &oldCull);
+    // 2026-09-23, real DXVK-source-grounded hypothesis for "motion blur runs but
+    // produces no visible effect under GraphicsApi=Vulkan": this function never
+    // saved/restored/disabled D3DRS_FOGENABLE, unlike the four states above.
+    // DXVK's own fog-update code (d3d9_device.cpp UpdateFog) has a direct comment
+    // flagging our exact vertex shape as an edge case: "PositionT also implies W
+    // fog, some D3D6 jank apparently relies on that" -- our quad is XYZRHW
+    // (PositionT) with rhw=1.0 on every vertex, a genuinely degenerate input for
+    // that W-fog computation. If fog happens to be ambient-enabled from the
+    // game's own last draw when this pass fires, D3D9's real fixed-function
+    // output-merger semantics apply fog AFTER our pixel shader runs, on top of
+    // its output -- if the degenerate W-fog factor computes as "fully fogged,"
+    // our blur result would be overwritten by the fog blend, looking like
+    // nothing happened rather than an obvious glitch. Disabling fog here matches
+    // this function's own existing pattern exactly (save/force-off/restore,
+    // same as ZENABLE/LIGHTING/ALPHABLENDENABLE) -- a full-screen post-process
+    // pass has no business being affected by ambient fog state regardless of
+    // whether this specific hypothesis is the actual cause. Not yet
+    // independently confirmed live.
+    getRenderState(device, kD3DRS_FOGENABLE, &oldFogEnable);
+    setRenderState(device, kD3DRS_FOGENABLE, FALSE);
 
     // FIXED 2026-08-27 (see this function's own header comment) -- the viewport
     // was never saved/restored at all before. Explicitly forced to full-screen
@@ -3862,6 +3883,7 @@ void DrawFullScreenPass(void* device, void* pixelShader, FullScreenShaderSetupFn
     setRenderState(device, kD3DRS_LIGHTING, oldLighting);
     setRenderState(device, kD3DRS_ALPHABLENDENABLE, oldAlphaBlend);
     setRenderState(device, kD3DRS_CULLMODE, oldCull);
+    setRenderState(device, kD3DRS_FOGENABLE, oldFogEnable);
 
     setPixelShader(device, oldPixelShader);
     if (oldPixelShader) {
