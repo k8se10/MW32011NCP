@@ -1,7 +1,7 @@
 # Known Issues — MW32011DXVK
 
 Real, tracked issues specific to fitting DXVK to Call of Duty: Modern
-Warfare 3 (2011)'s IW5 engine. See `MW3_FORK.md` for why this fork exists
+Warfare 3 (2011)'s IW5 engine. See `README.md` for why this fork exists
 and its own real scope. Same conventions as the sibling `MW32011NCP`
 project's own issue trackers: a `**Status:**` line first, dated
 investigation rounds after, `issue #N` cross-reference form.
@@ -87,7 +87,7 @@ direct reads of this project's own DXVK source (not assumed):
 
 - **A genuine live/debug session against this fork's own build**, once a
   working build toolchain exists (see the project-wide "Real status"
-  section of `MW3_FORK.md` — Meson build setup is real, unstarted
+  section of `README.md` — Meson build setup is real, unstarted
   groundwork), to observe the actual Vulkan calls DXVK emits for this
   specific draw call and pipeline state, rather than continuing to reason
   about it from source alone.

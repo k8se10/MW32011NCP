@@ -3,7 +3,7 @@
 Real, notable changes made in this fork, per release, on top of the real
 upstream [doitsujin/dxvk](https://github.com/doitsujin/dxvk) this project is
 forked from. This fork's own versioning and release cadence is independent
-of the sibling `MW32011NCP` project's own `-x64` releases — see `MW3_FORK.md`
+of the sibling `MW32011NCP` project's own `-x64` releases — see `README.md`
 for the real reasoning. See `re_notes/known_issues.md` for the full
 investigation/reverse-engineering trail behind each entry.
 
