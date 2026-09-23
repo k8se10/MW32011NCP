@@ -5147,6 +5147,77 @@ void __fastcall Hook_ScreenCaptureCmdDiag(void* param_1)
     LogFromController(buf);
 }
 
+// ---- FIX ATTEMPT (2026-09-23) -- SAVED_SCREEN capture cost at high render scale ----
+// FUN_14018a780, the real SAVED_SCREEN capture function, confirmed via full decompile:
+// StretchRects the CURRENTLY ACTIVE render view's surface (at InternalRenderScalePercent's
+// full supersampled size, e.g. 7680x4320 at 300%) down into SAVED_SCREEN's own small,
+// quality-tier-CLAMPED destination (1280x720 at its lowest tier -- confirmed matching
+// x86's own already-documented finding, known_issues.md issue #88, and this session's
+// CreateTexture-storm capture during a real explosion/downed-state repro, the single most
+// severe lag trigger tested). Gated by a per-consumer generation-staleness check:
+// `if (DAT_141887e20[consumerIdx] != DAT_1415e9438) { capture(); DAT_141887e20[consumerIdx]
+// = DAT_1415e9438; }` -- the real StretchRect only runs when a consumer's own stamp is
+// behind the current shared generation counter.
+//
+// Fix approach: rather than reimplementing this function's own capture/blit logic (real
+// risk of getting a struct-field-offset or a D3D9 refcounting detail wrong), this hook
+// works WITH the engine's own existing branch: when InternalRenderScalePercent is
+// meaningfully above native, PRE-WRITE the current generation value into this specific
+// consumer's own stamp BEFORE calling the real trampoline -- making the engine's OWN
+// staleness check see "already up to date" and skip its own capture path internally,
+// using its existing logic rather than a hand-rolled reimplementation. Below the
+// threshold, this hook does nothing at all and the real trampoline runs completely
+// unmodified -- zero behavior change for default/near-native render scale.
+//
+// Real, honest tradeoff: SAVED_SCREEN shows stale/last-good content instead of a fresh
+// capture while active at high render scale. Given SAVED_SCREEN is read by several real
+// subsystems (the render-view dispatcher, the hurt-text draw path, the scene-finish
+// orchestrator, among others per this session's own FindReadersOfGlobal trace) the exact
+// visual scope of "stale" is not fully mapped -- a real, live playtest at high render
+// scale is the way to confirm this doesn't look wrong anywhere, not something static RE
+// alone can settle.
+constexpr const char* kSavedScreenCaptureSignature =
+    "48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 40 83 3D ?? ?? ?? ?? 00 48 8B F9 48 8B 31 "
+    "74 ?? E8 ?? ?? ?? ?? 48 63 4E 04 48 8D 2D ?? ?? ?? ?? 8B 15 ?? ?? ?? ?? "
+    "39 94 8D 20 7E 88 01 0F 84 ?? ?? ?? ?? 0F 10 05 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? "
+    "48 89 5C 24 50 0F 29 44 24 30 E8 ?? ?? ?? ?? 0F 28 44 24 30 4C 8B C8 66 0F 73 D8 08 "
+    "45 33 C0 66 48 0F 7E C2 C7 44 24 28 02 00 00 00 48 8B D8 48 C7 44 24 20 00 00 00 00 "
+    "48 8B 8A 10 01 00 00 48 63 92 D8 0B 00 00 48 C1 E2 05 4C 8B 11 48 8B 94 2A 08 6E BB 01 "
+    "41 FF 92 10 01 00 00 48 8B 03 48 8B CB FF 50 10 8B 4E 04 8B 15 ?? ?? ?? ?? "
+    "48 8B 5C 24 50 48 8B 74 24 60";
+constexpr ptrdiff_t kSavedScreenGenReadInsnOffset = 0x2E; // "MOV EDX,[rip+disp32]" -- DAT_1415e9438
+constexpr uintptr_t kSavedScreenStampArrayRva = 0x1887e20; // DAT_141887e20, module-relative
+    // (a pure link-time RVA constant baked into the CMP instruction's own disp32 field,
+    // added to a runtime-computed image base -- not RIP-relative, no ASLR-sensitive
+    // resolution needed, just moduleBase + this fixed offset)
+
+using SavedScreenCaptureFn = void(__fastcall*)(void* param_1);
+SavedScreenCaptureFn g_origSavedScreenCapture = nullptr;
+int32_t* g_savedScreenGenCounter = nullptr; // DAT_1415e9438
+int32_t* g_savedScreenStampArray = nullptr; // DAT_141887e20 (array, indexed by consumer)
+
+void __fastcall Hook_SavedScreenCaptureFix(void* param_1)
+{
+    // Same real threshold this project's own high-render-scale warning already uses
+    // (Hook_RenderResCompute, ">2.25x area, i.e. > ~150% linear") -- consistent
+    // messaging, and a render scale this far above native is already a deliberate,
+    // non-default choice, not something default gameplay would ever hit.
+    if (g_savedScreenGenCounter && g_savedScreenStampArray &&
+        g_modConfig.internalRenderScalePercent > 150 && param_1) {
+        auto lVar1 = *reinterpret_cast<intptr_t*>(param_1);
+        if (lVar1) {
+            int consumerIdx = *reinterpret_cast<int*>(lVar1 + 4);
+            if (consumerIdx >= 0 && consumerIdx < 64) { // real array is small (per-consumer
+                // indices seen so far are single digits); a sane bound in case of a
+                // genuinely different struct shape than assumed -- never write outside
+                // this range rather than trust an unbounded index.
+                g_savedScreenStampArray[consumerIdx] = *g_savedScreenGenCounter;
+            }
+        }
+    }
+    g_origSavedScreenCapture(param_1);
+}
+
 // PURE DIAGNOSTIC hook -- FUN_1401dfd80, 2026-09-23. Direct continuation of the
 // SAVED_SCREEN cross-reference: x86's own already-documented finding (issue #88,
 // known_issues.md) confirmed SAVED_SCREEN is a discretely quality-tier-clamped
@@ -7985,6 +8056,48 @@ void InstallAnalogInputHooksX64()
                 } else {
                     LogFromController("[x64-renderview-select-diag] Diagnostic hook installed on FUN_1401dfd80, the real "
                         "render-view-select dispatcher (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+
+    // SAVED_SCREEN capture fix -- MinHook detour on FUN_14018a780. See
+    // Hook_SavedScreenCaptureFix's own comment for the full mechanism/rationale.
+    // Only takes effect above InternalRenderScalePercent=150; a genuine no-op
+    // (calls the real trampoline unmodified) below that.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kSavedScreenCaptureSignature);
+        if (!r.found) {
+            LogFromController("[x64-savedscreen-fix] FATAL: signature did not resolve -- the SAVED_SCREEN "
+                "high-render-scale capture cost fix will not run this session");
+        } else {
+            uintptr_t genReadInsnAddr = r.address + kSavedScreenGenReadInsnOffset;
+            g_savedScreenGenCounter = reinterpret_cast<int32_t*>(SigScan::ResolveRipRelative(genReadInsnAddr, 6));
+            uint8_t* moduleBase = reinterpret_cast<uint8_t*>(GetModuleHandleA(nullptr));
+            g_savedScreenStampArray = moduleBase ? reinterpret_cast<int32_t*>(moduleBase + kSavedScreenStampArrayRva) : nullptr;
+            if (!g_savedScreenGenCounter || !g_savedScreenStampArray) {
+                LogFromController("[x64-savedscreen-fix] FATAL: RIP-relative/module-base resolution failed -- "
+                    "the SAVED_SCREEN high-render-scale capture cost fix will not run this session");
+            } else {
+                void* target = reinterpret_cast<void*>(r.address);
+                MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SavedScreenCaptureFix),
+                                                        reinterpret_cast<void**>(&g_origSavedScreenCapture));
+                if (createStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-savedscreen-fix] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                    LogFromController(buf);
+                } else {
+                    MH_STATUS enableStatus = MH_EnableHook(target);
+                    if (enableStatus != MH_OK) {
+                        char buf[160];
+                        sprintf_s(buf, "[x64-savedscreen-fix] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                        LogFromController(buf);
+                    } else {
+                        LogFromController("[x64-savedscreen-fix] Fix hook installed on FUN_14018a780 -- skips the "
+                            "SAVED_SCREEN StretchRect capture above InternalRenderScalePercent=150, no-op below it.");
+                    }
                 }
             }
         }
