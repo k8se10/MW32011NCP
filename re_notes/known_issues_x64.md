@@ -10621,6 +10621,7 @@ happens to cover all of them for free.
 
 Not yet implemented — this entry records the locked decision and its shape, not a shipped feature. Real open work once implementation starts: the actual config key name/values, where the mode gets read (almost certainly at `CreateDevice`/`Direct3DCreate9` time, before any real device exists, given DXVK would need to intercept device creation itself), and how cleanly this project's own existing hook-installation sequence (signature scans, `EndScene`/`Reset` hooks, the full-screen capture pipeline) needs to branch or defer based on the selected mode.
 
+**Full technical deep-dive**: `re_notes/x64_migration/vulkan_dlss_pipeline_research.md` — real Streamline SDK integration requirements (resource tagging, frame tracking, the still-open jitter/motion-vector gaps), the full DXVK research (a real architecture correction to how `Vulkan` mode must load DXVK, a real unresolved shader-compile-storm pattern specifically in CoD-lineage titles, and a dedicated real-evidence VAC/ban-risk analysis with an honest mitigation plan). This `known_issues_x64.md` entry stays the short, current-status summary; that doc is the source of truth for investigation detail, per this project's own documentation convention.
 
 ## 3. MP launch crash (frame pacing's hardcoded dvar-lookup address)
 
