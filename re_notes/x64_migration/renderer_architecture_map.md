@@ -186,7 +186,80 @@ command types actually get turned into `IDirect3DDevice9::DrawIndexedPrimitive`/
    directly to a specific command-stream instance (e.g. one stream per
    split-screen viewport), not a single global stream.
 
-## 5. The render-stage notify dispatcher — `FUN_1401ea4b0(N)` (CONFIRMED shape, stage meanings NOT yet decoded)
+## 5. The render-stage notify dispatcher — `FUN_1401ea4b0(N)` (CONFIRMED shape AND stage names -- corrected from this doc's own first-pass framing)
+
+**Correction to this section's own original framing** (written earlier the
+same pass): the table at `0x1404d0b50` was initially assumed to be a
+function-pointer dispatch table (INFERRED, explicitly flagged as
+unconfirmed at the time). Dumping and reading the actual bytes at each
+entry shows they're real, human-readable ASCII strings, not code
+addresses — this is a **named profiler/telemetry checkpoint table**, not
+a render-stage dispatcher. Full table, indices 0-19 (`0x1404d0b50 +
+index*8`):
+
+| idx | hex | name |
+|---|---|---|
+| 0 | 0x0 | `physics` |
+| 1 | 0x1 | `cell dyn brush` |
+| 2 | 0x2 | `cell dyn model` |
+| 3 | 0x3 | `cell scene ent` |
+| 4 | 0x4 | `dpvs ent` |
+| 5 | 0x5 | `bound ent` |
+| 6 | 0x6 | `spot shadow ent` |
+| 7 | 0x7 | `trace` |
+| 8 | 0x8 | `trace_to_entity` |
+| 9 | 0x9 | `fx pass 0` |
+| 10 | 0xa | `fx pass 2` (note: no `fx pass 1` in this table -- real gap, not a read error) |
+| 11 | 0xb | `glass` |
+| 12 | 0xc | `fx pass 4` |
+| 13 | 0xd | `fx pass 5` |
+| 14 | 0xe | `cell static` |
+| 15 | 0xf | `smodelcache` |
+| 16 | 0x10 | `skin model` |
+| 17 | 0x11 | `add scene ent` |
+| 18 | 0x12 | `gen drawsurfs` |
+| 19 | 0x13 | `cell glass` |
+
+**This is genuinely valuable, independent of the dispatch-table
+misreading**: `FUN_1401d7480`'s own real call sequence (`notify(1)` through
+`notify(6)`, back to back) now reads as real, named scene-setup phases —
+`cell dyn brush` → `cell dyn model` → `cell scene ent` → `dpvs ent`
+(**DPVS** = almost certainly Umbra's "Dynamic Potentially Visible Set"
+middleware, well-known visibility-culling tech used across this engine
+generation) → `bound ent` → `spot shadow ent` — i.e. **this is the real
+visible-scene-determination / shadow-caster-gathering pipeline**, the
+exact "what's actually visible and what casts shadows this frame" phase
+that has to run before any draw command exists. `add scene ent` (0x11)
+and, most importantly, **`gen drawsurfs` (0x12)** — called right after
+`add scene ent` and right before the HUD tick at the very end of
+`FUN_1401d7480` — is almost certainly the direct bridge into section 4's
+render command buffer: "generate draw surfaces" is the classic id-Tech
+term for converting the culled/visible entity list into the actual
+per-surface draw commands the backend consumes.
+
+**Revised understanding of `FUN_1401ea4b0` itself**: its body
+(`func_0x0001401e94f0(0xffffffff, &UNK_1404234e8, table[stageId])`
+immediately followed by `FUN_1401ea200(&UNK_1401ea540, 1)`) is now read as
+a lightweight, single-shot TIMESTAMPED MARKER call (not a begin/end zone
+pair, and not a dispatch to real work) — consistent with this engine
+family's known use of RAD Game Tools' Telemetry profiler internally (CoD
+titles of this era are publicly known Telemetry licensees). **Critically,
+none of the real phase work (culling, shadow-caster gathering, drawsurf
+generation) appears as a separate function call anywhere near these
+marker calls in `FUN_1401d7480`'s own traced body** — the six `notify()`
+calls run back-to-back with no other substantial work between most of
+them. This is real, concrete evidence (not just inference) that **the
+actual scene-setup/culling/drawsurf work happens elsewhere, almost
+certainly on a separate thread**, and these markers are cross-thread
+synchronization/telemetry checkpoints the main/game thread uses to record
+or wait on that other thread's progress through each named phase — this
+sharpens, rather than contradicts, section 4's already-confirmed frontend/
+backend command-buffer split. Finding that separate thread (or the
+function(s) that actually perform each named phase, wherever they run) is
+now the single most direct path to the real draw-call submission code —
+more direct than continuing to trace this specific call chain further.
+
+### Original (now-corrected) framing, kept for the record only
 
 ```c
 void FUN_1401ea4b0(int stageId) {
@@ -233,8 +306,16 @@ further.
 
 - **The actual render-command consumer/backend** (section 4's open
   question #2) — nothing in this pass's trace reaches it.
-- **The per-stage listener table's real targets** (section 5's open
-  question) — the literal next decompile target.
+- **Whoever actually performs the named phases in section 5's table**
+  (`cell dyn brush/model`, `dpvs ent` culling, `spot shadow ent` gathering,
+  `gen drawsurfs`) — confirmed NOT to be inline in `FUN_1401d7480` itself,
+  almost certainly a separate thread. Real next step: enumerate this
+  process's threads at runtime (a genuinely answerable, low-risk static-
+  adjacent question — or, if this project's own thread-creation call sites
+  are searched statically, likely findable without a live attach at all:
+  grep for `CreateThread`/`_beginthreadex` xrefs and see which one's start
+  routine references the same `0x141896b98`-family command-stream globals
+  section 4 found).
 - **Shadow-map rendering** specifically — not yet located at all. This
   project's own existing visual-suite work (issue #107,
   `ForceHighQualityShadows`) found the `sm_fastSunShadow` dvar and the
