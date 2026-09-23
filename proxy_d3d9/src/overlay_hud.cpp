@@ -7488,10 +7488,28 @@ HRESULT WINAPI Hook_EndScene(void* device)
         DWORD nowMs = GetTickCount();
         if (nowMs - s_lastVramLogMs >= 1000) {
             s_lastVramLogMs = nowMs;
+
+            // Self-audit timing (2026-09-23) -- direct user reports of a sustained
+            // ADS/pause/mission FPS drop with GPU/RAM/VRAM all confirmed flat started
+            // ONLY after these two VRAM diagnostics were added this session, and
+            // neither call is wrapped by this project's own ourOwnTotalMs metric
+            // (frame_benchmark.cpp: a hardcoded sum of 6 named categories, none of
+            // which include anything added today) -- every "our own code is near-zero"
+            // conclusion drawn earlier today was structurally blind to this. Real,
+            // direct QueryPerformanceCounter timing added here to settle it either way
+            // rather than keep guessing -- logs only when a call takes >=1ms, so this
+            // stays silent in the normal/fast case.
+            LARGE_INTEGER vramTimeFreq{}, vramTimeStart{}, vramTimeEnd{};
+            QueryPerformanceFrequency(&vramTimeFreq);
+
+            QueryPerformanceCounter(&vramTimeStart);
             void** deviceVtbl = *reinterpret_cast<void***>(device);
             auto getAvailableTextureMemory = reinterpret_cast<GetAvailableTextureMemory_t>(
                 deviceVtbl[kGetAvailableTextureMemoryVtableIndex]);
             UINT availBytes = getAvailableTextureMemory(device);
+            QueryPerformanceCounter(&vramTimeEnd);
+            double legacyCallMs = (static_cast<double>(vramTimeEnd.QuadPart - vramTimeStart.QuadPart) * 1000.0) / static_cast<double>(vramTimeFreq.QuadPart);
+
             // CRITICAL LESSON (recurring bug class, now hit 5+ times in this project --
             // see known_issues_x64.md's own standing note on this): sprintf_s's UCRT
             // fails FAST (FAST_FAIL_INVALID_ARG, c0000409) on overflow rather than
@@ -7502,12 +7520,25 @@ HRESULT WINAPI Hook_EndScene(void* device)
             sprintf_s(vramBuf, "[vram-diag] GetAvailableTextureMemory=%.1fMB (LEGACY D3D9 API, widely known unreliable -- see [vram-diag-real] for the authoritative DXGI number)",
                        static_cast<double>(availBytes) / (1024.0 * 1024.0));
             LogFromController(vramBuf);
+            if (legacyCallMs >= 1.0) {
+                char timingBuf[128];
+                sprintf_s(timingBuf, "[vram-diag-timing] GetAvailableTextureMemory call itself took %.3fms", legacyCallMs);
+                LogFromController(timingBuf);
+            }
 
             // Real, authoritative VRAM diagnostic (2026-09-23) -- vram_diag.cpp,
             // IDXGIAdapter3::QueryVideoMemoryInfo. Same ~1s rate limit as the legacy
             // call above, kept side by side for direct comparison rather than replacing
             // it outright.
+            QueryPerformanceCounter(&vramTimeStart);
             LogRealVramDiagIfDue();
+            QueryPerformanceCounter(&vramTimeEnd);
+            double realCallMs = (static_cast<double>(vramTimeEnd.QuadPart - vramTimeStart.QuadPart) * 1000.0) / static_cast<double>(vramTimeFreq.QuadPart);
+            if (realCallMs >= 1.0) {
+                char timingBuf[128];
+                sprintf_s(timingBuf, "[vram-diag-timing] LogRealVramDiagIfDue (DXGI QueryVideoMemoryInfo) call itself took %.3fms", realCallMs);
+                LogFromController(timingBuf);
+            }
         }
     }
 
