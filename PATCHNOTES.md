@@ -29,6 +29,7 @@ patch history is preserved in
 
 ### What's New
 1. **Real on-screen render-scale warning at 200%.** Fires once per session, on-screen and dismissible, and never clamps or restricts the setting itself — explicitly worded as hardware-dependent, since more powerful GPUs may have a genuinely higher safe ceiling this project has no way to detect automatically. See `re_notes/known_issues_x64.md` issue #4 for the full investigation trail.
+2. **`InternalRenderScalePercent` now works under Multiplayer.** The first real MP-enabled visual-enhancement-suite feature — its hook signature was independently re-verified against `iw5mp.exe` and its own hook body has no dependency on anything SP-only. Motion blur/FSR remain SP-only for now (their required safety-gate signature doesn't resolve under MP yet). Build-verified, not yet live-tested.
 
 ---
 
