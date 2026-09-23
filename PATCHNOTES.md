@@ -8,6 +8,15 @@ patch history is preserved in
 
 ---
 
+## Unreleased
+
+**Summary:** A real, severe, sustained stutter tied to `InternalRenderScalePercent` above 200% (damage, pause, ADS, level-transitions all trigger it) was investigated in depth and root-caused to a genuine native engine stability limit at large render-target sizes, not a bug in this project's own code — confirmed via five separate real fix/rule-out attempts, all eliminated. The render-scale warning now fires at the real, tested boundary instead of a generic ported heuristic, and is shown on-screen, not just logged.
+
+### What's New
+1. **Real on-screen render-scale warning at 200%.** Replaces the old ~150%-linear heuristic (ported from x86's own, now-largely-moot `ForceD3D9On12`-era warning) with the real, live-tested boundary this session confirmed directly: clean at 200%, a severe stutter above it, on this project's own reference GPU (RTX 2080 Ti). Fires once per session, on-screen and dismissible, and never clamps or restricts the setting itself — explicitly worded as hardware-dependent, since more powerful GPUs may have a genuinely higher safe ceiling this project has no way to detect automatically. See `re_notes/known_issues_x64.md` issue #4 for the full investigation trail.
+
+---
+
 ## v0.0.1-x64 — Alpha (2026-09-22) — first release on the rebuilt 64-bit line
 
 **Early release -- expect hidden bugs and unfinished or unported features.** Survival is the recommended mode
