@@ -3764,15 +3764,8 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                 // are SUBTRACTED from, not added.
                 *g_yawAccum -= yawDelta;
                 *g_pitchAccum -= pitchDelta;
-                // Motion blur's own real per-frame delta feed -- same values, same
-                // sign convention x86's InjectControllerLookAngles uses for its own
-                // g_motionBlurYawDeltaDeg/g_motionBlurPitchDeltaDeg (analog_input_hooks.cpp).
-                g_motionBlurYawDeltaDegX64 = yawDelta;
-                g_motionBlurPitchDeltaDegX64 = pitchDelta;
             } else {
                 g_lookAccelStartMsX64 = 0; // stick back at neutral -- next push starts the ramp fresh
-                g_motionBlurYawDeltaDegX64 = 0.0f;
-                g_motionBlurPitchDeltaDegX64 = 0.0f;
             }
 
             // Gyro-aim, ported 2026-09-12 -- mirrors x86's own InjectControllerLookAngles
@@ -3807,8 +3800,6 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
                     if (g_modConfig.invertLook) gyroPitchDelta = -gyroPitchDelta; // OG console "Invert Look" applies uniformly
                     *g_yawAccum -= gyroYawDelta;
                     *g_pitchAccum -= gyroPitchDelta;
-                    g_motionBlurYawDeltaDegX64 += gyroYawDelta;
-                    g_motionBlurPitchDeltaDegX64 += gyroPitchDelta;
                 }
             }
         }
@@ -3822,6 +3813,32 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // if it's set.
     if (g_inputGateFlag) *g_inputGateFlag &= ~kInputGateBit;
 
+    // Motion blur's real per-frame delta feed -- UNIVERSAL capture (2026-09-23,
+    // direct user instruction: "make motion blur not controller only(as that was
+    // always a limitation)"). Previously this only ever reflected our own
+    // controller-stick contribution (set directly inside the stick-input block
+    // above), meaning keyboard/mouse players got zero motion blur regardless of
+    // how much they actually looked around -- the accumulator write above is
+    // controller/gyro-only, real mouse/keyboard look happens entirely inside the
+    // native trampoline below, a completely separate code path this file never
+    // touches. Per this file's own already-documented accumulator semantics (see
+    // g_pitchAccum's header comment above): the native call ADDS its own real
+    // mouse/keyboard delta on top of whatever's already in the accumulator
+    // (an accumulate, not an overwrite -- controller and mouse correctly stack),
+    // then packs the WHOLE accumulated value into the real usercmd angle fields
+    // and writes back only the small leftover fractional remainder. That means
+    // "value right before the native call" minus "value right after" gives the
+    // REAL total applied delta for this tick -- controller, gyro, AND real
+    // mouse/keyboard -- regardless of which device(s) actually contributed,
+    // using the exact same sign convention (pre-minus-post = positive in the
+    // same direction the old `yawDelta`/`pitchDelta` values already were, since
+    // every contributor here SUBTRACTS from the accumulator). Replaces the old
+    // per-source direct writes (stick block and gyro block above) entirely --
+    // both removed, this single capture now covers everything they used to
+    // cover plus real mouse/keyboard, which neither of them ever did.
+    const float preNativeYaw = g_yawAccum ? *g_yawAccum : 0.0f;
+    const float preNativePitch = g_pitchAccum ? *g_pitchAccum : 0.0f;
+
     // Call through -- native logic runs to completion (picks up our look write
     // above as part of its own unconditional accumulator-pack step; for
     // movement, this is the same "native logic runs to completion, then this
@@ -3829,6 +3846,9 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
     // x86's own InjectControllerMovement, a POST-hook additive layer on top of
     // the keyboard writer, not a replacement of it).
     g_realMovementTick(param1, param2);
+
+    if (g_yawAccum) g_motionBlurYawDeltaDegX64 = preNativeYaw - *g_yawAccum;
+    if (g_pitchAccum) g_motionBlurPitchDeltaDegX64 = preNativePitch - *g_pitchAccum;
 
     // K+M safe mode (2026-09-16): skip every POST-hook controller/mod-side
     // input contribution below (Fire/ADS/Reload/Weapnext/Melee/Lethal/
