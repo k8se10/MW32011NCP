@@ -7312,6 +7312,54 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
     return true;
 }
 
+// InternalRenderScalePercent's own hook installer, split out of
+// InstallAnalogInputHooksX64() below (2026-09-23, MP visual-suite port) so it can be
+// called from BOTH the SP and MP branches in dllmain.cpp, unlike every other hook in
+// that function (gameplay input, menu nav, motion blur/FSR's safety gates, etc.),
+// which stay SP-only per CLAUDE.md S10.8 -- their own signatures have only ever been
+// verified against iw5sp.exe. This one is different: kRenderResComputeSignature was
+// independently signature-scanned against iw5mp.exe this same session and confirmed
+// to resolve to exactly one match (0x1401e2e00, PatternScanMP.java), and
+// Hook_RenderResCompute's own body (see its definition above) only ever reads
+// g_modConfig.internalRenderScalePercent and writes into the struct pointer the real
+// trampoline itself passes in -- no dependency on any other SP-only-resolved global
+// (g_menuActiveGateFlag, g_inLevelFlag, etc.), unlike motion blur/FSR, whose own
+// required three-way safety gate has ZERO signature matches on iw5mp.exe and is NOT
+// safe to enable there yet (see known_issues_x64.md issue #4's MP-scoping notes).
+// ForceAnisotropicFiltering/ForceHighQualityShadows/ForceHighQualityLighting were
+// considered for the same MP port and excluded entirely -- they're currently silent
+// no-ops on x64 SP too (known_issues_x64.md issue #6), a separate, deeper bug, not
+// something this hook shares or is blocked by.
+void InstallRenderScaleHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kRenderResComputeSignature);
+    if (!r.found) {
+        LogFromController("[x64-video-scale] FATAL: render-resolution-compute signature did not resolve -- "
+            "InternalRenderScalePercent will have no effect this session");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_RenderResCompute),
+                                            reinterpret_cast<void**>(&g_origRenderResCompute));
+    if (createStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-video-scale] FATAL: MH_CreateHook failed for render-res-compute @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-video-scale] FATAL: MH_EnableHook failed for render-res-compute @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[x64-video-scale] InternalRenderScalePercent hook installed and enabled -- "
+        "FUN_1401bd1d0 (x64 equivalent of x86's FUN_00679010).");
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -7933,35 +7981,11 @@ void InstallAnalogInputHooksX64()
     // InternalRenderScalePercent -- MinHook detour on FUN_1401bd1d0 (x64 equivalent
     // of x86's FUN_00679010), same override-before-trampoline mechanism as the
     // x86 original. See kRenderResComputeSignature's own comment for the full
-    // discovery trail.
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kRenderResComputeSignature);
-        if (!r.found) {
-            LogFromController("[x64-video-scale] FATAL: render-resolution-compute signature did not resolve -- "
-                "InternalRenderScalePercent will have no effect this session");
-        } else {
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_RenderResCompute),
-                                                    reinterpret_cast<void**>(&g_origRenderResCompute));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-video-scale] FATAL: MH_CreateHook failed for render-res-compute @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-video-scale] FATAL: MH_EnableHook failed for render-res-compute @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    LogFromController("[x64-video-scale] InternalRenderScalePercent hook installed and enabled -- "
-                        "FUN_1401bd1d0 (x64 equivalent of x86's FUN_00679010).");
-                }
-            }
-        }
-    }
+    // discovery trail. 2026-09-23: split into InstallRenderScaleHookX64() (above)
+    // so dllmain.cpp's MP branch can call it too -- see that function's own header
+    // comment for why this one hook is safe to port to MP while the rest of this
+    // function isn't.
+    InstallRenderScaleHookX64();
 
     // In-level time-delta flag -- resolves g_inLevelFlag (one of FSR RCAS/motion
     // blur's two real safety gates on x64; the third, menu-active, is already

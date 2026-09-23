@@ -29,6 +29,13 @@ void InstallAnalogInputHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2
     // x64 migration, real signature-scanned hooks (CLAUDE.md SS5/SS10.3 policy).
     // Deliberately a separate function, not an overload, so the platform split is
     // visible at the call site below, not hidden in a single shared name.
+#if defined(_M_X64) || defined(_WIN64)
+void InstallRenderScaleHookX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-23,
+    // split out of InstallAnalogInputHooksX64() specifically so it can be called under
+    // BOTH SP and MP (see that function's own header comment for why this one hook is
+    // safe to port to MP while the rest of the SP-only gameplay/menu-nav/visual-suite
+    // hooks aren't yet).
+#endif
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 #if defined(_M_X64) || defined(_WIN64)
 void InstallWaitCoalescingHooksX64(); // defined in wait_coalescing_x64.cpp, 2026-09-16
@@ -607,6 +614,22 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 "Multiplayer has no verified hook signatures yet (CLAUDE.md's MP scope "
                 "decision: static RE first, opt-in live work once it starts). "
                 "XInput polling and other exe-agnostic features still run normally.");
+#if defined(_M_X64) || defined(_WIN64)
+            // 2026-09-23, direct instruction ("time to make the graphics enhancements
+            // available on mp so we have a few feats for this release") -- the first
+            // real MP-enabled visual-enhancement-suite feature. InternalRenderScalePercent
+            // is the one confirmed safe to enable here: its own signature was
+            // independently re-verified against iw5mp.exe this session (1 clean match,
+            // PatternScanMP.java) and its hook body has no dependency on any other
+            // SP-only-resolved global, unlike motion blur/FSR (whose required in-level
+            // safety-gate signature has ZERO matches under iw5mp.exe -- not safe to
+            // enable yet, see known_issues_x64.md issue #4) or the forced-quality dvar
+            // toggles (currently silent no-ops on x64 entirely, SP included -- a
+            // separate, deeper bug, known_issues_x64.md issue #6). See
+            // InstallRenderScaleHookX64()'s own header comment (analog_input_hooks_x64.cpp)
+            // for the full scoping rationale.
+            InstallRenderScaleHookX64();
+#endif
             // 2026-09-15, direct instruction -- an on-screen warning through the same
             // notifier "controller connected" uses, not just a log line: a player
             // under iw5mp.exe has no other way to know why nothing responds when they
@@ -660,6 +683,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 "menu navigation are not supported in Multiplayer. Use keyboard/mouse.\n\n"
                 "\x02" "\xE2\x9C\x94 The netcode security fixes are active and protect this "
                 "mode too.\n\n"
+#if defined(_M_X64) || defined(_WIN64)
+                "\x02" "\xE2\x9C\x94 InternalRenderScalePercent (the visual-enhancement suite's "
+                "render-resolution override) is also active here.\n\n"
+#endif
                 // FUTURE (once MP has real, partial gameplay support -- swap the warning
                 // paragraph above for this one, nothing else needs to change):
                 // "\x01" "\xE2\x9A\xA0 Multiplayer is in pre-alpha and will contain bugs and "
