@@ -372,6 +372,57 @@ set — this project's own existing research already concludes that). This real
 track record is genuine evidence that narrows the ambient worry about VAC's
 practical (not theoretical-maximum) enforcement against this specific game.
 
+**Re-read against this project's own existing VAC research, direct
+instruction ("check the security research and corroborate claims to the new
+binary as who knows maybe they added some") — two things that sharpen, not
+soften, the picture above:**
+
+**(a) The ENB depth-of-modification finding (`known_issues.md`, 2026-07-20
+VAC research pass) already puts this project's EXISTING technique closer to
+a real-ban-history risk category than the "2 months, zero bans" framing
+alone suggests.** That research's own decisive finding, re-read this
+session rather than assumed still valid: the real distinguishing risk
+factor across known cases is DEPTH of modification, not loading method.
+ReShade (visual-only, reads/writes only its own post-process buffers) has
+no proven ban history. ENB — a comparable-depth `d3d9.dll`/`opengl32.dll`
+proxy that "goes deeper" than pure visual post-processing — has real,
+documented ban history on CS/HL-family titles. This project's own core
+technique (direct `usercmd_t`/`kbutton_t` struct writes into the live
+engine, not just visual buffers) is structurally closer to ENB's category
+than ReShade's clean one. **This means the 2-month/zero-bans track record
+is genuinely reassuring evidence about THIS specific game's practical VAC
+enforcement (an old, likely under-maintained signature set, real and
+worth weighing) — but it was never evidence that the base technique sits
+in a low-risk category by design.** Both facts stand together: real clean
+track record on a real non-trivial-by-category technique, not a low-risk
+technique with a track record that merely confirms the obvious.
+
+**(b) The full cross-surface risk matrix (`known_issues.md`, same pass)
+still applies, unchanged, and matters directly for scoping `Vulkan` mode's
+own rollout**: Solo Campaign is near-zero risk — Valve's own partner
+documentation states VAC does nothing in single-player. Survival online
+co-op is LOW, closer to solo than to MP — MW3's own Steam Community FAQ
+states directly that VAC-banned accounts can still play "Campaign and Spec
+Ops... with no restrictions," meaning VAC's enforcement doesn't reach this
+mode at all, not just that it's lightly enforced there. Multiplayer is the
+one surface where the risk is real, confirmed-active, and non-theoretical.
+The hooking technique's own risk (per (a) above) is surface-independent —
+it's the SAME technique everywhere — but VAC's actual ENFORCEMENT is not,
+which is exactly why gating `Vulkan` mode SP-only (§5 mitigation plan,
+below) is doing real risk-reduction work, not just a conservative default:
+it keeps the feature entirely off the one surface where either VAC or
+`bdAntiCheat` (Demonware's separate system, confirmed unchanged in the
+current x64 binaries — see `known_issues_x64.md` issue #7) can actually act
+on anything.
+
+**Net correction to this section's own earlier framing**: the "real track
+record... narrows the ambient worry" language above is still true, but
+should not be read as "so the base technique is probably fine" — under (a),
+the base technique was already the deeper, ENB-adjacent category before
+`Vulkan` mode is even considered. `Vulkan` mode's full-module-replacement
+risk (below) stacks on TOP of that already-non-trivial baseline, not onto
+a clean one.
+
 **The real distinction that still stands, and why the track record doesn't
 fully retire the new risk**: everything in that 2-month track record hooks
 *within* the real, expected system `d3d9.dll` — the module VAC observes is
