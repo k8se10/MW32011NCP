@@ -22,6 +22,32 @@ architecture, to be filled in incrementally across sessions. Unlike
 full), this covers the 3D scene renderer itself: how a frame's worth of
 game-world geometry actually reaches the GPU.
 
+**Real scope correction, same day, from actual research (full trail in
+`known_issues_x64.md` issue #2)**: investigating a real, working reference
+implementation (a GTA IV DLAA/DLSS project) found that full path-tracing/
+geometry-and-material-replacement renderer overhaul — the maximal reading of
+"renderer replacement" this doc opened with — is genuinely, structurally
+blocked for this engine, not just hard: RTX Remix (NVIDIA's real runtime,
+the thing that would do it) is explicitly built only for D3D8/9 games with
+FIXED-FUNCTION pipelines, and IW5 is a fully shader-based renderer (this
+doc's own section 5b already confirms real material/technique/shader-asset
+systems throughout, not fixed-function texture-stage-state rendering) — the
+same mismatch GTA IV's own RAGE engine has, which is exactly why that
+project never attempts it either. The achievable, real slice — DLAA/DLSS
+upscaling and reconstruction via a ReShade add-on layer (`LumeniteFX` for
+motion vectors, `DLSS5-Feeder` for the actual neural-rendering feed), no
+cross-process bridge needed since MW3 is already native 64-bit unlike GTA
+IV — is itself, honestly, still fundamentally a sophisticated ReShade-layer
+approach, the same category of thing this doc's own opening framing
+contrasted against ("not much more than a reshade preset"). The real
+distinction that survives: a genuine DLSS/DLAA neural-rendering pipeline
+with real optical-flow motion vectors is a categorically more capable
+ReShade layer than a filter/color-grade preset, but it's still a
+post-process addition on top of the native D3D9 pipeline mapped in this
+document, not a replacement of it — worth being precise about that
+distinction going forward rather than let "renderer replacement" imply more
+than what's actually achievable here.
+
 **Methodology**: same as every other x64 RE pass in this directory —
 `analyzeHeadless.bat -import ... -readOnly -noanalysis` against
 `re_notes/x64_migration/binaries/iw5sp.exe` (the tracked `.rep` project
