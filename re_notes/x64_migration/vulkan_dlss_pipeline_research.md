@@ -305,6 +305,153 @@ obtain — only the matrix-construction math (present here, ready to adapt)
 and the actual jitter/projection hook point (§2.3's own still-open native RE
 item) are the real remaining work.
 
+### 2.6 REVISED PRIORITY 2026-09-23, direct instruction ("we want proper motion vectors... we may have to surface them off of engine data") — real, per-object motion sourced from IW5's own engine data, not camera-only alone
+
+§2.5's camera-only mode is real and stays correct for the majority of any
+frame (static world geometry) — but the user's own direct correction is
+right: it is not "proper" motion vectors on its own. Every dynamic entity
+(other players, AI, vehicles, dropped weapons, thrown grenades) would
+reconstruct as if rigidly attached to the camera, producing a real, visible
+smear/ghost trail on exactly the pixels a player's eye is most drawn to. This
+section researches what "proper" requires and how this project's own already-
+mapped renderer architecture makes it tractable, not a from-scratch problem.
+
+**The exact Streamline semantics for combining camera and object motion —
+re-read precisely this pass, `ProgrammingGuide.md` line 763**: the buffer tag
+itself is documented as carrying "**Object and optional camera** motion
+vectors" — confirming a real, deliberate, two-tier design, not an
+all-or-nothing choice. Read together with `cameraMotionIncluded`/
+`motionVectorsInvalidValue` (§2.5): when `cameraMotionIncluded = eFalse`,
+**the buffer we supply is read as the OBJECT-ONLY contribution** — Streamline
+computes the camera-induced term itself (from `clipToPrevClip`/depth) and,
+per-pixel, either uses our object value where we've written real data, or
+falls back to pure camera motion wherever our buffer holds the declared
+`motionVectorsInvalidValue` sentinel. **This is the real, correct
+architecture for this project specifically**: we do NOT need to compute or
+understand camera motion inside any custom per-object shader work at all —
+that stays entirely Streamline's problem, handled once, correctly, for the
+whole frame via §2.5's baseline. Real, from-scratch native work is only
+needed to populate the OBJECT-relative residual, and only at the pixels
+genuinely dynamic entities cover — a real, legitimate scope reduction, not
+a compromise: **the render passes needing real per-object velocity output
+are the same, comparatively small subset of each frame's draw calls that
+were already going to be the interesting/dynamic ones**, not a second full-
+scene redraw. (The exact per-pixel combination arithmetic beyond this —
+whether SL adds our object value to its own camera term or fully replaces it
+at populated pixels — is not spelled out to full mathematical precision in
+either doc read this pass; treat as a real, standard "hybrid object+camera
+motion vector" contract per the comment's own wording, but confirm the
+precise formula against `ProgrammingGuideDLSS_RR.md`/DLSS-FG's own docs or a
+live test before trusting output correctness — flagged honestly as unread
+this pass, not assumed.)
+
+**What "surfacing real per-object motion off of engine data" concretely
+means, and why it doesn't require decompiling IW5's own shaders (a real,
+much larger undertaking) — the standard, industry-established technique,
+adapted to this project's own already-proven "hook at the D3D9 API boundary,
+not deep engine internals" philosophy (§2.3):**
+
+1. **Capture, don't compute.** This project does not need to independently
+   figure out how any given entity is animating or moving — the real game
+   engine already computes and uploads the exact transform (and, for skinned
+   meshes, the exact bone-matrix palette) that produces this frame's correct
+   pose, via ordinary `IDirect3DDevice9::SetVertexShaderConstantF` calls this
+   project can already intercept (the same device-call boundary its own
+   existing hooks already sit on). The only new work is RETAINING a copy of
+   those same per-draw constants from the PREVIOUS frame, keyed by a stable
+   per-object identity, so both poses are available together when the
+   current frame's velocity pass runs.
+2. **Replay, don't modify.** Rather than patching IW5's own real, precompiled
+   vertex shaders (a genuinely large undertaking — extracting and
+   reassembling D3D9 Shader Model 3 bytecode, a real, documented but
+   nontrivial format, and one this project's own `tools/iw5oat` fastfile work
+   already has some real, hard-won familiarity with extracting assets from,
+   though not shader bytecode specifically), bind the SAME real vertex/index
+   buffers the game already uses for a given draw to a second, small,
+   **hand-authored** vertex/pixel shader pair this project compiles itself
+   (ordinary, source-controlled HLSL, not reverse-engineered bytecode) that
+   does nothing but transform position (and, for skinned draws, apply the
+   identical bone-palette blend using the captured bone matrices) through
+   BOTH the current and the retained previous-frame transform, and writes
+   clip-space velocity (jitter already removed per §2.3's own correctness
+   requirement) to a dedicated render target. This is the same standard
+   technique real modern engines use for their own native "velocity pass" —
+   not a hack specific to this project's own constrained situation.
+3. **Real, honest complexity: skinned/animated draws need the real bone
+   palette, not just a per-object rigid transform.** A pure per-object rigid
+   transform diff (cheap, no skinning math needed) is CORRECT for
+   non-animated dynamic draws (vehicles, dropped weapons, thrown grenades,
+   doors) but WRONG for animated characters — a rigidly-diffed player model
+   would show the torso's own motion applied uniformly to swinging arms/legs
+   too, a real, visible artifact. Getting characters right needs the actual
+   per-vertex bone blend replicated in the hand-authored shader, using the
+   SAME captured current+previous bone-matrix-palette constants the real
+   draw already uploads — this project's own renderer-architecture mapping
+   (`renderer_architecture_map.md` §5b) already found a real, named
+   `skin model` render-command-buffer stage (tag `0x10`, distinct from the
+   generic `cell dyn model` stage, `0x2`) — direct, already-on-record
+   confirmation that skinned draws are already a first-class, separately-
+   identifiable category in IW5's own command stream, not something this
+   project would need to newly discover the existence of. **Not yet
+   confirmed**: the exact vertex-format/bone-count-per-vertex convention this
+   engine's skinning shaders expect — real, scoped native RE, not started.
+4. **Real, still-open native RE requirement: stable per-object identity
+   across frames.** Draw ORDER is not a safe key — state-sorting and
+   visibility culling can reorder or drop draws frame to frame, so a
+   "previous frame's transform" cache keyed by draw index would silently
+   mismatch the wrong object's history to the wrong current draw, corrupting
+   results in a way that could look plausible rather than obviously broken.
+   A real, stable per-entity key is needed instead — a genuinely promising,
+   not-yet-confirmed lead already on record from the same renderer-mapping
+   pass: `renderer_architecture_map.md` describes real, named per-entity
+   scene-processing stages (`cell scene ent`, `add scene ent`, `gen
+   drawsurfs` — the last one explicitly flagged as "almost certainly the
+   direct bridge... into the render command buffer: 'generate draw surfaces'
+   is the classic id-Tech term for converting the culled/visible entity list
+   into the actual per-surface draw commands the backend consumes") —
+   strongly suggesting the engine's own draw-command stream already carries
+   real entity/model handles this project could key a cache by, rather than
+   needing to invent an identity scheme from nothing. **This is the single
+   most important unconfirmed lead for this whole feature** — the same
+   document honestly flags "the actual draw-call path itself, shadow pass,
+   and material/shader binding remain unmapped" as of this pass, so this is
+   real, scoped, not-yet-started RE work, not a solved problem.
+5. **Real, standard handling for objects with no valid previous-frame
+   history** (just spawned, just entered view, or the very first frame after
+   a level load / camera cut): write `motionVectorsInvalidValue` at those
+   pixels rather than a wrong or zero-length vector, exactly the sentinel
+   `sl::Constants` already reserves for this. `Constants::reset` (a real,
+   separate field, confirmed present in `sl_consts.h`, not previously
+   documented in this file) is the frame-level equivalent — set on a hard
+   discontinuity (level load, teleport, cutscene cut) to tell Streamline "the
+   previous frame has no connection to this one," which this project's own
+   already-existing level-load/menu-state detection (used elsewhere for the
+   visual-enhancement suite's own safety gates, e.g. FSR/motion blur's
+   `clcState`-based gating, issues #103/#104) is directly reusable for.
+6. **Real, standard scope reduction already common industry practice, not a
+   shortcut specific to this project**: alpha-blended/transparent draws are
+   routinely excluded from motion-vector generation in real engines (no
+   single well-defined "depth" for blended surfaces makes correct velocity
+   ill-defined for them anyway) — a legitimate, precedented way to keep this
+   project's own first real implementation's scope bounded to opaque,
+   skinned-or-rigid dynamic draws specifically.
+
+**Net, honest scope for "proper" motion vectors**: a real, multi-part
+native-RE-plus-new-shader-authoring effort — larger than §2.5's camera-only
+baseline, but concretely bounded and, per point 4 above, likely resting on
+engine infrastructure (stable per-entity draw identity, a distinct skinned-
+draw command category) this project's own renderer mapping has already found
+real, direct evidence of rather than having to discover from zero. Real next
+steps, in dependency order: (a) decompile enough of `gen drawsurfs`/the
+actual draw-submission path to confirm a stable per-entity key exists in the
+command stream and learn its real shape; (b) decompile the `skin model`
+command handler to learn IW5's real vertex-format/bone-palette convention;
+(c) author the hand-written current+previous velocity vertex/pixel shader
+pair; (d) wire the capture-and-retain cache for per-draw constants, keyed by
+whatever (a) finds. None of this is native-RE-blocked in principle — it's
+real, scoped, sequenced work, not an open question about whether it's
+possible.
+
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
 Directly listed `src/games/` in `github.com/clshortfuse/renodx` (main branch,
@@ -657,7 +804,7 @@ blocker.
    tracked**: the export-forwarding architecture must change (section 4.5) —
    real implementation work, not just a docs update, once this is built.
 2. **Sub-pixel jitter injection — REVISED 2026-09-23, contract fully specified, native RE still not started.** The exact data contract (separate `jitterOffset` field, un-jittered matrices, the Halton(2,3)/render-resolution formula, the mip-bias companion requirement, a real methodology precedent for validating it via a from-scratch TAA test rig) is now fully researched (section 2.3) — the one real remaining item is finding and hooking IW5's own projection-matrix-build function (one plausible, unconfirmed lead on record: `FUN_1401d8f70`) or, as a lower-native-RE-burden alternative, intercepting the relevant `SetVertexShaderConstantF` register directly. Not resolved, but no longer an open research question — a scoped RE task now.
-3. **Motion-vector reconstruction — REVISED 2026-09-23, real scope reduction found, not fully resolved.** Streamline's own `cameraMotionIncluded = eFalse` mode (section 2.5) means a first, real, shippable implementation only needs camera-only reprojection (matrices + depth, no per-object motion) — genuinely correct for the majority of any frame's pixels, not an approximation being oversold as more. Per-object motion for fast-moving dynamic entities (other players, vehicles, projectiles) stays real, deferred, from-scratch future work, but is now correctly framed as an incremental improvement rather than a blocking prerequisite.
+3. **Motion-vector reconstruction — REVISED AGAIN 2026-09-23, direct instruction to prioritize real, engine-sourced per-object motion, not the camera-only baseline alone ("we want proper motion vectors... we may have to surface them off of engine data").** Camera-only reprojection (section 2.5) stays real and correct for static world geometry, and Streamline's own buffer semantics ("Object and **optional** camera motion vectors," `ProgrammingGuide.md` line 763) confirm the two combine rather than being an either/or choice — but "proper" now means real, from-scratch work to surface actual per-object (and, for characters, per-bone) motion from IW5's own engine data (section 2.6): capturing the real current+previous-frame vertex-shader constants (transform, and bone-matrix palette for skinned draws) the game already uploads via `SetVertexShaderConstantF`, and replaying the same real vertex/index buffers through a small, hand-authored velocity shader pair — not patching IW5's own precompiled shaders, and not a generic optical-flow approximation. The single most important unconfirmed lead: whether IW5's own draw-command stream (`gen drawsurfs`, per `renderer_architecture_map.md`) carries a stable per-entity key this project can cache previous-frame transforms against — real, scoped, sequenced native RE, not yet started, detailed in section 2.6.
 4. **Streamline's own real license terms** ("Other," not yet read in full) and
    the exact redistribution requirements for the signed `sl.*.dll`/NGX runtime
    binaries in a shipped release (section 2.4).
