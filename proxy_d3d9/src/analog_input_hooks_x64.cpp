@@ -5064,6 +5064,89 @@ float __fastcall Hook_SqrtDomainErrorDiag(float value)
     return g_origSqrtDomainError(value);
 }
 
+// PURE DIAGNOSTIC hook -- FUN_14018b6c0, 2026-09-23. Render-scale-gated
+// "smooth to slideshow" investigation (known_issues_x64.md issue #4): direct user
+// confirmation, via real isolation testing, that render scale is the SOLE factor
+// (motion blur/FSR separately ruled out live) across pause (~4x), a specific
+// Campaign mission (~3x), and ADS (~2x) -- with GPU/RAM/VRAM all confirmed flat
+// throughout (Afterburner, live-monitored, tested with both RTSS and Afterburner
+// closed). This function is opcode 13 in the real per-viewport 2D/HUD command
+// stream (DAT_14040e630 + 13*8, dispatched by FUN_140189940's own
+// `while(*p!=0) jumpTable[*p](&p)` loop -- the SAME dispatch architecture this
+// project's own motion-blur trigger already hooks off of). Its real body
+// (re_notes/ghidra_scripts -- decompile on file) is a SCALAR, PER-PIXEL CPU copy
+// loop: LockRect a fresh offscreen surface sized to a sub-rectangle, hand-copy
+// every pixel with a byte-order shuffle (no SIMD, no GPU work), UnlockRect, then
+// StretchRect the result into the real backbuffer at a specific screen position --
+// real CPU cost scaling with width*height, i.e. with render-scale SQUARED, not
+// linear. This would explain every observed symptom at once: no GPU spike (this
+// is pure CPU work), a real per-render-scale-percent cost multiplier, and
+// correlation with UI/state-transition-style moments (pause, a scope/HUD element,
+// a mission-specific screen effect) that would plausibly queue this exact opcode.
+// This hook changes ZERO behavior -- always calls straight through with the real
+// argument untouched -- it only measures real width/height/timing of calls that
+// already happen, to confirm or rule this theory out directly rather than
+// continuing to trace the queuing side statically (expensive, ambiguous).
+//
+// Signature: first 111 bytes of the function (DumpSigBytes.java + raw
+// disassembly). Most of the tool's own "PC-relative" flags in this span are the
+// same false-positive class this file's own kPmoveTickSignature comment already
+// documents (R11-relative fixed stack displacements, not real addresses) --
+// confirmed via manual disassembly review, not assumed. Only two real
+// position-dependent operands exist and are wildcarded: the RIP-relative load of
+// DAT_1418886d0 at +0x29 (disp32) and the `JS` rel32 branch at +0x69.
+constexpr const char* kScreenCaptureCmdSignature =
+    "4C 8B DC 49 89 5B 10 49 89 6B 18 49 89 73 20 57 41 54 41 55 41 56 41 57 "
+    "48 83 EC 60 48 8B 01 49 8D 53 08 45 33 C0 4C 8B F1 48 8B 0D ?? ?? ?? ?? "
+    "4D 89 43 A8 8B 70 18 8B 78 14 45 8D 48 16 48 8B 58 20 8B 68 10 44 8B 68 0C "
+    "44 8B 78 08 44 8B 60 04 48 8B 01 49 89 53 A0 8B D7 45 89 43 98 44 8B C6 "
+    "FF 90 20 01 00 00 85 C0 0F 88 ?? ?? ?? ??";
+
+using ScreenCaptureCmdFn = void(__fastcall*)(void* param_1);
+ScreenCaptureCmdFn g_origScreenCaptureCmd = nullptr;
+
+void __fastcall Hook_ScreenCaptureCmdDiag(void* param_1)
+{
+    LARGE_INTEGER freq{}, t0{}, t1{};
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+
+    // Peek the real width/height this call is about to capture, read-only, BEFORE
+    // the real trampoline runs -- same field layout the decompile confirmed
+    // (lVar11 = *param_1; width = *(lVar11+0x18); height = *(lVar11+0x14)).
+    // Defensively guarded: if this ever reads garbage (a genuinely different
+    // struct shape than assumed), the width/height fields just log as whatever
+    // was there -- never dereferenced further, never written to, real behavior
+    // is completely unaffected either way.
+    unsigned width = 0, height = 0;
+    if (param_1) {
+        void* inner = *reinterpret_cast<void**>(param_1);
+        if (inner) {
+            width = *reinterpret_cast<unsigned*>(reinterpret_cast<uint8_t*>(inner) + 0x18);
+            height = *reinterpret_cast<unsigned*>(reinterpret_cast<uint8_t*>(inner) + 0x14);
+        }
+    }
+
+    g_origScreenCaptureCmd(param_1);
+
+    QueryPerformanceCounter(&t1);
+    double ms = (freq.QuadPart > 0)
+        ? static_cast<double>(t1.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart)
+        : 0.0;
+
+    static int s_fireCount = 0;
+    static double s_maxMs = 0.0;
+    ++s_fireCount;
+    if (ms > s_maxMs) s_maxMs = ms;
+    // Log every fire -- this is a real, opcode-gated command that should be rare
+    // (not a per-frame call), so no rate limit needed; if it turns out to fire
+    // every frame instead, that itself is important data this log will show.
+    char buf[192];
+    sprintf_s(buf, "[x64-screencapture-cmd-diag] FUN_14018b6c0 (opcode 13) call #%d: %ux%u pixels, took %.3fms (session max %.3fms)",
+               s_fireCount, width, height, ms, s_maxMs);
+    LogFromController(buf);
+}
+
 // In-level time-delta flag -- x64 equivalent of x86's kInLevelFlagAddr
 // (0x00A98ACC). Found via the same per-frame orchestrator chain this project's own
 // movement/look work already confirmed: x86's writer, FUN_0057e5b0, computes
@@ -7804,6 +7887,33 @@ void InstallAnalogInputHooksX64()
                     LogFromController(buf);
                 } else {
                     LogFromController("[x64-sqrt-domain-error-diag] Diagnostic hook installed on FUN_140395608 (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kScreenCaptureCmdSignature);
+        if (!r.found) {
+            LogFromController("[x64-screencapture-cmd-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ScreenCaptureCmdDiag),
+                                                    reinterpret_cast<void**>(&g_origScreenCaptureCmd));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-screencapture-cmd-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-screencapture-cmd-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-screencapture-cmd-diag] Diagnostic hook installed on FUN_14018b6c0, opcode 13 in the "
+                        "per-viewport 2D/HUD command stream (read-only, changes no behavior).");
                 }
             }
         }
