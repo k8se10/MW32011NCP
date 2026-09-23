@@ -57,7 +57,12 @@ void AssetCapture_InstallHookIfEnabled(void* realDevice);
 // from a genuinely low-frequency point (once per real frame at most, e.g.
 // Hook_EndScene, itself internally rate-limited further) -- never from
 // inside the CreateTexture hook itself.
-void AssetCapture_RecordCreateTextureForStormDiag(void* returnAddr, unsigned width, unsigned height, unsigned format);
+// 2026-09-23, round 2: captures a short real call stack (CaptureStackBackTrace)
+// instead of just the immediate return address -- the single-frame version
+// always showed the same generic Create2DTexture wrapper regardless of which
+// real subsystem requested the texture (confirmed live: a 292-call storm during
+// a real explosion/downed-state repro attributed every entry to one address).
+void AssetCapture_RecordCreateTextureForStormDiag(unsigned width, unsigned height, unsigned format);
 // Call from a low-frequency point (e.g. once per Hook_EndScene). Internally
 // rate-limited to roughly once every 2 seconds; a safe no-op otherwise.
 void AssetCapture_DumpCreateTextureStormIfDue();
