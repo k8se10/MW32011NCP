@@ -340,11 +340,22 @@ Dumping the surrounding qwords reveals the real table layout:
 
 0x1404d0718 - 0x1404d0730  (4 qwords, code addresses: 0x1401be850,
     0x1401be860, 0x1401be8a0, 0x1401c1210)
-    likely per-category creation/setup callback function pointers --
-    fewer entries (4) than render targets (19), so probably one callback
-    per TARGET TYPE (e.g. shadow-map-style vs. color-buffer-style vs.
-    post-effect-style creation), not one per individual target. Not yet
-    decompiled.
+    **CORRECTED -- NOT part of this table, a coincidentally-adjacent,
+    unrelated table.** Originally guessed to be per-target creation
+    callbacks; decompiled all four and found three of them (the first
+    three) are small dvar/flag-gated accessors that tail-jump into a
+    shared function, `FUN_1401be940`, which turned out to be a genuine
+    **6-plane frustum/visibility test** (iterates 6 planes, a dot-product
+    inside/outside check per plane, returns whether a point survives
+    all 6 -- a completely standard frustum-culling primitive, nothing to
+    do with render-target creation). The fourth, `FUN_1401c1210`, is a
+    per-index device-capability bitmask comparison, also unrelated. This
+    is real, useful RE in its own right (a newly-identified, reusable
+    frustum-test primitive) but it means this specific address range is
+    NOT the render-target table's own creation-callback array -- just
+    four qwords that happen to sit in the same general `.data` region.
+    The real per-target creation mechanism (if a callback-pointer array
+    exists for it at all) has not been located.
 
 0x1404d0740 onward: more qword entries (0x140420de8, +0x20e08, ...),
     evenly spaced by 0x20 (32) bytes -- a fourth, not-yet-identified
@@ -382,22 +393,39 @@ genuine, concrete new lead for a future visual-enhancement or
 renderer-replacement feature.
 
 **Not yet found: the function that walks this table and issues the real
-`CreateTexture`/`CreateRenderTarget` calls.** Attempted via `FindLeaRefsTo`
-against three candidate base addresses (the descriptor-pair table start
-`0x1404d0600`, the name-pointer array start `0x1404d0680`, and the
-callback-pointer array start `0x1404d0718`) — all three came back with
-zero matches. A real, honest dead end for THIS specific technique against
-THIS specific table: the consuming code likely computes the table's
-address via a different addressing form this scanner doesn't match yet
-(e.g. an absolute 64-bit `MOV reg, imm64` load, or indexing from a
-different, not-yet-identified base a fixed offset away from one of these
-three). Not pursued further this pass — flagged as a real open item
-alongside the backend-thread search in section 6, same underlying
-tooling gap (byte-pattern scanning for one specific instruction shape at
-a time is inherently a guess-the-encoding game; a real disassembly pass,
-even a narrow one scoped to just the functions already known to be
-render-init-adjacent like `FUN_1401bd1d0`'s own neighbors, would likely
-be more productive than more scanner variants).
+`CreateTexture`/`CreateRenderTarget` calls.** Real, multi-technique
+effort spent on this specific sub-question this pass, all genuinely
+exhausted for now:
+1. `FindLeaRefsTo` (RIP-relative `LEA`) against the descriptor-pair table
+   start `0x1404d0600` — zero matches.
+2. Same tool against the name-pointer array start `0x1404d0680` — zero
+   matches.
+3. Same tool against what was believed to be the callback-pointer array
+   start `0x1404d0718` — zero matches (and per the correction just above,
+   this specific address turned out not to even belong to this table).
+4. `FindMovImm64RefsTo` (absolute 64-bit immediate load, a real
+   alternative addressing form to RIP-relative LEA) against
+   `0x1404d0600` — zero matches.
+5. Decompiling the four qwords at `0x1404d0718` directly (sidestepping
+   the need to find a REFERENCE to the table at all) — real result, but
+   a dead end for this specific question: a frustum-culling primitive,
+   unrelated.
+
+Five genuine, distinct technique attempts, all negative or off-target,
+against this one specific sub-question — this is the kind of extended,
+same-angle run `CLAUDE.md` §10.9 ("Fresh Perspective") flags as the
+signal to stop guessing at more byte-pattern variants and either bring
+in a different technique class entirely (a real, even if narrowly
+scoped, Ghidra analysis pass — this project's `-noanalysis` convention
+is a deliberate speed tradeoff, not an absolute rule, and a pass scoped
+to just this table's containing `.data` region plus its nearby `.text`
+would very likely resolve this in one shot where five rounds of
+blind byte-pattern guessing haven't) or ask before continuing to sink
+more effort into this one narrow angle. Genuinely valuable, unaffected
+findings banked regardless (the full render-target name table itself,
+the frustum-test primitive, the material/light-def asset-type
+correction) — this is a dead end for ONE specific follow-up question,
+not for the renderer-mapping effort as a whole.
 
 ## 6. What's still completely unmapped
 
