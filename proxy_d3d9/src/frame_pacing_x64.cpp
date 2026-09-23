@@ -187,6 +187,31 @@ void LimitVisibleFrame(int targetFps)
 
 void OnEndSceneFramePacingX64()
 {
+    // 2026-09-23 (later): com_maxfps diagnostic moved ABOVE both early-returns
+    // below (framePacingEnabled and the SP-only gate) so it logs the real
+    // native com_maxfps VALUE every frame it changes, unconditionally --
+    // read-only, zero behavior change, safe under MP too since GetDvarFloatX64
+    // is only unsafe as a WRITE-adjacent trigger for the limiter logic below,
+    // not as a bare read here (same MP-crash mechanism as the SP-only gate's
+    // own comment describes, but the actual crash needs the limiter's own
+    // spin-wait to matter -- a single dvar read this early is not it). Direct
+    // motivation: "very very much looks like com_maxfps" -- a specific
+    // Campaign mission reported stuck at a hard, constant 30fps, and this is
+    // the one piece of real ground-truth data (what com_maxfps ACTUALLY reads
+    // as, live, during that exact mission) that settles whether the mission's
+    // own GSC script is setting it, without needing framePacingEnabled=1 (which
+    // would also engage the real limiter and confound the test).
+    if (GetDetectedGameExecutable() == GameExecutable::SP) {
+        const int diagTargetFps = static_cast<int>(GetDvarFloatX64_Exported("com_maxfps"));
+        static int s_lastLoggedTargetFpsUnconditional = -12345; // sentinel, guaranteed to differ from any real first value
+        if (diagTargetFps != s_lastLoggedTargetFpsUnconditional) {
+            s_lastLoggedTargetFpsUnconditional = diagTargetFps;
+            char buf[160];
+            sprintf_s(buf, "[frame-pacing-diag] com_maxfps changed -> %d (raw float target read this frame, unconditional)", diagTargetFps);
+            LogFromController(buf);
+        }
+    }
+
     if (!g_modConfig.framePacingEnabled) {
         return;
     }
