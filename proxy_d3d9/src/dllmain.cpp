@@ -611,14 +611,30 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // DrawTextA against this project's own embedded non-emoji font,
             // which cannot reliably render a true Unicode glyph like U+26A0;
             // "[!]" is the reliable equivalent this exact text path is
-            // guaranteed to render):
+            // guaranteed to render): SUPERSEDED 2026-09-22 by the welcome
+            // modal's own colour-marker/leading-symbol markup (see
+            // ShowWelcomeModalIfNewVersion, d3d9_hook.cpp), which successfully
+            // renders both U+26A0 (warning) and U+2714 (check) via a dedicated
+            // symbol font -- that "[!]" fallback note is now stale.
+            //
+            // 2026-09-23 -- restyled to match the SP-side welcome modal's own
+            // format exactly: a heading marker (\x03), a warning-coloured
+            // paragraph with the same real warning glyph for what's NOT there,
+            // a positive-coloured paragraph with the same real checkmark for
+            // what IS active, and the same "Enter / Space / Click to
+            // continue:" close every dismiss-required modal in this project
+            // now ends with, instead of one flat, uncoloured line.
             ShowOverlayMessageUntilDismissed(
-                "[!] Multiplayer has no functionality beyond the netcode "
-                "security protections right now."
-                // FUTURE (once MP has real, partial gameplay support -- swap this
-                // in, delete the line above, nothing else needs to change):
-                // "[!] Multiplayer is in pre-alpha and will contain bugs and issues. "
-                // "It is not on par with Campaign/Survival."
+                "\x03" "Multiplayer\n\n"
+                "\x01" "\xE2\x9A\xA0 No gameplay functionality yet -- controller input and "
+                "menu navigation are not supported in Multiplayer. Use keyboard/mouse.\n\n"
+                "\x02" "\xE2\x9C\x94 The netcode security fixes are active and protect this "
+                "mode too.\n\n"
+                // FUTURE (once MP has real, partial gameplay support -- swap the warning
+                // paragraph above for this one, nothing else needs to change):
+                // "\x01" "\xE2\x9A\xA0 Multiplayer is in pre-alpha and will contain bugs and "
+                // "issues. It is not on par with Campaign/Survival.\n\n"
+                "Enter / Space / Click to continue:"
             );
         } else {
             Log("proxy_d3d9: WARNING — could not identify the loading executable as "

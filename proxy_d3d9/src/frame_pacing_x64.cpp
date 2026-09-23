@@ -45,6 +45,7 @@
 #include <cstdint>
 
 #include "mod_config.h"
+#include "game_exe_detect.h"
 
 // Plain manual clamp/max, not std::clamp/std::max -- windows.h's own min/max
 // macros (NOMINMAX not defined project-wide) would otherwise corrupt those
@@ -184,6 +185,30 @@ void LimitVisibleFrame(int targetFps)
 void OnEndSceneFramePacingX64()
 {
     if (!g_modConfig.framePacingEnabled) {
+        return;
+    }
+    // 2026-09-23 CRITICAL FIX -- real MP launch-crash root cause, found via a
+    // git-worktree bisection across the 2026-09-15->present commit range
+    // (known_issues_x64.md's newest round has the full trail). GetDvarFloatX64
+    // (analog_input_hooks_x64.cpp) resolves the game's Dvar_FindVar-equivalent
+    // via a HARDCODED ABSOLUTE ADDRESS (FindDvarX64Raw = 0x1402c3890), never
+    // signature-scanned -- verified only against iw5sp.exe, per this project's
+    // own locked policy that iw5sp.exe/iw5mp.exe are separately-compiled
+    // binaries with no shared offsets (CLAUDE.md SS5/SS10.3/SS10.8). Hook_EndScene
+    // (overlay_hud.cpp) is NOT SP-gated -- it installs and fires under both
+    // binaries -- so this call was jumping to whatever arbitrary code happens
+    // to sit at that fixed address inside iw5mp.exe's own, differently-compiled
+    // binary, on literally every frame, starting from the very first EndScene
+    // call. That explains every observed symptom: 100% deterministic (a fixed
+    // wrong address always does the same wrong thing), MP-only (SP's own dvar
+    // reads all go through code paths that are otherwise SP-gated), and a
+    // crash deep inside genuinely native iw5mp.exe code with no connection to
+    // anything this project's own hooks appear to touch. Until GetDvarFloatX64
+    // (or a proper MP-specific signature scan for Dvar_FindVar) is made
+    // MP-safe, frame pacing simply doesn't run under MP -- same "verify per
+    // binary before trusting it" standard already applied to wait coalescing
+    // and the .iwd read cache, which were correctly SP-gated from the start.
+    if (GetDetectedGameExecutable() != GameExecutable::SP) {
         return;
     }
     const int targetFps = static_cast<int>(GetDvarFloatX64_Exported("com_maxfps"));
