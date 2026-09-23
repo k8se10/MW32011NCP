@@ -60,7 +60,12 @@ bool EnsureDxgiAdapter()
         // own plain-char log format, same as every other diagnostic line in this codebase.
         int written = WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, nameBuf, sizeof(nameBuf), nullptr, nullptr);
         if (written <= 0) { nameBuf[0] = '\0'; }
-        char buf[400];
+        // Generous margin, not a bare fit: literal template + worst-case nameBuf (up to
+        // 255 chars) + three floats computes to ~392 bytes worst case -- see
+        // overlay_hud.cpp's own 2026-09-23 sprintf_s crash (this exact bug class,
+        // hit 5+ times in this project) for why "close to the computed worst case"
+        // is not an acceptable margin.
+        char buf[640];
         sprintf_s(buf, "[vram-diag-real] DXGI adapter resolved: \"%s\" dedicatedVideoMemoryMB=%.1f dedicatedSystemMemoryMB=%.1f sharedSystemMemoryMB=%.1f",
                    nameBuf,
                    static_cast<double>(desc.DedicatedVideoMemory) / (1024.0 * 1024.0),
@@ -86,7 +91,7 @@ void LogRealVramDiagIfDue()
     HRESULT hr = g_dxgiAdapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info);
     if (FAILED(hr)) return; // transient failure -- next ~1s tick will retry, no need to spam
 
-    char buf[300];
+    char buf[512]; // generous margin over the ~138-byte computed worst case, same lesson as above
     sprintf_s(buf,
         "[vram-diag-real] LOCAL segment: budgetMB=%.1f currentUsageMB=%.1f availableForReservationMB=%.1f currentReservationMB=%.1f",
         static_cast<double>(info.Budget) / (1024.0 * 1024.0),

@@ -7492,7 +7492,13 @@ HRESULT WINAPI Hook_EndScene(void* device)
             auto getAvailableTextureMemory = reinterpret_cast<GetAvailableTextureMemory_t>(
                 deviceVtbl[kGetAvailableTextureMemoryVtableIndex]);
             UINT availBytes = getAvailableTextureMemory(device);
-            char vramBuf[128];
+            // CRITICAL LESSON (recurring bug class, now hit 5+ times in this project --
+            // see known_issues_x64.md's own standing note on this): sprintf_s's UCRT
+            // fails FAST (FAST_FAIL_INVALID_ARG, c0000409) on overflow rather than
+            // truncating. This exact line crashed on 2026-09-23 with a 128-byte buffer
+            // against a real ~150-byte worst-case message -- fixed here with real,
+            // generous margin, not a bare fit to the computed worst case.
+            char vramBuf[256];
             sprintf_s(vramBuf, "[vram-diag] GetAvailableTextureMemory=%.1fMB (LEGACY D3D9 API, widely known unreliable -- see [vram-diag-real] for the authoritative DXGI number)",
                        static_cast<double>(availBytes) / (1024.0 * 1024.0));
             LogFromController(vramBuf);
