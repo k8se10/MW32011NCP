@@ -11,17 +11,24 @@ and Multiplayer support (in active development). None of it works by faking
 keyboard/mouse input underneath a mapper — every piece hooks the game's own
 real internal engine functions directly.
 
-## ⚠ Alpha-stage software — `v0.0.1-x64` is out now
+## ⚠ Alpha-stage software — `v0.0.2-x64` is out now
 
 This project hooks directly into a live game process. Expect bugs, rough
-edges, and unfinished features. `v0.0.1-x64` is the first release rebuilt
-from scratch against MW3's own recompiled 64-bit binaries (the game's
-first-ever binary update, a hard architectural break for every tool built
-on the original 32-bit executable) — shipping almost three weeks after that
-recompile broke every prior release, more resilient than before, with real
-fixes and features beyond what the prior 32-bit line ever shipped.
-**Survival's own controller support is Gameplay Complete** (2026-09-22) —
-every core control, including Predator Missile guidance, is live-confirmed.
+edges, and unfinished features. The `-x64` line was rebuilt from scratch
+against MW3's own recompiled 64-bit binaries (the game's first-ever binary
+update, a hard architectural break for every tool built on the original
+32-bit executable). **Survival's own controller support is Gameplay
+Complete** (2026-09-22) — every core control, including Predator Missile
+guidance, is live-confirmed.
+
+⚠ **If you raise `InternalRenderScalePercent` above 100%, read this
+first**: the safe ceiling is NOT one fixed number. 200% is completely clean
+in Campaign/Survival but causes constant stutter in Multiplayer — the real
+safe headroom depends on how demanding the specific mode/map/moment is, not
+a single percentage this mod can detect automatically. Test any increase
+deliberately in the mode you actually play; if you see stutter, lower it
+back toward 100% rather than trusting a number that was safe somewhere
+else. Full detail in the mod's own README/PATCHNOTES.
 Campaign has never gated release (same as on the prior 32-bit line, which
 also shipped it best-effort) and ships as-is. Full live status: see this
 page's Source link (GitHub) for `re_notes/known_issues_x64.md` and

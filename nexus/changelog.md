@@ -3,6 +3,42 @@
 Condensed from `PATCHNOTES.md` in the source repo — see there for the full,
 itemized detail behind each entry.
 
+## v0.0.2-x64 — Alpha (2026-09-23)
+
+**Internal render scale now works in Multiplayer** — the first
+visual-enhancement feature to ship there, on by default, no VAC-risk
+opt-in needed (it never touches gameplay input or entity memory).
+⚠ **Important**: this release also confirms the render-scale stutter
+investigated below is content-dependent, not one fixed safe percentage
+— the exact same 200% that's completely clean throughout Campaign/Survival
+causes constant lag in Multiplayer. See the mod's own README/PATCHNOTES for
+the full detail; the practical takeaway is to test any increase above 100%
+deliberately in the mode you actually play, rather than assuming a number
+that's safe in one mode is safe everywhere.
+
+Fixed a critical Multiplayer launch crash (a hardcoded address, valid only
+in Campaign/Survival's own binary, that was being reached for the first
+time under Multiplayer) and a severe, sustained render-scale-gated stutter
+was investigated in real depth — root-caused to a genuine native engine
+stability limit at large render-target sizes, not a bug in this mod, with
+a real on-screen warning now firing at the tested 200% boundary. Two
+genuine native engine bugs were also found and fixed along the way (a
+hardcoded 3GB system-memory detection cap, and a mod-side crash from this
+session's own new diagnostics).
+
+**Motion blur is no longer controller-only** — it now reacts to real
+per-tick look movement from any input device, including mouse/keyboard.
+
+Real reverse-engineering groundwork: a first map of the native 3D
+renderer's own architecture (prep for a future renderer replacement),
+including the complete render-target table (shadow maps included, closing
+a gap open since 2026-08-29) and a genuine, previously-undocumented native
+SSAO implementation sitting dormant in the game's own binary. Also caught
+and corrected a real documentation bug: the forced anisotropic
+filtering/shadow/lighting-quality toggles have been silent no-ops on x64
+since the port — not crashing, just doing nothing — despite being
+previously listed as working.
+
 ## v0.0.1-x64 — Alpha (2026-09-22)
 
 The first release on the `-x64` line, rebuilding this project from scratch

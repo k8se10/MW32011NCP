@@ -48,7 +48,7 @@ Uninstall: delete `d3d9.dll`. Nothing else was touched.
 
 ## Main file
 
-**`v0.0.1-x64` is live as of 2026-09-22** — the same release zip built for
+**`v0.0.2-x64` is live as of 2026-09-23** — the same release zip built for
 GitHub Releases (`d3d9.dll` + `LICENSE` + `PATCHNOTES.md` + `README.txt`),
 uploaded here rather than maintaining a separate Nexus-only archive. The
 `nexus-upload.yml` GitHub Actions workflow pushes future releases here
