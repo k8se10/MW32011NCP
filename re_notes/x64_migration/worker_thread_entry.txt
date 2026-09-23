@@ -1,0 +1,22 @@
+================================================================
+Function: FUN_14024a810 @ 14024a810
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined8 FUN_14024a810(longlong param_1)
+
+{
+  longlong unaff_GS_OFFSET;
+  
+  FUN_140249d80(0xffffffff,*(undefined8 *)(param_1 * 8 + 0x1404d1750));
+  *(longlong *)
+   (*(longlong *)(*(longlong *)(unaff_GS_OFFSET + 0x58) + (ulonglong)__tls_index * 8) + 0x18) =
+       param_1 * 0x20 + 0x1420056c0;
+  FUN_1402ca370(param_1);
+  (**(code **)(param_1 * 8 + 0x142005850))(param_1);
+  return 0;
+}
+
+
+

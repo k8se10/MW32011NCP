@@ -1,0 +1,2 @@
+Symbol: CreateThread @ EXTERNAL:00000065 isExternal=true space=EXTERNAL
+No non-external (real memory) address found for CreateThread -- cannot scan for indirect callers this way.

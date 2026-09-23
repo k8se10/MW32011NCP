@@ -512,29 +512,75 @@ not for the renderer-mapping effort as a whole.
 - **Whoever actually performs the named phases in section 5's table**
   (`cell dyn brush/model`, `dpvs ent` culling, `spot shadow ent` gathering,
   `gen drawsurfs`) — confirmed NOT to be inline in `FUN_1401d7480` itself,
-  almost certainly a separate thread. **Attempted this pass, inconclusive**:
-  `FindCallersByName.java` against both `CreateThread` (a real KERNEL32
-  import, confirmed present in the DLL import table) and
-  `_beginthreadex`/`_beginthread` (not present as named external symbols at
-  all — expected, since this binary statically links its CRT, no
-  `MSVCRT.DLL`/`UCRTBASE.DLL` import exists) — `CreateThread` resolved as a
-  real external symbol but came back with **zero callers**. This is a real
-  negative result, but very likely a tooling artifact of `-noanalysis`
-  mode rather than genuine evidence the game creates no threads via it:
-  Ghidra's reference manager only sees a caller if the call site itself
-  has already been disassembled into a real `Instruction`/`Reference`, and
-  `-noanalysis` deliberately skips that broad a sweep for speed (this
-  project's own established, deliberate tradeoff — see this directory's
-  other RE docs for the same "-noanalysis, targeted scripts only"
-  convention). **Two real paths forward, neither attempted yet**: (1) an
-  IAT-slot-address AOB scan for indirect `CALL [rip+disp32]` patterns
-  targeting `CreateThread`'s specific import-table slot (avoids needing a
-  full analysis pass, reuses this project's own existing pattern-scan
-  tooling class); (2) a live thread-enumeration diagnostic
-  (`CreateToolhelp32Snapshot`/`Thread32First`, or simply logging each
-  thread's start address via `NtQueryInformationThread`) — genuinely new
-  live instrumentation, would need explicit agreement first per this
-  project's own standing "no live diags without agreement" convention.
+  almost certainly a separate thread. **The prior "inconclusive" CreateThread
+  investigation was resolved this pass (2026-09-23)** — confirmed a genuine
+  tooling artifact, not evidence of anything: Ghidra's own reference manager
+  only sees a caller once the call site has been disassembled, which
+  `-noanalysis` mode skips. Fixed via approach (1) already flagged below (an
+  IAT-slot AOB scan), but the actual IAT slot address first had to be
+  computed correctly via a direct PE Import Directory parse (Python, not
+  `dumpbin` line-counting by eye — a manual count off `dumpbin /imports`'
+  printed order was tried first and got the wrong slot, `GetThreadPriority`'s
+  not `CreateThread`'s; the lesson already written into `CLAUDE.md`'s own
+  "checking is far cheaper than digging" section applies directly here —
+  trust a real parse over a manual count). Real findings:
+  - **A genuine generic worker-thread-pool spawning mechanism exists and is
+    now mapped**: `FUN_140249e80(jobFuncPtr, workerSlotIndex)` calls
+    `CreateThread(..., FUN_14024a810, workerSlotIndex, CREATE_SUSPENDED, ...)`
+    — a single shared thread ENTRY point (`FUN_14024a810`) used for every
+    worker slot, which does real per-slot TLS setup, calls a real per-slot
+    init function (`FUN_1402ca370`, itself calling `FUN_14024a3d0` three
+    times against three separate per-slot memory-arena tables — a real,
+    reusable per-worker-slot state pattern), then jumps through the SAME
+    job-function-pointer `FUN_140249e80` was given, passed via a small
+    per-slot struct at `0x142005850 + slotIndex*8`. Each slot has its own
+    tiny "spawn slot N" wrapper function (`FUN_14024a420` confirmed = slot
+    5's wrapper) called via a tail-call `JMP` (not a plain `CALL` — a real,
+    concrete reason the direct-E8-call scan alone wouldn't have found its
+    own caller either, needed a `LEA`/tail-call-`JMP` scan too) from a real
+    named subsystem-init function.
+  - **Slot 5 identified, and it's a real, concrete NEGATIVE result, not the
+    render worker**: its registrant (`FUN_1401a1be0`, VA `0x1401a1be0`)
+    allocates a real, large (0x1900000 = ~26MB) buffer before spawning —
+    initially a promising signal for a render command-buffer pool, but the
+    actual job function (`FUN_1401a2960`) is unmistakably the **Bink Video
+    background-streaming/decode worker** — real, direct calls to
+    `BinkControlBackgroundIO`/`BinkClose`, cutscene-playlist-string parsing
+    (`FUN_1402caa00` copying a 0x100-byte path buffer, `':'`-delimited
+    parsing via `func_0x000140390ae4`). The 26MB allocation is Bink's own
+    frame-decode buffer pool, not a render command buffer. A real, useful
+    negative — rules out slot 5 specifically, doesn't touch slots 0-4.
+  - **Real, concrete, not-yet-done next step**: the other four "spawn slot
+    N" wrapper functions (adjacent to `FUN_14024a420` in `.text`, found via
+    the same direct-E8-call scan against `FUN_140249e80` — VAs
+    `0x14024a4ae`/`0x14024a562`/`0x14024a5ba`/`0x14024a60d` are the CALL
+    sites, each inside its own tiny sibling wrapper, not yet individually
+    resolved to their own function-start addresses or job functions) each
+    need the same treatment slot 5 just got: find the wrapper's own
+    tail-call/LEA caller, decompile the registrant to find the job-function
+    pointer, decompile that job function. One of the remaining four is a
+    real, live candidate for the render/scene-setup worker this whole
+    investigation is chasing — not confirmed yet, but the mechanism and
+    method are now proven end-to-end on a real example (slot 5), so this is
+    now a mechanical repeat of an already-validated process, not an open
+    methodological question.
+  - **Tooling note for future sessions**: the repo-tracked
+    `re_notes/ghidra_project_x64/iw5sp_x64_proj.gpr` project failed to
+    resolve `-process iw5sp.exe` this session (`"Requested project program
+    file(s) not found: iw5sp.exe"`, despite the project opening
+    successfully and a prior session's own log showing this exact
+    project/process combination working) — real cause not identified
+    (a `WARN Using deprecated Mangled filesystem` line appeared this
+    session that isn't present in that prior working log, a possible lead,
+    not confirmed). **Worked around, not fixed**: this pass instead did a
+    fresh one-shot `-import` into a new scratch project
+    (`ghidra_scratch_proj`, in this session's own scratchpad directory, not
+    committed) built directly from the real installed `iw5sp.exe`, which
+    imported and scripted cleanly. The existing tracked project may need a
+    fresh re-import in a future session if this recurs — flagged, not
+    resolved, since the existing project's own accumulated function/label
+    history (many prior sessions' work) would be lost if it's actually
+    corrupted rather than just this one session's transient issue.
 - ~~**Shadow-map rendering** specifically — not yet located at all.~~
   **RESOLVED this pass, see section 5b**: `$shadowmap_large`/
   `$shadowmap_small` are confirmed real entries in the generic

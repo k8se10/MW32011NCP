@@ -1,0 +1,101 @@
+================================================================
+Function: FUN_140249e80 @ 140249e80
+----------------------------------------------------------------
+
+void FUN_140249e80(undefined8 param_1,longlong param_2)
+
+{
+  longlong lVar1;
+  undefined4 uVar2;
+  undefined8 uVar3;
+  undefined4 *puVar4;
+  
+  lVar1 = param_2 * 8;
+  *(undefined8 *)(lVar1 + 0x142005850) = param_1;
+  puVar4 = (undefined4 *)(param_2 * 4 + 0x142005820);
+  uVar3 = CreateThread(0,0,FUN_14024a810,param_2,4,puVar4);
+  uVar2 = *puVar4;
+  *(undefined8 *)(lVar1 + 0x1420058b0) = uVar3;
+  FUN_140249d80(uVar2,*(undefined8 *)(lVar1 + 0x1404d1750));
+  *(undefined4 *)(param_2 * 4 + 0x142005908) = 0xffffffff;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402ed8e0 @ 1402ed8e0
+----------------------------------------------------------------
+
+void FUN_1402ed8e0(void)
+
+{
+  int iVar1;
+  char *pcVar2;
+  undefined2 uVar3;
+  uint uVar4;
+  undefined8 uVar5;
+  undefined1 *puVar6;
+  undefined8 *puVar7;
+  longlong lVar8;
+  undefined1 auStackX_8 [8];
+  
+  FUN_1403173a0(auStackX_8);
+  if ((*(int *)(lRam00000001427982b8 + 0x10) != 0) &&
+     (iVar1 = *(int *)(lRam0000000142799b58 + 0x10), uVar4 = func_0x000140317420(auStackX_8),
+     iVar1 <= (int)(uVar4 % 10000))) {
+    puVar7 = (undefined8 *)0x1427982c8;
+    lVar8 = 0x10;
+    do {
+      if (((puVar7[-1] != 0) && (pcVar2 = *(char **)(puVar7[-1] + 0x10), pcVar2 != (char *)0x0)) &&
+         (*pcVar2 != '\0')) {
+        uVar5 = FUN_1403b2968();
+        *puVar7 = uVar5;
+        puVar6 = (undefined1 *)func_0x000140390ae4(uVar5,0x3a);
+        if (puVar6 == (undefined1 *)0x0) {
+          uVar3 = 0x238c;
+        }
+        else {
+          *puVar6 = 0;
+          uVar3 = FUN_140396f34(puVar6 + 1);
+        }
+        *(undefined2 *)(puVar7 + 1) = uVar3;
+        *(undefined1 *)((longlong)puVar7 + 10) = 1;
+      }
+      puVar7 = puVar7 + 0x11;
+      lVar8 = lVar8 + -1;
+    } while (lVar8 != 0);
+    lRam00000001404d4cf0 = socket(2,2,0);
+    if (lRam00000001404d4cf0 != -1) {
+      lRam0000000142795ed8 = CreateThread(0,0,FUN_1402ecd70,0,0,0x1427933ac);
+      if (lRam0000000142795ed8 == -1) {
+        closesocket(lRam00000001404d4cf0);
+        _guard_check_icall(auStackX_8);
+        return;
+      }
+      uRam00000001427933a8 = 1;
+    }
+  }
+  _guard_check_icall(auStackX_8);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1403d6560 @ 1403d6560
+----------------------------------------------------------------
+
+bool FUN_1403d6560(undefined8 param_1,undefined8 param_2,longlong *param_3,undefined8 param_4,
+                  undefined4 param_5)
+
+{
+  longlong lVar1;
+  
+  lVar1 = CreateThread(0,param_5,param_1,param_2,4,0);
+  *param_3 = lVar1;
+  return lVar1 != 0;
+}
+
+
+
