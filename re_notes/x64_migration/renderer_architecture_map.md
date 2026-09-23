@@ -302,6 +302,103 @@ directly answers "what does each numbered render stage actually do,"
 the single most load-bearing open question for mapping the renderer
 further.
 
+## 5b. The real render-target descriptor table — FOUND, shadow maps and everything else (CONFIRMED)
+
+Direct instruction to pivot from the notify-table chase to this: chasing
+`$shadowmap_large` (the known x86-era string, per `known_issues.md`'s own
+"R_RENDERTARGET_SHADOWMAP_LARGE/_SMALL" lead) turned up the complete,
+real render-target inventory this engine creates. Two reference-based
+tools (`RawStringScan.java`, then a `CreateThread`-style symbol xref
+search) both came back with zero results — the same `-noanalysis`
+reference-resolution gap section 6 already flagged for the backend-thread
+search. Rather than retry a third reference-based tool, built two new
+byte-pattern scanners (no full analysis pass needed): `FindLeaRefsTo.java`
+(raw-scans every executable byte for `LEA reg,[rip+disp32]` targeting a
+given address) and `FindQwordValueOccurrences.java` (raw-scans every
+readable data block for 8-byte-aligned occurrences of a given VALUE, for
+cases where an address is stored as DATA rather than referenced by code).
+`FindLeaRefsTo` against the shadowmap string came back empty too (real,
+consistent with it being a data-table entry, not directly LEA'd from
+code) — `FindQwordValueOccurrences` found it in exactly one place:
+`0x1404d0690`, in `.data`, right next to (0x4c0 bytes before) the
+already-mapped profiler-checkpoint table from section 5.
+
+Dumping the surrounding qwords reveals the real table layout:
+
+```
+0x1404d0600 - 0x1404d067f  (0x80 bytes, 16 qwords / 32 dwords)
+    packed 32-bit descriptor pairs, one dword-pair per render target
+    (dimension/format bitfields, not yet fully decoded -- see below)
+
+0x1404d0680 - 0x1404d0710  (19 qwords, one per render target)
+    real name-string pointers, ALL 19 read and confirmed:
+    "current", " min_pc", "$shadowmap_large", "$shadowmap_small",
+    "$floatz", "$post_effect_0", "$post_effect_1", "$pingpong_0",
+    "$pingpong_1", "$resolved_scene", "$scene", "$savedscreen", "$raw",
+    "$model_lighting", "$model_lighting1", "$random_rotations", "$ssao",
+    "$ssao_blurred", "$ssao_float_z"
+
+0x1404d0718 - 0x1404d0730  (4 qwords, code addresses: 0x1401be850,
+    0x1401be860, 0x1401be8a0, 0x1401c1210)
+    likely per-category creation/setup callback function pointers --
+    fewer entries (4) than render targets (19), so probably one callback
+    per TARGET TYPE (e.g. shadow-map-style vs. color-buffer-style vs.
+    post-effect-style creation), not one per individual target. Not yet
+    decompiled.
+
+0x1404d0740 onward: more qword entries (0x140420de8, +0x20e08, ...),
+    evenly spaced by 0x20 (32) bytes -- a fourth, not-yet-identified
+    sub-table, possibly per-target extended descriptors or dvar-name
+    pointers for per-target overrides. Not yet traced.
+```
+
+**This directly closes the "shadow-map rendering... not yet located at
+all" gap this doc originally opened in section 6** — `$shadowmap_large`/
+`$shadowmap_small` are real, confirmed, first-class entries in the same
+generic render-target table `$post_effect_0`/`$post_effect_1`/
+`$savedscreen`/`$random_rotations` (all already known from this project's
+own existing visual-suite work) live in — i.e. **there is no separate,
+special-cased "shadow map system" to find; shadow maps are created by
+the exact same generic table-driven render-target creation mechanism as
+every other named target this project has already hooked into once
+(`InternalRenderScalePercent`'s own `Hook_RenderResCompute`/
+`FUN_1401bd1d0` chain)**. This is a genuinely major simplification for
+any future renderer-replacement work: one creation mechanism to
+understand/replace, not many.
+
+**Also newly confirmed by name, real additional render-system surface
+area not previously documented anywhere in this project**: `$floatz`
+(a linear/float depth buffer — SSAO's typical depth source), `$pingpong_0`/
+`$pingpong_1` (ping-pong buffers for iterative blur passes — likely what
+FSR/motion blur's own multi-pass work already uses internally, or would
+reuse), `$resolved_scene` (the MSAA-resolved color target, separate from
+`$scene` itself), `$model_lighting`/`$model_lighting1` (two buffers,
+consistent with a deferred or semi-deferred lighting accumulation
+scheme), and **`$ssao`/`$ssao_blurred`/`$ssao_float_z`** — real, confirmed
+evidence this engine has a native SSAO implementation, never previously
+documented anywhere in this project's own RE history (the existing
+visual-enhancement suite has no SSAO-related feature or dvar at all) — a
+genuine, concrete new lead for a future visual-enhancement or
+renderer-replacement feature.
+
+**Not yet found: the function that walks this table and issues the real
+`CreateTexture`/`CreateRenderTarget` calls.** Attempted via `FindLeaRefsTo`
+against three candidate base addresses (the descriptor-pair table start
+`0x1404d0600`, the name-pointer array start `0x1404d0680`, and the
+callback-pointer array start `0x1404d0718`) — all three came back with
+zero matches. A real, honest dead end for THIS specific technique against
+THIS specific table: the consuming code likely computes the table's
+address via a different addressing form this scanner doesn't match yet
+(e.g. an absolute 64-bit `MOV reg, imm64` load, or indexing from a
+different, not-yet-identified base a fixed offset away from one of these
+three). Not pursued further this pass — flagged as a real open item
+alongside the backend-thread search in section 6, same underlying
+tooling gap (byte-pattern scanning for one specific instruction shape at
+a time is inherently a guess-the-encoding game; a real disassembly pass,
+even a narrow one scoped to just the functions already known to be
+render-init-adjacent like `FUN_1401bd1d0`'s own neighbors, would likely
+be more productive than more scanner variants).
+
 ## 6. What's still completely unmapped
 
 - **The actual render-command consumer/backend** (section 4's open
@@ -332,13 +429,29 @@ further.
   thread's start address via `NtQueryInformationThread`) — genuinely new
   live instrumentation, would need explicit agreement first per this
   project's own standing "no live diags without agreement" convention.
-- **Shadow-map rendering** specifically — not yet located at all. This
-  project's own existing visual-suite work (issue #107,
-  `ForceHighQualityShadows`) found the `sm_fastSunShadow` dvar and the
-  renderer's own dvar-registration function, but never the actual shadow-
-  pass draw-call submission — that gap stands, this pass didn't close it.
+- ~~**Shadow-map rendering** specifically — not yet located at all.~~
+  **RESOLVED this pass, see section 5b**: `$shadowmap_large`/
+  `$shadowmap_small` are confirmed real entries in the generic
+  render-target table alongside every other named target — shadow maps
+  use the same creation mechanism as `$post_effect_0`/`$savedscreen`/etc,
+  not a separate system. The actual table-CONSUMER function (which issues
+  the real `CreateTexture` calls) is still not located — see section 5b's
+  own "not yet found" paragraph for what was tried and why it's a
+  separate, real open item from the shadow-map-specifically question this
+  bullet originally asked.
 - **Material/shader binding** — how a drawn surface's shader program and
-  texture samplers actually get bound per-draw-call. Untouched.
+  texture samplers actually get bound per-draw-call. Untouched this pass,
+  though `FUN_1400a5a20` (section 5b's sibling investigation, see
+  correction below) is confirmed to be this engine's generic named-asset
+  lookup/registration function (type tag = `IW5::XAssetType`, cross-
+  referenced directly against this project's own `tools/iw5oat` fork's
+  `IW5.h` enum — type `5` = `ASSET_TYPE_MATERIAL`, type `0x16` = 22 =
+  `ASSET_TYPE_LIGHT_DEF`) — a real, reusable anchor for future material-
+  system RE, even though the two specific call sites that led here
+  (`FUN_1401c48f0`/`FUN_1401c0550`, loading a fixed 72-entry built-in-
+  material table and one built-in light-def) turned out to be generic
+  engine-init material/light bootstrapping, NOT render-target creation as
+  originally hoped when this thread was first chased.
 - **Whether the render backend runs on its own thread on PC** (section 4's
   open question #2) — genuinely unknown, a real, checkable fact this
   project has never verified either way for this specific x64 binary.
