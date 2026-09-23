@@ -44,8 +44,11 @@
 #include <windows.h>
 #include <cstdint>
 
+#include <cstdio>
 #include "mod_config.h"
 #include "game_exe_detect.h"
+
+extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
 // Plain manual clamp/max, not std::clamp/std::max -- windows.h's own min/max
 // macros (NOMINMAX not defined project-wide) would otherwise corrupt those
@@ -212,6 +215,24 @@ void OnEndSceneFramePacingX64()
         return;
     }
     const int targetFps = static_cast<int>(GetDvarFloatX64_Exported("com_maxfps"));
+
+    // Real com_maxfps value-change diagnostic (2026-09-23) -- direct user reports of a
+    // sustained ~2-4x FPS drop during ADS/pause/a specific mission, with GPU usage
+    // confirmed FLAT (Afterburner, live-monitored) the whole time -- a real spin-wait
+    // block here (LimitVisibleFrame) would produce exactly that signature if com_maxfps
+    // itself reports a different, lower value during those specific states. Logs only
+    // on a real change, not every frame, to keep volume sane while still catching the
+    // exact moment (and value) of any such change live.
+    {
+        static int s_lastLoggedTargetFps = -12345; // sentinel, guaranteed to differ from any real first value
+        if (targetFps != s_lastLoggedTargetFps) {
+            s_lastLoggedTargetFps = targetFps;
+            char buf[160];
+            sprintf_s(buf, "[frame-pacing-diag] com_maxfps changed -> %d (raw float target read this frame)", targetFps);
+            LogFromController(buf);
+        }
+    }
+
     if (targetFps <= 0) {
         ResetLimiter();
         return;
