@@ -221,9 +221,69 @@ The guide is explicit: **self-built or "development" SL DLLs are unsigned and
 must never ship** — production integrations must use NVIDIA's own prebuilt,
 signed `sl.*.dll` binaries as-is. This project's own redistribution plan (if any)
 needs to respect this directly — bundling the real, signed NVIDIA binaries, not
-attempting to rebuild Streamline from source for a shipped release. License is
-listed as "Other" on the repo (not plain MIT/zlib) — **the exact terms have not
-yet been read in full, real next step before any shipping decision.**
+attempting to rebuild Streamline from source for a shipped release.
+
+**License terms — read in full this session (2026-09-23), real, actionable findings.**
+Streamline's own SDK/source (the repo itself — headers, sample/interposer
+code) is under a plain, permissive MIT-style license (`license.txt`, read
+directly) — one real carve-out, irrelevant to this project: `sl_nvperf.h`/
+`sl_nvperf.dll` (the bundled NSight Perf profiling component this project has
+no reason to use) falls under a separate, stricter NSight Perf SDK License.
+**This is NOT the same license that governs the actual redistributable
+binaries** (`sl.dlss.dll`, the NGX runtime DLLs) — those fall under NVIDIA's
+own real "RTX SDKs License" / DLSS SDK EULA (confirmed via NVIDIA's own
+published terms, `NVIDIA/DLSS` repo's `LICENSE.txt`, read directly this
+session), which is a genuinely different, more restrictive agreement:
+
+- **Redistribution of the compiled binaries alongside this project's own
+  application is real and permitted**, but conditionally, not
+  unconditionally: the license requires the host application have "material
+  additional functionality, beyond the included portions of the SDK" and
+  explicitly forbids distributing the SDK "as a stand-alone product." Both
+  conditions are trivially satisfied here — this project is a full
+  controller/visual-enhancement mod with DLSS support as one feature among
+  many, never a bare DLSS-DLL repackage.
+- **A real, concrete, not-yet-actioned requirement**: "You are required to
+  notify NVIDIA prior to commercial release of an application... that
+  incorporates, or is based on, the DLSS SDK, NGX SDK." **Genuinely
+  unresolved for this project's specific situation**: this mod is free and
+  never sold (this repo's own `LICENSE`'s core restriction), which may or
+  may not count as a "commercial release" under NVIDIA's own definition —
+  not assumed either way. Real, honest next step before ever shipping
+  `Vulkan` mode's DLSS support publicly: either find NVIDIA's own written
+  definition of "commercial release" for this clause, or contact
+  NVIDIA directly (the license's own stated channel,
+  `nvidia-rtx-license-questions@nvidia.com`, surfaced via this session's own
+  research) to confirm whether a free, non-commercial community mod needs
+  this notification at all. Not something to guess past.
+- **A real, new, actionable requirement not previously on record**: mandatory
+  "NVIDIA Marks on splash screens, in the about box of the application (if
+  present), and in credits" wherever DLSS/NGX is integrated — a real
+  attribution obligation, the same general shape as this project's own
+  already-satisfied MinHook/HDE credit requirement (`CLAUDE.md` §6), just a
+  new one to add once this ships, not yet implemented.
+- **Confirmed, consistent with existing policy either way**: no reverse-
+  engineering, decompiling, or disassembling of the SDK's compiled binaries,
+  and no removing copyright/proprietary notices — this project has never
+  needed or intended to RE the DLSS/NGX binaries themselves (unlike the
+  base game's own binaries, which are not NVIDIA's IP and aren't covered by
+  this clause at all), so this is a non-issue in practice, just worth having
+  on record precisely.
+- **A real, structural tension worth flagging precisely, not glossing over**:
+  the EULA states "You may not use the SDK in any manner that would cause it
+  to become subject to an open source software license." This project's own
+  repo `LICENSE` is a real, freely-forkable/modifiable license (see
+  `CLAUDE.md`'s own "Repository structure" note on nested components with
+  their own separate licenses — `tools/iw5oat`'s GPLv3, `security/`'s
+  permissive-but-distinct license). **The same already-established,
+  already-precedented pattern this project uses for those nested components
+  applies here directly**: the redistributed NVIDIA binaries (and any
+  Streamline SDK source this project links against, if ever built from
+  source rather than used as prebuilt binaries) must be clearly scoped as
+  separately-licensed, proprietary, NOT re-licensed or folded into this
+  repo's own free-to-fork grant — a documentation/licensing-file task, not a
+  technical one, but a real one to get right before shipping, not an
+  afterthought.
 
 The `EnableNvidiaSigOverride.reg` file bundled with MW3 Remastered's own DLSS
 variant is consistent with this signing model — very likely a workaround for a
@@ -232,6 +292,62 @@ DIFFERENT Windows-level signature-enforcement point (not SL's own internal
 automatically), possibly related to loading the NGX runtime DLLs specifically
 in a context NVIDIA's own driver doesn't recognize as an officially-integrated
 title. Not yet independently confirmed — flagged as a real open question.
+
+### 2.7 `ProgrammingGuideManualHooking.md` — read in full this session, one real, previously-unresearched integration requirement found: Vulkan swapchain interception
+
+**Real, direct confirmation of this project's own already-planned approach**:
+manual hooking (`PreferenceFlag::eUseManualHooking`) is explicitly the
+documented path for "an application... that already own[s] its own
+device-creation and hook-installation sequence" — exactly this project's own
+situation with DXVK owning real Vulkan device/instance creation, not
+Streamline's own automatic global interposer. Device/instance creation
+proxying (`vkCreateInstanceProxy`/`vkCreateDeviceProxy`) is confirmed
+**optional** — skippable entirely if the host (DXVK, on this project's
+behalf) creates its own real Vulkan instance/device and this project then
+calls `slSetVulkanInfo` manually afterward, exactly the shape already
+recorded in §2.1.
+
+**The one real, new, previously-unresearched requirement, found reading this
+guide in full**: unlike instance/device creation, **Vulkan swapchain-related
+calls are listed as MANDATORY hooks, not optional** —
+`eVulkan_CreateSwapchainKHR`, `eVulkan_DestroySwapchainKHR`,
+`eVulkan_GetSwapchainImagesKHR`, `eVulkan_AcquireNextImageKHR`,
+`eVulkan_Present`/`eVulkan_QueuePresentKHR`, `eVulkan_DeviceWaitIdle`,
+`eVulkan_CreateWin32SurfaceKHR`, `eVulkan_DestroySurfaceKHR` must all
+route through `sl.interposer.dll`'s own proxied functions, obtained via
+`vkGetDeviceProcAddr`/`vkGetInstanceProcAddr` resolved from
+`sl.interposer.dll` instead of the real `vulkan-1.dll`. **This is a real
+integration knot specific to routing through DXVK**: DXVK owns its own
+internal swapchain creation and present calls entirely — this project's own
+code never calls those Vulkan functions directly, DXVK does, internally,
+using whatever `vulkan-1.dll` it resolves at its own load time. Getting SL's
+mandatory swapchain hooks into that path without patching DXVK's own source
+needs DXVK's own `vulkan-1.dll` resolution to land on `sl.interposer.dll`
+instead — **a real, promising, DIRECT extension of this project's own
+already-proven core technique**: the same Windows DLL-search-order proxy
+trick this project's entire `d3d9.dll` injection already relies on (a proxy
+DLL sitting ahead of the real system one, forwarding everything through)
+should apply identically to `vulkan-1.dll` if `sl.interposer.dll` is placed/
+renamed to intercept that exact load — no DXVK source patching needed, if
+this holds. **Not yet confirmed**: whether DXVK resolves `vulkan-1.dll` via
+a plain, redirectable `LoadLibrary`/import-table lookup (matching the
+`d3d9.dll` case exactly) or some other mechanism — real, cheap, concrete
+next step once `Vulkan` mode implementation starts, not yet attempted.
+
+**A second, real, separate requirement for the "we own instance/device
+creation" branch specifically** (§5.2.1): before creating the Vulkan
+instance/device, the host must call `slGetFeatureRequirements` per enabled
+SL feature (DLSS included) and manually fold the returned required instance/
+device extensions, `VkPhysicalDeviceVulkan12Features`/`...Vulkan13Features`,
+and extra graphics/compute queue counts into whatever creates the real
+device — for this project, DXVK's own device creation, not this project's
+own code, since DXVK is what actually calls `vkCreateDevice`. **Real, honest
+open question, not yet researched**: whether DXVK exposes any real
+extension-injection mechanism (environment variables, `dxvk.conf` entries, a
+build-time patch) that could satisfy this without a genuine DXVK source
+modification — the earlier DXVK `dxvk.conf` key research (section 4.3) found
+real config keys for other purposes but did not specifically check for a
+device-extension-injection option; real next step, not yet done.
 
 ### 2.5 Camera-only motion vectors — a real, documented Streamline mode, and a direct connection to this project's own existing motion-blur data
 
@@ -805,16 +921,34 @@ blocker.
    real implementation work, not just a docs update, once this is built.
 2. **Sub-pixel jitter injection — REVISED 2026-09-23, contract fully specified, native RE still not started.** The exact data contract (separate `jitterOffset` field, un-jittered matrices, the Halton(2,3)/render-resolution formula, the mip-bias companion requirement, a real methodology precedent for validating it via a from-scratch TAA test rig) is now fully researched (section 2.3) — the one real remaining item is finding and hooking IW5's own projection-matrix-build function (one plausible, unconfirmed lead on record: `FUN_1401d8f70`) or, as a lower-native-RE-burden alternative, intercepting the relevant `SetVertexShaderConstantF` register directly. Not resolved, but no longer an open research question — a scoped RE task now.
 3. **Motion-vector reconstruction — REVISED AGAIN 2026-09-23, direct instruction to prioritize real, engine-sourced per-object motion, not the camera-only baseline alone ("we want proper motion vectors... we may have to surface them off of engine data").** Camera-only reprojection (section 2.5) stays real and correct for static world geometry, and Streamline's own buffer semantics ("Object and **optional** camera motion vectors," `ProgrammingGuide.md` line 763) confirm the two combine rather than being an either/or choice — but "proper" now means real, from-scratch work to surface actual per-object (and, for characters, per-bone) motion from IW5's own engine data (section 2.6): capturing the real current+previous-frame vertex-shader constants (transform, and bone-matrix palette for skinned draws) the game already uploads via `SetVertexShaderConstantF`, and replaying the same real vertex/index buffers through a small, hand-authored velocity shader pair — not patching IW5's own precompiled shaders, and not a generic optical-flow approximation. The single most important unconfirmed lead: whether IW5's own draw-command stream (`gen drawsurfs`, per `renderer_architecture_map.md`) carries a stable per-entity key this project can cache previous-frame transforms against — real, scoped, sequenced native RE, not yet started, detailed in section 2.6.
-4. **Streamline's own real license terms** ("Other," not yet read in full) and
-   the exact redistribution requirements for the signed `sl.*.dll`/NGX runtime
-   binaries in a shipped release (section 2.4).
-5. **`slSetVulkanInfo`'s own exact requirements** (which extensions/features/
-   queues Streamline needs DXVK's device to have enabled) — the manual-hooking
-   guide (`ProgrammingGuideManualHooking.md`) is the real next read, not yet
-   done this pass.
+4. **Streamline/DLSS SDK license terms — RESOLVED, section 2.4.** Read in
+   full this session, real distinct terms from two different licenses (the
+   SDK/repo's own permissive MIT-style one vs. the actual redistributable
+   binaries' own RTX SDKs License/DLSS EULA). Redistribution alongside this
+   project's own application is real and permitted (material-additional-
+   functionality + no-standalone-distribution conditions both trivially
+   satisfied). **One real, genuinely unresolved item carried forward, not
+   closed**: whether a free, never-sold community mod counts as a
+   "commercial release" under NVIDIA's own pre-release notification clause —
+   needs a direct answer from NVIDIA's own stated contact channel before
+   `Vulkan` mode's DLSS support ever ships publicly, not assumed either way.
+   Also real and new: a mandatory NVIDIA-Marks attribution/credits
+   requirement, and a real licensing-structure task (keep the redistributed
+   binaries under their own separate license, same precedented pattern this
+   project already uses for `tools/iw5oat`'s GPLv3 and `security/`'s own
+   license, never folded into this repo's own free-to-fork grant).
+5. **`slSetVulkanInfo`'s own exact requirements — RESOLVED, section 2.7.**
+   `ProgrammingGuideManualHooking.md` read in full this session. Instance/
+   device-creation proxying is confirmed optional (DXVK can own real Vulkan
+   device creation, this project calls `slSetVulkanInfo` manually after) —
+   but §5.2.1's own requirement to call `slGetFeatureRequirements` and fold
+   the returned extensions/features/queue counts into whatever creates the
+   real device (DXVK, not this project's own code) is real and not yet
+   solved — see item 7 below, a new item this reading surfaced.
 6. **The real hook-ordering/coexistence question**: where in this project's
    own existing `CreateDevice`/`EndScene`/`Reset` hook sequence a DXVK-backed
    Vulkan device would need to be created, and whether this project's own
    existing hooks (which currently assume a real D3D9 device/swapchain) need
    restructuring for `Vulkan` mode specifically, versus staying untouched for
    the `Legacy D3D9` default path.
+7. **NEW, 2026-09-23 — real Vulkan swapchain-interception and DXVK-extension-injection questions, section 2.7.** Streamline's own manual-hooking guide marks Vulkan swapchain calls (`vkCreateSwapchainKHR`/`vkAcquireNextImageKHR`/`vkQueuePresentKHR`/etc.) as MANDATORY to route through `sl.interposer.dll`'s own proxies — calls DXVK makes internally, not this project's own code. The real, promising, not-yet-confirmed hypothesis: the same DLL-search-order proxy technique this project's entire `d3d9.dll` injection already relies on should apply identically to `vulkan-1.dll` if `sl.interposer.dll` is placed/renamed to intercept DXVK's own load of it — genuinely cheap to test once `Vulkan` mode implementation starts, not yet attempted. Separately, real and unresearched: whether DXVK exposes any extension-injection mechanism (env vars, `dxvk.conf`, or a real source patch) to satisfy Streamline's own required Vulkan 1.2/1.3 features and extra queues at device-creation time.
