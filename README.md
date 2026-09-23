@@ -22,7 +22,7 @@ native call exists, never a config tweak):
 | Component | What it does | Release-gating? | Status |
 |---|---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — Survival gates the release; Campaign ships best-effort and has never gated it (same as on `-x86`) | Survival: Gameplay Complete (2026-09-22) — see [What works](#what-works-right-now) |
-| **Visual/performance enhancements** | Internal render scale, FSR 1.0 sharpening, motion blur, forced anisotropic filtering/shadow/lighting quality, stutter/threading fixes, frame pacing/wait coalescing/IWD read cache | 🔴 Yes — the gate | Render scale, motion blur, and the three ported perf techniques (frame pacing/wait coalescing/IWD cache) live-confirmed; FSR build-verified only; SMAA parked, FXAA build-verified — see [What works](#what-works-right-now) |
+| **Visual/performance enhancements** | Internal render scale (SP and MP), FSR 1.0 sharpening, motion blur (any input device), stutter/threading fixes, frame pacing/wait coalescing/IWD read cache | 🔴 Yes — the gate | Render scale, motion blur, and the three ported perf techniques (frame pacing/wait coalescing/IWD cache) live-confirmed; FSR build-verified only; SMAA parked, FXAA build-verified — see [What works](#what-works-right-now). **The forced anisotropic filtering/shadow/lighting quality toggles are currently non-functional on x64** (a silent no-op, not a crash) — see [Known gaps](#known-gaps) |
 | **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — not held to the SP controller-support gate below (same repo, absorbed 2026-09-12 — not a separate project) | **Complete, end to end — all 4 tracked vulnerabilities resolved** (3 fixed, 1 confirmed already safe), closing genuine RCE-class holes present since before this project existed, with no known official Activision fix. 2 of 3 active fixes independently confirmed firing against real MP traffic; the third (SP/Spec-Ops P2P) is build-verified and resolves correctly live, just not yet observed against a real P2P session — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
@@ -96,13 +96,14 @@ and verifies its own fix, per standard responsible-disclosure practice.
 
 ## Status
 
-> **`v0.0.1-x64` is out now — the first release on the rebuilt 64-bit line.** Survival is the recommended way to
+> **`v0.0.2-x64` is out now.** Survival is the recommended way to
 > use the mod (Gameplay Complete — every core control, including Predator Missile guidance, is live-confirmed);
-> Campaign ships best-effort, and Multiplayer is not supported yet. The netcode security fixes protect every mode,
+> Campaign ships best-effort, and Multiplayer has no controller/menu-navigation support yet — but its first real
+> visual-enhancement feature (internal render scale) now works there. The netcode security fixes protect every mode,
 > Multiplayer included. Still early software — expect hidden bugs and unfinished or unported features. Known gaps
 > are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
 
-**Alpha, `v0.0.1-x64` line.** On 2026-09-03 MW3 received its first real
+**Alpha, `v0.0.2-x64` line.** On 2026-09-03 MW3 received its first real
 binary update in the game's history, recompiling both `iw5sp.exe`/`iw5mp.exe`
 from 32-bit to 64-bit — a hard architectural break that invalidated every
 hook this project had. The old 32-bit (`-x86`) line is fully discontinued;
@@ -169,7 +170,7 @@ ships as-is, verified as it's touched.
 | Cutscene-skip audio (controller Start) | Fixed on both `-x86` and `-x64` 2026-09-14 |
 | Campaign QTE/scripted-sequence button presses (e.g. the "Dust to Dust" elevator/chopper jump) | Real synthetic-keypress fix, same technique already proven for Survival ready-up |
 | Motion blur | Real x64 trigger hook found 2026-09-13; a stepped-ghosting artifact was later fixed 2026-09-21 (8-tap → 24-tap bilinear) |
-| Internal render scale | |
+| Internal render scale (SP and MP) | ⚠ Safe above 100% only up to a point that is NOT one fixed number — see the warning under [Known gaps](#known-gaps) |
 | Native controller menu/UI navigation | Main menu, pause, buy-stations |
 | Buy-station / use-prompt glyph substitution | Structural template match ("Hold/Press ^N key ^7"), shipped 2026-09-21 |
 | Glyph-icon substitution: Mantle, Pickup/Swap/Pickup-health, Throwback, Reload/low-ammo, five menu corner hints | Mod-wide 100ms hold + 50ms fade added 2026-09-22 to stop flicker; drawn only on the visible back-buffer pass (an earlier bug re-rasterised text at a different scale on offscreen blur passes) |
@@ -220,16 +221,65 @@ the main flow.
 
 | # | Gap | Priority | Current status |
 |---|---|---|---|
-| 1 | Pause-menu Back glyph flicker | 🟠 Medium | Cosmetic only — Back still works. Drawn from a stored position specifically to fix this, plus a separate native-template-match path for buy-station Back; several iterations landed 2026-09-21/22 but a residual flicker remains |
-| 2 | Sentry/turret-placement and Campaign QTE prompt **text** | 🟠 Medium | Mechanism works — the on-screen prompt itself still renders native. Buy-station and Survival ready-up's own prompt text are both now fully replaced (see [What works](#what-works-right-now)); this is what's left. Blocked on a genuinely unresolved native offset |
-| 3 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | 5 zones fully clean, many more no longer crash after the `SpeakerMap` fix; a `LoadedSound` alias-miss bug remains open — affects project velocity, not players |
-| 4 | AC-130 gun-type switching (105/40/25mm) | 🟡 Low | Confirmed GSC/data-driven with no native hook point; correctly left unfixed rather than guessed at |
-| 5 | Custom Options screen's vanilla-setting data layer (7/9 tabs) | 🟡 Low — deliberately deferred | INI config already covers everything this mod itself needs |
-| 6 | Back's `+scores` scoreboard | 🟢 Low | Real gap, but a confirmed no-op in SP/Survival on every platform; matters once MP ships |
-| 7 | SMAA edge smoothing | 🟢 Low — parked 2026-09-21 | Implemented but off by default and not viable yet: even a plain capture-and-redraw with no SMAA math looked worse than off and cost far more frame time, so the shared capture/redraw path is suspect independent of the SMAA shaders. See `re_notes/known_issues_x64.md` issue #2 for the staged AA/renderer roadmap |
+| 1 | ⚠ **Internal render scale's safe ceiling is NOT one fixed percentage** | 🔴 High — real, current, user-facing | Confirmed content-dependent: the exact same 200% that's clean throughout SP causes CONSTANT stutter under MP. See full detail below before raising this setting |
+| 2 | Pause-menu Back glyph flicker | 🟠 Medium | Cosmetic only — Back still works. Drawn from a stored position specifically to fix this, plus a separate native-template-match path for buy-station Back; several iterations landed 2026-09-21/22 but a residual flicker remains |
+| 3 | Sentry/turret-placement and Campaign QTE prompt **text** | 🟠 Medium | Mechanism works — the on-screen prompt itself still renders native. Buy-station and Survival ready-up's own prompt text are both now fully replaced (see [What works](#what-works-right-now)); this is what's left. Blocked on a genuinely unresolved native offset |
+| 4 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | 5 zones fully clean, many more no longer crash after the `SpeakerMap` fix; a `LoadedSound` alias-miss bug remains open — affects project velocity, not players |
+| 5 | AC-130 gun-type switching (105/40/25mm) | 🟡 Low | Confirmed GSC/data-driven with no native hook point; correctly left unfixed rather than guessed at |
+| 6 | Custom Options screen's vanilla-setting data layer (7/9 tabs) | 🟡 Low — deliberately deferred | INI config already covers everything this mod itself needs |
+| 7 | Back's `+scores` scoreboard | 🟢 Low | Real gap, but a confirmed no-op in SP/Survival on every platform; matters once MP ships |
+| 8 | SMAA edge smoothing | 🟢 Low — parked 2026-09-21 | Implemented but off by default and not viable yet: even a plain capture-and-redraw with no SMAA math looked worse than off and cost far more frame time, so the shared capture/redraw path is suspect independent of the SMAA shaders. See `re_notes/known_issues_x64.md` issue #2 for the staged AA/renderer roadmap |
+
+<details open>
+<summary><b>1. Internal render scale's safe ceiling is NOT one fixed percentage</b> — full detail</summary>
+
+`InternalRenderScalePercent` (the visual-enhancement suite's supersampling/
+downsampling override) defaults to 100% and never clamps or restricts what
+you set it to — it's uncapped by design (see issue #88). A real, severe,
+sustained stutter tied to pushing this well above 100% was investigated in
+full depth 2026-09-23 and root-caused to a genuine **native engine
+stability limit at large render-target sizes** — not a bug in this mod's
+own code (five separate real fix/rule-out attempts against this project's
+own code were all eliminated: a screen-capture cost, a hardcoded 3GB
+memory-detection cap, an I/O-coalescing feature, a HUD-layer CPU copy loop,
+and a shader-sampler setup chain). This is very plausibly why the original
+PC port locked its own internal render resolution to a fixed reference
+size in the first place, long before this mod existed.
+
+**The critical thing to understand: there is no single "safe" percentage.**
+In SP, 200% is completely clean — no stutter at all, confirmed across
+damage/pause/ADS/level-transition repros. The exact same 200% setting,
+tested the same day in Multiplayer, causes **constant, sustained lag** —
+not gated to any specific trigger event, just always there. The most
+likely explanation: MP's generally denser per-frame scenes (more players,
+more concurrently-rendered character/weapon models, more active
+netcode/prediction state) sit closer to this same underlying engine
+boundary BEFORE any render-scale multiplier is even applied, so the same
+percentage that's fully safe in one context can be well past the edge in
+another — a busier map or mode, a more chaotic moment in a match, a
+crowded Survival wave, or (unverified but plausible) even a specific
+level's own geometry/lighting complexity could all shift where that edge
+actually sits. **This mod has no way to detect any of that automatically.**
+
+A real, tested, on-screen warning already fires once per session above
+200% linear (the one boundary this project has actually confirmed, on one
+reference GPU, in SP) — but per the finding above, staying under 200%
+does NOT guarantee you're safe in every mode, and a more powerful GPU may
+tolerate meaningfully higher than 200% in some contexts and meaningfully
+less in others. **Practical guidance until this is better understood**:
+treat any increase above 100% as something to test deliberately in the
+specific mode/map you actually play, not a "set once and forget" value —
+if you notice stutter after raising this setting, especially in
+Multiplayer or a busy Survival wave, lower it back toward 100% rather
+than assuming the on-screen 200% warning is the only threshold that
+matters. See `re_notes/known_issues_x64.md` issue #4 for the complete
+investigation trail, including the exact live-test evidence behind this
+finding.
+
+</details>
 
 <details>
-<summary><b>1. Pause-menu Back glyph flicker</b> — full detail</summary>
+<summary><b>2. Pause-menu Back glyph flicker</b> — full detail</summary>
 
 This went through heavy iteration 2026-09-21/22: hardcoding the pause Back
 glyph's position and drawing it from that stored value every frame (instead
@@ -247,7 +297,7 @@ build — purely cosmetic, Back still functions correctly either way.
 </details>
 
 <details>
-<summary><b>2. Sentry/turret-placement and Campaign QTE prompt text</b> — full detail</summary>
+<summary><b>3. Sentry/turret-placement and Campaign QTE prompt text</b> — full detail</summary>
 
 Survival's ready-up prompt and the buy-station use-prompt are both now
 fully replaced with real glyph + text (2026-09-19/21, via the client
@@ -273,7 +323,7 @@ to get right) has never been fully live-exercised on x64.
 </details>
 
 <details>
-<summary><b>3. OpenAssetTools Unlinker crash (dev tooling)</b> — full detail</summary>
+<summary><b>4. OpenAssetTools Unlinker crash (dev tooling)</b> — full detail</summary>
 
 A real, project-wide GSC-extraction tooling blocker was found 2026-09-14:
 `Unlinker` (both the vendored version and the current latest release)
@@ -306,7 +356,7 @@ for the complete trail.
 </details>
 
 <details>
-<summary><b>4. AC-130 gun-type switching</b> — full detail</summary>
+<summary><b>5. AC-130 gun-type switching</b> — full detail</summary>
 
 Investigated in depth 2026-09-14 — a whole-binary native string sweep
 confirmed this is entirely GSC/data-driven with zero native dispatch case
@@ -319,7 +369,7 @@ session had no way to verify a change against. See
 </details>
 
 <details>
-<summary><b>5. Custom Options screen's vanilla-setting data layer</b> — full detail</summary>
+<summary><b>6. Custom Options screen's vanilla-setting data layer</b> — full detail</summary>
 
 The custom Options screen's real vanilla-setting tabs
 (Look/Video/Audio/Voice/Advanced Video/Movement/Actions) are silently
@@ -352,7 +402,7 @@ current `-x64` parity push.
 </details>
 
 <details>
-<summary><b>6. Back's `+scores` scoreboard</b> — full detail</summary>
+<summary><b>7. Back's `+scores` scoreboard</b> — full detail</summary>
 
 Ported (build-verified, not yet live-tested), but this was never a real
 functionality gap — confirmed live on `-x86`, including direct testimony
@@ -364,7 +414,7 @@ genuinely exists.
 </details>
 
 <details>
-<summary><b>7. SMAA edge smoothing</b> — full detail</summary>
+<summary><b>8. SMAA edge smoothing</b> — full detail</summary>
 
 MW3 (2011) ships no working AA (the render target reports zero MSAA
 samples). SMAA 1x (three passes — edge detect, blend weights via area/search
@@ -401,8 +451,10 @@ The same core technique underlies all four components:
   movement/look/buttons in natively — not synthesized keypresses.
 - **Visual enhancements**: hook the engine's own render pipeline (`EndScene`/
   `Reset`) and post-process ahead of/after the native draw, or write directly
-  to real, already-registered engine dvars (`ForceAnisotropicFiltering` and
-  similar) — never a separate overlay renderer.
+  to real, already-registered engine dvars — never a separate overlay
+  renderer. (The dvar-write path specifically is currently broken on x64 —
+  see [Known gaps](#known-gaps) issue #6 in `known_issues_x64.md`; render
+  scale/motion blur/FSR use the D3D9-hook path instead and are unaffected.)
 - **Netcode security fixes**: hook the game's own real network-message-
   parsing functions directly, validating/clamping attacker-controlled data
   to a known-safe size *before* the vulnerable original code runs — see
@@ -484,6 +536,19 @@ full completion (in controller-support and original-scope terms) before
 `v0.4.0-x64` ships, it'll be revisited rather than mechanically applied to
 a finished target.
 
+**Note — visual enhancements are a separate track from the above.**
+Everything in this section is specifically about controller input/menu
+navigation, gated by the VAC-risk opt-in policy. `InternalRenderScalePercent`
+(the visual-enhancement suite's render-resolution override) is a real
+exception already shipped in `v0.0.2-x64`: its hook signature was
+independently verified against `iw5mp.exe` and doesn't touch gameplay input
+or read any entity memory, so it works under Multiplayer today, on by
+default, with no VAC-risk acknowledgment needed. Motion blur and FSR remain
+SP-only for now — their own required safety-gate signature doesn't resolve
+under `iw5mp.exe` yet. **The same render-scale caution above applies here
+too, more so**: a live test found the identical 200% that's clean in SP
+causes constant stutter in MP — see the [Known gaps](#known-gaps) warning.
+
 ## Compatibility
 
 Built and verified only against retail Steam MW3. See the
@@ -510,7 +575,7 @@ Campaign/Survival only.
    to the DLL. See the [wiki Configuration page](../../wiki/Configuration)
    for every available key.
 
-Download the latest `v0.0.1-x64` release from this repo's
+Download the latest `v0.0.2-x64` release from this repo's
 [Releases page](../../releases/latest) or [Nexus Mods](https://www.nexusmods.com/callofdutymodernwarfare3/mods/29)
 — both ship the same zip (`d3d9.dll` + `LICENSE` + `PATCHNOTES.md` + a short
 `README.txt`). Building from source requires Windows, MSVC (Visual Studio
