@@ -280,6 +280,45 @@ project's hooks already do against the real system `d3d9.dll` today, just
 pointed at DXVK's own implementation instead. `Legacy D3D9` mode is completely
 unaffected — it keeps using the real system `d3d9.dll` exactly as today.
 
+### 4.6 Real question raised, direct user point: ship this as a plugin DLL instead, so it "isn't the d3d9.dll"?
+
+**Doesn't work as a detection-avoidance mechanism, for a real, hard technical
+reason**: Windows loads exactly one file named `d3d9.dll` per process (from
+the game's own install directory, standard DLL search order), and the game
+calls THAT file's own `Direct3DCreate9` export directly at startup. Something
+has to physically be that file and intercept device creation at that exact
+moment, before any device exists — this project's own existing plugin system
+loads plugins AFTER the main mod's own device/hooks already exist (a
+deliberate, correct design for what plugins are actually for), which is
+architecturally too late to ever intercept device creation itself. There is
+no way to route the real DXVK integration through the existing plugin loader
+— whatever handles `Vulkan` mode must be reachable from the real `d3d9.dll`'s
+own `Direct3DCreate9`, full stop. The on-disk module VAC observes as
+"`d3d9.dll`" is necessarily not the genuine Microsoft one either way — that's
+already true of this project's own CURRENT `Legacy D3D9`-only proxy too (see
+section 5's own real track-record discussion), and doesn't change based on
+where the DXVK-specific logic physically lives.
+
+**Where the underlying instinct is still genuinely right**: real isolation
+value exists, just not the value originally hoped for. Rather than growing
+this project's own main `d3d9.dll` to include the full DXVK/Streamline
+integration directly, the main proxy's `Direct3DCreate9` handling can stay
+almost exactly as it is today for the default `Legacy D3D9` path (same file,
+same already-2-months-clean behavior), with one small added branch: if
+`Vulkan` mode is selected, `LoadLibrary` a SEPARATE, clearly-labeled auxiliary
+DLL early (NOT via the plugin loader — a direct, explicit load from within
+`Direct3DCreate9` itself, before any device exists) and call ITS exported
+`Direct3DCreate9` instead, with all the new, large, unverified DXVK/Streamline
+integration code living entirely in that separate file. Real, legitimate
+benefits this actually delivers: the already-trusted core module's own diff
+stays small and easy to audit; the new, higher-risk surface is isolated,
+independently removable, and impossible to accidentally activate for anyone
+who hasn't explicitly opted into `Vulkan` mode; and it keeps this project's
+own established "opt-in feature = separate, inspectable unit" convention
+(matching how the security component already ships as a separate,
+"greenlit" plugin DLL) even though the LOADING mechanism itself can't be the
+literal plugin API for this specific piece.
+
 ## 5. VAC/ban risk for `Vulkan` mode — real research, a genuine correction to an assumption almost made
 
 **A wrong argument was almost made here and is recorded so it isn't repeated**:
