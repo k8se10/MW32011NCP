@@ -41,6 +41,25 @@ enum class StickLayout { Default, Southpaw, Legacy, LegacySouthpaw };
 // issue #48 for the current approach and status).
 enum class GlyphStyle { Xbox360, XboxModern, PlayStation };
 
+// [Video] GraphicsApi (2026-09-23, locked architecture decision -- see
+// re_notes/x64_migration/vulkan_dlss_pipeline_research.md and
+// re_notes/known_issues_x64.md issue #2 for the full research trail). Real
+// selector between this project's existing, already-proven native D3D9
+// pipeline and a new, not-yet-implemented DXVK-in-process Vulkan
+// translation pipeline (needed underneath NVIDIA Streamline/DLSS, since
+// Streamline has no D3D9 support at all -- confirmed directly from
+// NVIDIA's own SDK). STRICTLY OPT-IN, same "off by default until
+// independently verified" pattern as every other structurally-significant
+// feature this project ships (AutoMantleEnabled, UseCustomOptionsScreen,
+// the MP VAC-risk acknowledgment). LegacyD3D9 is a pure label for "the
+// existing pipeline, unchanged" -- selecting it changes nothing; features
+// that need Vulkan underneath (DLSS) are simply unavailable in this mode,
+// honestly flagged as such rather than silently missing. This enum exists
+// ahead of the actual Vulkan/DXVK implementation landing -- see
+// InitGraphicsApiMode() in d3d9_hook.cpp for the current (stub) branch
+// point.
+enum class GraphicsApi { LegacyD3D9, Vulkan };
+
 // One entry per logical action; resolves to whichever physical XInput button/trigger
 // the active ButtonLayout (+ FlipTriggers) currently assigns it to. Scoreboard (Back)
 // is included for completeness even though nothing is wired to it yet (task #5).
@@ -700,6 +719,18 @@ struct ModConfig
     // rounds 1-4 built. See re_notes/known_issues.md issue #66 and
     // re_notes/options_menu_full_map.md for the full design/research trail.
     bool useCustomOptionsScreen = false;
+
+    // [Video] GraphicsApi (see the enum's own comment above for the full
+    // rationale) -- LegacyD3D9 (default) keeps this project's existing,
+    // already-proven native D3D9 hook pipeline completely unchanged. Vulkan
+    // is the new, not-yet-implemented DXVK-in-process translation pipeline
+    // this project will use to unlock real Streamline/DLSS integration.
+    // Selecting Vulkan today is a real, opt-in no-op (InitGraphicsApiMode()
+    // logs the selection and falls back to LegacyD3D9 behavior) until that
+    // implementation actually lands -- never silently ignored, always
+    // logged, so a player who sets this early gets an honest "not ready
+    // yet, falling back" rather than an unexplained non-effect.
+    GraphicsApi graphicsApi = GraphicsApi::LegacyD3D9;
 
     // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,
     // 0/disabled by default. Real motivation, direct user framing: "basically the plan

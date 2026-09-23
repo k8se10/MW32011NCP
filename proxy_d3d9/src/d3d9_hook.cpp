@@ -886,10 +886,35 @@ void InstallWndProcHook(HWND hwnd)
 #endif
 }
 
+// InitGraphicsApiMode (2026-09-23) -- the real branch point [Video] GraphicsApi's own
+// comment (mod_config.h) refers to. Called once, right before the real CreateDevice
+// call-through, since a future DXVK-backed Vulkan mode would need to intercept device
+// creation itself rather than letting the real D3D9 device get created first (see
+// re_notes/x64_migration/vulkan_dlss_pipeline_research.md's own hook-ordering open
+// question). Currently a real, honest no-op for BOTH selections: LegacyD3D9 needs no
+// action (the existing pipeline below runs unchanged either way), and Vulkan logs a
+// clear "not implemented yet, falling back" message rather than silently doing
+// nothing or crashing -- a player who sets GraphicsApi=Vulkan today gets an honest
+// explanation in proxy_d3d9.log instead of an unexplained non-effect. Real
+// implementation (DXVK vendoring, the vulkan-1.dll proxy-load hook, slSetVulkanInfo)
+// lands here once that work starts; nothing below this comment should need to change
+// shape when it does, only gain real branches.
+void InitGraphicsApiMode()
+{
+    if (g_modConfig.graphicsApi == GraphicsApi::Vulkan) {
+        LogFromController("[graphics-api] GraphicsApi=Vulkan selected, but the Vulkan/DXVK "
+            "pipeline is not implemented yet -- falling back to LegacyD3D9 behavior.");
+    } else {
+        LogFromController("[graphics-api] GraphicsApi=LegacyD3D9 (default) -- existing native D3D9 pipeline, unchanged.");
+    }
+}
+
 HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
     HWND hFocusWindow, DWORD BehaviorFlags, void* pPresentationParameters,
     void** ppReturnedDeviceInterface)
 {
+    InitGraphicsApiMode();
+
     HRESULT hr = g_origCreateDevice(This, Adapter, DeviceType, hFocusWindow, BehaviorFlags,
         pPresentationParameters, ppReturnedDeviceInterface);
 

@@ -179,7 +179,7 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 44; // v23->v24: FsrSharpenEnabled/FsrSharpenStrength (Phase B)
+constexpr unsigned long kCurrentConfigVersion = 45; // v44->v45: [Video] GraphicsApi (LegacyD3D9/Vulkan selector)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -254,6 +254,11 @@ constexpr unsigned long kCurrentConfigVersion = 44; // v23->v24: FsrSharpenEnabl
                                                      // benefit. The bump forces WriteDefaultConfig() to rewrite
                                                      // any already-current-version tester's file so the real
                                                      // default reaches them too, not just brand-new installs.
+                                                     // v44->v45 (2026-09-23): new [Video] GraphicsApi key --
+                                                     // the locked LegacyD3D9/Vulkan architecture selector (see
+                                                     // GraphicsApi's own enum comment, mod_config.h). Default
+                                                     // LegacyD3D9 -- a pure no-op for every existing install,
+                                                     // the Vulkan/DXVK pipeline itself isn't implemented yet.
                                                      // (v41->v42 and v42->v43 were not documented here when
                                                      // they landed -- a pre-existing gap in this comment chain,
                                                      // not touched by this entry.)
@@ -418,6 +423,28 @@ GlyphStyle ParseGlyphStyle(const char* s, GlyphStyle fallback)
     if (_stricmp(s, "XboxModern") == 0) return GlyphStyle::XboxModern;
     if (_stricmp(s, "PlayStation") == 0) return GlyphStyle::PlayStation;
     return fallback;
+}
+
+const char* GraphicsApiName(GraphicsApi v)
+{
+    switch (v) {
+        case GraphicsApi::Vulkan: return "Vulkan";
+        default: return "LegacyD3D9";
+    }
+}
+
+GraphicsApi ParseGraphicsApi(const char* s, GraphicsApi fallback)
+{
+    if (_stricmp(s, "LegacyD3D9") == 0) return GraphicsApi::LegacyD3D9;
+    if (_stricmp(s, "Vulkan") == 0) return GraphicsApi::Vulkan;
+    return fallback;
+}
+
+void ReadGraphicsApi(const char* path, GraphicsApi& outValue)
+{
+    char buf[32];
+    GetPrivateProfileStringA("Video", "GraphicsApi", GraphicsApiName(outValue), buf, sizeof(buf), path);
+    outValue = ParseGraphicsApi(buf, outValue);
 }
 
 void ReadGlyphStyle(const char* path, GlyphStyle& outValue)
@@ -620,6 +647,15 @@ void WriteDefaultConfig(const char* path)
         "UseCustomOptionsScreen=%d\n"
         "\n"
         "[Video]\n"
+        "; Graphics API selector (2026-09-23 architecture decision -- see\n"
+        "; re_notes/x64_migration/vulkan_dlss_pipeline_research.md). LegacyD3D9 (default)\n"
+        "; is this project's existing, already-proven native D3D9 pipeline, completely\n"
+        "; unchanged. Vulkan is a NEW, NOT YET IMPLEMENTED DXVK-in-process translation\n"
+        "; pipeline that will unlock real NVIDIA Streamline/DLSS support -- selecting it\n"
+        "; today is a real, harmless no-op (falls back to LegacyD3D9 behavior, logged) until\n"
+        "; that work lands. STRICTLY OPT-IN once implemented -- same pattern as every other\n"
+        "; structurally-significant feature this project ships off by default.\n"
+        "GraphicsApi=%s\n"
         "; Issue #88: fixes a real engine behavior where the actual 3D scene renders\n"
         "; smaller than your real display, which looks visibly soft/dated (\"2005 bad\")\n"
         "; above 1080p. Set to 100 to render the scene at your real native resolution;\n"
@@ -1001,6 +1037,7 @@ void WriteDefaultConfig(const char* path)
         PhysicalInputName(g_modConfig.customButtonMap.pause),
         PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
+        GraphicsApiName(g_modConfig.graphicsApi),
         g_modConfig.internalRenderScalePercent,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
@@ -1314,6 +1351,7 @@ void LoadModConfig()
     ReadBool(path, "Gyro", "InvertPitch", g_modConfig.gyroInvertPitch);
     ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
     ReadBool(path, "Gyro", "OnlyWhileAds", g_modConfig.gyroOnlyWhileAds);
+    ReadGraphicsApi(path, g_modConfig.graphicsApi);
     {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;
