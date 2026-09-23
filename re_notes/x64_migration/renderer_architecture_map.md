@@ -13,7 +13,25 @@ not a real replacement. **Named and confirmed, same day**: the competing mod
 is "MW3 Remastered" on Nexus Mods
 (`nexusmods.com/callofdutymodernwarfare3/mods/10`) — direct user
 confirmation, having already reviewed its files: "this is the current mw3
-remastered mod which does this via reshade." This project's own existing
+remastered mod which does this via reshade." **Independently re-confirmed
+by directly inspecting the shipped release archive** (`MW3 Remastered 10
+1.5 2026-09-13T22-03Z YUAs0NSPB.zip`, 135 files, 59.5MB): the entire
+package is a stock, unmodified ReShade `d3d9.dll` binary, the public
+`reshade-shaders` community repository unmodified (standard textures —
+blue noise, LUTs, dirt/bloom textures — accounting for nearly all of the
+59.5MB), one `ReShadePreset.ini` config enabling a stock effect chain
+(MartysMods Launchpad/MXAO/RTGI/SMAA, qUINT Debanding/Lightroom/DOF, Bloom,
+AmbientLight, FakeHDR, DPX, Technicolor2, Vibrance, AdaptiveSharpen), and
+one custom splash-screen bitmap for branding. Zero custom native code,
+zero engine-specific integration of any kind, zero DLSS/DXVK/motion-vector
+component (confirmed via a direct file-list search — no matches for any of
+those). Even "RTGI" (MartysMods' shader, the closest thing to a "ray
+tracing" claim in the enabled effect list) is a well-documented
+screen-space depth-buffer ray-marching SSGI approximation, the same real
+category as MXAO/SMAA — a genuine, respected ReShade effect, but not
+remotely a renderer replacement. This is the single, complete, confirmed
+technical basis for the "not much more than a reshade preset" comparison
+this whole effort started from — not an impression, a fully verified fact. This project's own existing
 visual-enhancement suite (render scale, motion blur, FSR, forced-quality
 dvars) is itself still fundamentally a post-process/dvar-tweak layer on top
 of the native D3D9 pipeline, not a replacement — this new effort is
