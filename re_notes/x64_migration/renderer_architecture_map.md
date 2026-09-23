@@ -309,13 +309,29 @@ further.
 - **Whoever actually performs the named phases in section 5's table**
   (`cell dyn brush/model`, `dpvs ent` culling, `spot shadow ent` gathering,
   `gen drawsurfs`) — confirmed NOT to be inline in `FUN_1401d7480` itself,
-  almost certainly a separate thread. Real next step: enumerate this
-  process's threads at runtime (a genuinely answerable, low-risk static-
-  adjacent question — or, if this project's own thread-creation call sites
-  are searched statically, likely findable without a live attach at all:
-  grep for `CreateThread`/`_beginthreadex` xrefs and see which one's start
-  routine references the same `0x141896b98`-family command-stream globals
-  section 4 found).
+  almost certainly a separate thread. **Attempted this pass, inconclusive**:
+  `FindCallersByName.java` against both `CreateThread` (a real KERNEL32
+  import, confirmed present in the DLL import table) and
+  `_beginthreadex`/`_beginthread` (not present as named external symbols at
+  all — expected, since this binary statically links its CRT, no
+  `MSVCRT.DLL`/`UCRTBASE.DLL` import exists) — `CreateThread` resolved as a
+  real external symbol but came back with **zero callers**. This is a real
+  negative result, but very likely a tooling artifact of `-noanalysis`
+  mode rather than genuine evidence the game creates no threads via it:
+  Ghidra's reference manager only sees a caller if the call site itself
+  has already been disassembled into a real `Instruction`/`Reference`, and
+  `-noanalysis` deliberately skips that broad a sweep for speed (this
+  project's own established, deliberate tradeoff — see this directory's
+  other RE docs for the same "-noanalysis, targeted scripts only"
+  convention). **Two real paths forward, neither attempted yet**: (1) an
+  IAT-slot-address AOB scan for indirect `CALL [rip+disp32]` patterns
+  targeting `CreateThread`'s specific import-table slot (avoids needing a
+  full analysis pass, reuses this project's own existing pattern-scan
+  tooling class); (2) a live thread-enumeration diagnostic
+  (`CreateToolhelp32Snapshot`/`Thread32First`, or simply logging each
+  thread's start address via `NtQueryInformationThread`) — genuinely new
+  live instrumentation, would need explicit agreement first per this
+  project's own standing "no live diags without agreement" convention.
 - **Shadow-map rendering** specifically — not yet located at all. This
   project's own existing visual-suite work (issue #107,
   `ForceHighQualityShadows`) found the `sm_fastSunShadow` dvar and the
