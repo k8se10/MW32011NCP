@@ -4158,6 +4158,17 @@ bool EnsureMotionBlurShader(void* device)
     HRESULT hr = createPixelShader(device, reinterpret_cast<const DWORD*>(g_motionBlurPixelShaderBytecode), &g_motionBlurPixelShader);
     if (FAILED(hr) || !g_motionBlurPixelShader) {
         g_motionBlurPixelShader = nullptr;
+        // 2026-09-23: this failure path was previously completely silent -- a real
+        // gap surfaced by the first GraphicsApi=Vulkan live test reporting "motion
+        // blur not visible, upscale worked fine." This function short-circuits to
+        // the g_motionBlurPixelShader-already-set branch on every later call, so
+        // this can only ever log once per session regardless of how many frames
+        // retry it -- tells a future session directly from proxy_d3d9.log whether
+        // shader creation itself is failing under a given backend (DXVK included)
+        // rather than needing to guess between that and this pass's own gates.
+        char buf[128];
+        sprintf_s(buf, "[motion-blur] EnsureMotionBlurShader: CreatePixelShader FAILED, hr=0x%08lX", hr);
+        LogFromController(buf);
         return false;
     }
     return true;
@@ -4289,6 +4300,23 @@ bool RunPreOverlayScenePasses(void* device)
     //   }
     (void)blurActiveNow;
     if (g_modConfig.motionBlurEnabled && EnsureMotionBlurShader(device)) {
+        // 2026-09-23: one-time ("logged exactly once per session, not per-frame
+        // spam) confirmation that this pass's own gates all passed AND the shader
+        // exists AND DrawFullScreenPass was actually reached -- added alongside
+        // EnsureMotionBlurShader's own new failure log for the same live-test
+        // investigation ("motion blur not visible, upscale worked fine" under
+        // GraphicsApi=Vulkan). Together the two logs distinguish "the gate/shader
+        // never got this far" from "it ran every time but produced no visible
+        // effect" -- the latter would point at the actual capture/composite/blend
+        // step inside DrawFullScreenPass as the real DXVK-specific suspect, not
+        // this pass's own gating logic (which is pure native-engine-state reads,
+        // unrelated to which D3D9 backend is active).
+        static bool s_loggedFirstRun = false;
+        if (!s_loggedFirstRun) {
+            s_loggedFirstRun = true;
+            LogFromController("[motion-blur] First DrawFullScreenPass call this session -- "
+                "gates passed, shader exists, pass is actually running.");
+        }
         g_fullScreenPassLinear = true;
         DrawFullScreenPass(device, g_motionBlurPixelShader, MotionBlurShaderSetupCallback);
         g_fullScreenPassLinear = false;

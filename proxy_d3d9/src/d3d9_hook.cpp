@@ -57,6 +57,7 @@
 #pragma comment(lib, "dbghelp.lib")
 
 extern void LogFromController(const char* msg);
+extern bool IsDxvkActive(); // dllmain.cpp -- see g_dxvkActive's own comment there
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
 extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp
 
@@ -937,8 +938,21 @@ void InitGraphicsApiMode()
             "considered for iw5mp.exe) -- forcing LegacyD3D9 behavior under this binary.");
         return;
     }
-    LogFromController("[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but the "
-        "Vulkan/DXVK pipeline is not implemented yet -- falling back to LegacyD3D9 behavior.");
+    // 2026-09-23: this used to unconditionally claim "not implemented yet, falling
+    // back" -- wrong as of DXVK actually being vendored; caught via the first live
+    // GraphicsApi=Vulkan test (this exact line was logged on a session where DXVK
+    // HAD already loaded successfully, per the same log). Now reports the real
+    // status via IsDxvkActive() (dllmain.cpp), set on TryLoadVendoredDxvk()'s own
+    // success path -- the one place that actually knows which module g_realD3D9
+    // ended up pointing at.
+    if (IsDxvkActive()) {
+        LogFromController("[graphics-api] GraphicsApi=Vulkan active under iw5sp.exe -- "
+            "device creation is routing through the vendored DXVK build.");
+    } else {
+        LogFromController("[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but "
+            "no vendored DXVK build was loaded (see the earlier [graphics-api] line from "
+            "startup for the real reason) -- falling back to LegacyD3D9 behavior.");
+    }
 }
 
 HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,

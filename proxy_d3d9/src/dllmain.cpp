@@ -85,6 +85,19 @@ void* g_real_PSGPSampleTexture = nullptr;
 namespace {
 
 HMODULE g_realD3D9 = nullptr;
+// 2026-09-23: real status flag, set true only on TryLoadVendoredDxvk()'s own
+// success path -- exposed via IsDxvkActive() (file scope, below the namespace
+// this sits in) so d3d9_hook.cpp's InitGraphicsApiMode() can report the ACTUAL
+// backend instead of a hardcoded assumption. Found via the first live
+// GraphicsApi=Vulkan test: that function's own final log line unconditionally
+// claimed "not implemented yet, falling back to LegacyD3D9" even on a session
+// where DXVK had already loaded successfully (confirmed by the user's own
+// screenshot showing DXVK's real Vulkan HUD) -- a real, misleading bug in the
+// log output itself, not a functional one (CreateDevice always went through
+// whichever module g_realD3D9 actually pointed at regardless of this log
+// line's wording), but confusing enough to slow down reading the log for this
+// exact investigation.
+bool g_dxvkActive = false;
 
 FILE* g_log = nullptr;
 
@@ -442,6 +455,7 @@ bool TryLoadVendoredDxvk()
     }
 
     g_realD3D9 = dxvkModule;
+    g_dxvkActive = true;
     char buf[600];
     sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan: loaded vendored DXVK build from '%s' "
         "-- every d3d9 export from here on routes through DXVK's own D3D9-to-Vulkan "
@@ -533,6 +547,15 @@ bool ResolveRealExports()
 void LogFromController(const char* msg)
 {
     Log(msg);
+}
+
+// Real status accessor for other translation units (d3d9_hook.cpp's
+// InitGraphicsApiMode() specifically) -- see g_dxvkActive's own comment above for
+// why this exists. Safe to call any time after DllMain has run LoadRealD3D9();
+// before that, correctly reports false (the compiled-in default).
+bool IsDxvkActive()
+{
+    return g_dxvkActive;
 }
 
 // [Video] ForceD3D9On12 (issue #92, 2026-08-26) -- local, minimal declarations for
