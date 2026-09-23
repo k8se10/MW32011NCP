@@ -3495,8 +3495,23 @@ namespace {
 // Genuinely simpler than x86's FUN_0062abe0, which needed a custom EDI-register
 // convention and an inline __asm block (real_settings.cpp/analog_input_hooks.cpp's own
 // GetDvarInt) -- no __asm needed here at all.
+//
+// 2026-09-23 CRITICAL FIX -- this was a hardcoded absolute address
+// (reinterpret_cast<FindDvarX64Fn>(0x1402c3890)), a direct violation of this
+// project's own locked signature-scanning policy (CLAUDE.md SS5/SS10.3/SS10.8)
+// that went unnoticed since every prior caller was SP-gated -- see
+// known_issues_x64.md's "MP launch crash" round for the full incident this
+// caused once a non-SP-gated caller (frame pacing) finally called it under
+// iw5mp.exe and jumped into unrelated code in that separately-compiled
+// binary. Converted to a real signature scan, resolved once at startup in
+// InstallAnalogInputHooksX64 and cached, matching every other hook target in
+// this file. Signature: the function's first 18 bytes (MOV [RSP+0x18],RBX;
+// PUSH RDI; SUB RSP,0x20; MOV [RSP+0x30],RBP; MOV RDI,RCX) are all literal --
+// no CALL/JMP/RIP-relative bytes in this span, no wildcarding needed.
+constexpr const char* kFindDvarX64Signature =
+    "48 89 5C 24 18 57 48 83 EC 20 48 89 6C 24 30 48 8B F9";
 using FindDvarX64Fn = void*(*)(const char* name);
-FindDvarX64Fn const FindDvarX64Raw = reinterpret_cast<FindDvarX64Fn>(0x1402c3890);
+FindDvarX64Fn FindDvarX64Raw = nullptr;
 
 // Deliberately NOT reusing the generic GetDvarInt/Bool-equivalent (FUN_1402c3b10,
 // re_notes/x64_migration/actionslot_dvarhelpers_x64.md) for float dvars -- confirmed
@@ -3511,6 +3526,7 @@ FindDvarX64Fn const FindDvarX64Raw = reinterpret_cast<FindDvarX64Fn>(0x1402c3890
 // FUN_140069e60 below reading cg_fov/cg_fov1 the exact same way (raw MOVSS at +0x10).
 float GetDvarFloatX64(const char* name)
 {
+    if (!FindDvarX64Raw) return 0.0f; // unresolved (signature miss, or called before install) -- safe no-op
     void* dvarPtr = FindDvarX64Raw(name);
     if (!dvarPtr) return 0.0f;
     return *reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(dvarPtr) + 0x10);
@@ -3523,11 +3539,21 @@ float GetDvarFloatX64(const char* name)
 // every other type returns the raw pointer at +0x10 directly, and a not-found dvar
 // returns the same real empty-string sentinel (&DAT_1403e6bdb) x86's own GetDvarString
 // falls back to -- always safe to call, never returns null.
+//
+// 2026-09-23 CRITICAL FIX -- same hardcoded-address violation as
+// FindDvarX64Raw above, fixed the same way. Signature: `SUB RSP,0x28; CALL
+// FindDvarX64Raw (wildcarded rel32); TEST RAX,RAX; JNZ short` -- the CALL's
+// own operand is wildcarded (it's a relative displacement to
+// FindDvarX64Raw's own real address, not a literal), everything else in this
+// span is literal.
+constexpr const char* kGetDvarStringX64Signature =
+    "48 83 EC 28 E8 ?? ?? ?? ?? 48 85 C0 75 0C";
 using GetDvarStringX64Fn = const char*(*)(const char* name);
-GetDvarStringX64Fn const GetDvarStringX64Raw = reinterpret_cast<GetDvarStringX64Fn>(0x1402c3b50);
+GetDvarStringX64Fn GetDvarStringX64Raw = nullptr;
 
 const char* GetDvarStringX64(const char* name)
 {
+    if (!GetDvarStringX64Raw) return ""; // unresolved -- safe no-op, matches the real function's own empty-string-not-found sentinel
     return GetDvarStringX64Raw(name);
 }
 
@@ -3552,8 +3578,21 @@ const char* GetDvarStringX64(const char* name)
 // function's name alone. Confirmed read-only in its own disassembly (no stores to any
 // of the transition-state globals it reads) -- matches x86's own "pure query, no
 // observed side effects" note.
+// 2026-09-23 CRITICAL FIX -- same hardcoded-address violation as
+// FindDvarX64Raw/GetDvarStringX64Raw above, fixed the same way. Signature:
+// the function's first 17 bytes (MOV [RSP+0x8],RBX; PUSH RDI; SUB RSP,0x50;
+// MOVAPS [RSP+0x40],XMM6; MOV EDI,ECX) plus one more literal MOVAPS
+// ([RSP+0x30],XMM7) for extra uniqueness margin -- all literal, no
+// CALL/JMP/RIP-relative bytes in this span, no wildcarding needed.
+constexpr const char* kGetEffectiveFovX64Signature =
+    "48 89 5C 24 08 57 48 83 EC 50 0F 29 74 24 40 8B F9 0F 29 7C 24 30";
 using GetEffectiveFovX64Fn = float(*)(int playerIndex);
-GetEffectiveFovX64Fn const GetEffectiveFovX64 = reinterpret_cast<GetEffectiveFovX64Fn>(0x140069e60);
+GetEffectiveFovX64Fn GetEffectiveFovX64Raw = nullptr;
+float GetEffectiveFovX64(int playerIndex)
+{
+    if (!GetEffectiveFovX64Raw) return 0.0f; // unresolved -- callers already treat <=0 as "no zoom" fallback
+    return GetEffectiveFovX64Raw(playerIndex);
+}
 
 // Mirrors x86's own GetAdsLookRateScale (analog_input_hooks.cpp) formula exactly, now
 // that both of its real dependencies are resolved above -- see that function's own
@@ -4921,6 +4960,97 @@ void __fastcall Hook_MotionBlurTrigger(void* viewportCtx)
 {
     TriggerMotionBlurFromEngineHook();
     g_origMotionBlurTrigger(viewportCtx);
+}
+
+// ---- PURE DIAGNOSTIC hooks, 2026-09-23 -- damage-triggered-lag investigation
+// (known_issues_x64.md, "InternalRenderScalePercent + real health damage ->
+// stutter" round) -- CHANGE ZERO BEHAVIOR. Both always call straight through to
+// the real trampoline with the real arguments/return value untouched -- they
+// only measure/count real engine work that already happens. User confirmed
+// live: the stutter is (1) gated on render scale being non-default and (2)
+// specific to real health damage (armor absorbing the hit does NOT trigger
+// it), and is NOT caused by any of this mod's own on-screen post-process
+// features (motion blur/FSR/render-scale's own visual effect all separately
+// ruled out by direct testing). That re-validates a mechanism found via static
+// RE but never actually live-tested: FUN_1401bd1d0 (Hook_RenderResCompute's
+// target) computes _DAT_14188869c, an aspect-corrected UI scale factor, from
+// the render-scale override; _DAT_14188869c feeds FUN_14018fb70, the native
+// "hurt" HUD text draw (gated on a real per-frame damage/pain intensity
+// float, param+0x274 -- exactly the real/unarmored-damage-only trigger
+// condition reported), which feeds a rounded-rect corner generator
+// (FUN_14018f710) with a negative-sqrt domain-error fallback
+// (FUN_140395608, reachable up to 31x per FUN_14018fb70 call if the two
+// radius params it's given diverge). These two hooks measure real call
+// duration/count for FUN_14018fb70 and count real fires of FUN_140395608 --
+// if this mechanism is real, a lag spike should show a slow FUN_14018fb70
+// call and/or repeated FUN_140395608 fires in the same log window; if
+// neither ever fires abnormally, this specific theory is cleanly ruled out
+// without having touched any actual rendering behavior.
+
+// Signature: the function's first 23 bytes (PUSH RBX; MOV EAX,0x1270; CALL
+// __chkstk [wildcarded, rel32 CALL operand]; SUB RSP,RAX; MOVSS XMM2,[RCX+0x274])
+// -- the 0x1270 stack-frame-size immediate and the 0x274 field offset together
+// make this a highly distinctive match, confirmed via raw disassembly
+// (re_notes/ghidra_scripts/DisassembleRange.java against iw5sp.exe), not
+// decompiled C alone.
+constexpr const char* kHurtTextDrawSignature =
+    "40 53 B8 70 12 00 00 E8 ?? ?? ?? ?? 48 2B E0 F3 0F 10 91 74 02 00 00";
+
+using HurtTextDrawFn = void(__fastcall*)(void* self);
+HurtTextDrawFn g_origHurtTextDraw = nullptr;
+
+void __fastcall Hook_HurtTextDrawDiag(void* self)
+{
+    LARGE_INTEGER freq{}, t0{}, t1{};
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+    g_origHurtTextDraw(self);
+    QueryPerformanceCounter(&t1);
+    double ms = (freq.QuadPart > 0)
+        ? static_cast<double>(t1.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart)
+        : 0.0;
+
+    static int s_fireCount = 0;
+    static double s_maxMs = 0.0;
+    ++s_fireCount;
+    if (ms > s_maxMs) s_maxMs = ms;
+    // Log every fire for the first 20 (enough to see the shape of one hurt
+    // sequence) plus any genuinely slow call thereafter (>=1ms is already well
+    // above what a single UI-box draw should cost) -- avoids flooding the log
+    // during a long multi-hit sequence while still catching the spike itself.
+    if (s_fireCount <= 20 || ms >= 1.0) {
+        char buf[192];
+        sprintf_s(buf, "[x64-hurt-text-diag] FUN_14018fb70 call #%d took %.3fms (session max %.3fms)",
+                   s_fireCount, ms, s_maxMs);
+        LogFromController(buf);
+    }
+}
+
+// Signature: 30 literal bytes, no CALL/JMP/RIP-relative operands in this span
+// (confirmed via raw disassembly) -- the 0x7f800000 (IEEE754 +Infinity bit
+// pattern, this function's own NaN/Inf classification check) makes this
+// distinctive on its own.
+constexpr const char* kSqrtDomainErrorSignature =
+    "F3 0F 11 44 24 08 48 83 EC 58 B9 00 00 80 7F F3 0F 11 44 24 68 8B 54 24 68 8B C2 23 C1 3B C1";
+
+using SqrtDomainErrorFn = float(__fastcall*)(float value);
+SqrtDomainErrorFn g_origSqrtDomainError = nullptr;
+
+float __fastcall Hook_SqrtDomainErrorDiag(float value)
+{
+    static int s_fireCount = 0;
+    ++s_fireCount;
+    // This is a sqrtf() DOMAIN-ERROR fallback -- normal, healthy code should
+    // essentially never reach it. Log every fire up to 50 (session-scoped,
+    // not per-frame -- if this theory is right, fires should cluster tightly
+    // around a single damage event, not run continuously).
+    if (s_fireCount <= 50) {
+        char buf[160];
+        sprintf_s(buf, "[x64-sqrt-domain-error-diag] FUN_140395608 (sqrtf domain error) fired #%d, input=%f",
+                   s_fireCount, static_cast<double>(value));
+        LogFromController(buf);
+    }
+    return g_origSqrtDomainError(value);
 }
 
 // In-level time-delta flag -- x64 equivalent of x86's kInLevelFlagAddr
@@ -6889,6 +7019,53 @@ void InstallAnalogInputHooksX64()
     // one hook -- now that a second, unrelated hook (Sprint) exists, that early
     // return would silently skip Sprint too if only the diagnostic hook failed.
 
+    // 2026-09-23 CRITICAL FIX -- resolve the three dvar/FOV helper targets via
+    // real signature scans instead of the hardcoded absolute addresses they
+    // shipped with (see each one's own comment above for the full incident
+    // this caused under MP). Not real "hooks" (nothing gets detoured here,
+    // these are direct-call targets like Weapnext/D-pad elsewhere in this
+    // function), so no MH_CreateHook/EnableHook -- just resolve-once-and-cache,
+    // same as every other direct-call resolution in this file.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kFindDvarX64Signature);
+        if (!r.found) {
+            LogFromController("[x64-dvar] FATAL: Dvar_FindVar signature did not resolve -- "
+                "GetDvarFloatX64/GetDvarStringX64 will return safe defaults all session");
+        } else {
+            FindDvarX64Raw = reinterpret_cast<FindDvarX64Fn>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-dvar] Dvar_FindVar resolved @ 0x%llX -- active.",
+                static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGetDvarStringX64Signature);
+        if (!r.found) {
+            LogFromController("[x64-dvar] FATAL: GetDvarString signature did not resolve -- "
+                "GetDvarStringX64 will return \"\" all session");
+        } else {
+            GetDvarStringX64Raw = reinterpret_cast<GetDvarStringX64Fn>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-dvar] GetDvarString resolved @ 0x%llX -- active.",
+                static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGetEffectiveFovX64Signature);
+        if (!r.found) {
+            LogFromController("[x64-dvar] FATAL: GetEffectiveFov signature did not resolve -- "
+                "ADS zoom-aware look-slowdown will use the hipfire rate all session");
+        } else {
+            GetEffectiveFovX64Raw = reinterpret_cast<GetEffectiveFovX64Fn>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-dvar] GetEffectiveFov resolved @ 0x%llX -- active.",
+                static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+
     {
         SigScan::Result r = SigScan::FindPatternInMainModule(kPmoveTickSignature);
         if (!r.found) {
@@ -7560,6 +7737,65 @@ void InstallAnalogInputHooksX64()
         LogFromController("[x64-motionblur] Motion blur/FSR both disabled at startup -- trigger hook NOT "
             "installed this session (2026-09-22 isolation test: installation itself is now conditional, "
             "not just internal behavior -- see this install site's own comment).");
+    }
+
+    // PURE DIAGNOSTIC hooks -- FUN_14018fb70 (hurt-text draw) + FUN_140395608
+    // (sqrt domain-error handler). See these hooks' own comment (above
+    // Hook_HurtTextDrawDiag) for the full rationale. Installed unconditionally
+    // (not gated on render scale being enabled) since the point is to observe
+    // real gameplay regardless of current config -- both hooks are no-ops in
+    // terms of behavior either way.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kHurtTextDrawSignature);
+        if (!r.found) {
+            LogFromController("[x64-hurt-text-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_HurtTextDrawDiag),
+                                                    reinterpret_cast<void**>(&g_origHurtTextDraw));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-hurt-text-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-hurt-text-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-hurt-text-diag] Diagnostic hook installed on FUN_14018fb70 (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kSqrtDomainErrorSignature);
+        if (!r.found) {
+            LogFromController("[x64-sqrt-domain-error-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SqrtDomainErrorDiag),
+                                                    reinterpret_cast<void**>(&g_origSqrtDomainError));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-sqrt-domain-error-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-sqrt-domain-error-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-sqrt-domain-error-diag] Diagnostic hook installed on FUN_140395608 (read-only, changes no behavior).");
+                }
+            }
+        }
     }
 
     // Weapnext -- same direct-call pattern as Buttons/Pause above.
