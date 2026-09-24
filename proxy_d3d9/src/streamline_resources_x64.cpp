@@ -74,6 +74,23 @@ constexpr int kSetDepthStencilSurfaceVtableIndex = 39;
 // signature: HRESULT SetRenderTarget(DWORD RenderTargetIndex, IDirect3DSurface9*).
 constexpr int kSetRenderTargetVtableIndex = 37;
 
+// IDirect3DDevice9::CreateTexture (slot 23) / IDirect3DTexture9::GetSurfaceLevel
+// (slot 18) -- same stable public COM constants overlay_hud.cpp's own
+// kCreateTextureVtableIndex/kGetSurfaceLevelVtableIndex already use; redeclared
+// here (internal linkage, not exported) rather than shared, matching this
+// project's own existing convention of each file owning its own copy of these
+// fixed, never-changing interface constants.
+constexpr int kCreateTextureVtableIndex = 23;
+constexpr int kGetSurfaceLevelVtableIndex = 18;
+constexpr DWORD kD3DUSAGE_RENDERTARGET = 0x00000001;
+constexpr DWORD kD3DPOOL_DEFAULT = 0;
+constexpr DWORD kD3DFMT_A8R8G8B8 = 21; // matches the real scene color's own
+    // confirmed VkFormat 44 (VK_FORMAT_B8G8R8A8_UNORM) via DXVK's translation.
+
+typedef HRESULT(WINAPI* CreateTextureFn)(void* This, UINT Width, UINT Height, UINT Levels,
+    DWORD Usage, DWORD Format, DWORD Pool, void** ppTexture, HANDLE* pSharedHandle);
+typedef HRESULT(WINAPI* GetSurfaceLevelFn)(void* This, UINT Level, void** ppSurfaceLevel);
+
 using SetDepthStencilSurfaceFn = HRESULT(STDMETHODCALLTYPE*)(void*, void*);
 SetDepthStencilSurfaceFn g_origSetDepthStencilSurface = nullptr;
 
@@ -136,6 +153,24 @@ VkImage g_cachedDepthImage = VK_NULL_HANDLE;
 VkImageView g_cachedDepthView = VK_NULL_HANDLE;
 VkImage g_cachedColorImage = VK_NULL_HANDLE;
 VkImageView g_cachedColorView = VK_NULL_HANDLE;
+
+// Real DLSS output buffer (kBufferTypeScalingOutputColor) -- unlike depth
+// and color input, the game has no existing resource for this at all (DLSS
+// writes a NEW, real image here; nothing currently consumes it). Created
+// once, lazily, as a real D3D9 RENDERTARGET texture at the real native/
+// display resolution ("internal render scaled percent is what we feed into
+// dlss" -- the INPUT side; the OUTPUT side is the real display resolution
+// this project's own upscale target is), via this project's own already-
+// established CreateTexture pattern (overlay_hud.cpp's own
+// EnsureBlurTexture/CreateFullscreenCaptureTexture etc.), then resolved to
+// a real Vulkan image/view through the SAME DXVK interop chain as
+// depth/color input. Recreated if the real native resolution ever changes.
+void* g_outputColorTexture = nullptr; // real IDirect3DTexture9*, we own this
+void* g_outputColorSurface = nullptr; // real IDirect3DSurface9*, GetSurfaceLevel(0) of the above
+uint32_t g_outputColorWidth = 0;
+uint32_t g_outputColorHeight = 0;
+VkImage g_cachedOutputColorImage = VK_NULL_HANDLE;
+VkImageView g_cachedOutputColorView = VK_NULL_HANDLE;
 
 bool ResolveVulkanFunctionsIfNeeded()
 {
@@ -405,6 +440,149 @@ void TagColorResourceForFrame(void* renderTarget)
     StreamlineSetTagForFrameX64(&colorTag, 1);
 }
 
+// Real DLSS output buffer (kBufferTypeScalingOutputColor) -- see this file's
+// own top comment and the g_outputColorTexture block's comment above for the
+// full design ("internal render scaled percent is what we feed into dlss" --
+// the input side; this is the real output side, the real native/display
+// resolution). Lazily creates a real D3D9 texture the first time it's
+// needed, recreating it if the real native resolution ever changes (e.g. a
+// real display-mode change mid-session). Called once per real frame,
+// unconditionally -- unlike depth/color input, this isn't hooked off a
+// real game call, since the game never touches this resource at all; WE
+// own its entire lifecycle.
+void TagOutputColorResourceForFrame()
+{
+    static long long s_attemptCount = 0;
+    ++s_attemptCount;
+    bool heartbeat = s_attemptCount <= 5 || (s_attemptCount % 5000) == 0;
+
+    void* device = GetLastKnownRenderDevice();
+    if (!device) return;
+
+    int nativeW = 1920, nativeH = 1080;
+    GetRealScreenSize(device, nativeW, nativeH);
+    if (nativeW <= 0 || nativeH <= 0) return;
+
+    // (Re)create if this is the first attempt, or the real native resolution
+    // changed since the texture was created.
+    if (!g_outputColorTexture || g_outputColorWidth != static_cast<uint32_t>(nativeW) ||
+        g_outputColorHeight != static_cast<uint32_t>(nativeH)) {
+        if (g_outputColorSurface) {
+            reinterpret_cast<IUnknown*>(g_outputColorSurface)->Release();
+            g_outputColorSurface = nullptr;
+        }
+        if (g_outputColorTexture) {
+            reinterpret_cast<IUnknown*>(g_outputColorTexture)->Release();
+            g_outputColorTexture = nullptr;
+        }
+        // A stale cached view/image would now point at a released image --
+        // clear them too so GetOrCreateViewX64 is forced to create fresh
+        // ones against the new texture rather than reuse a dangling handle.
+        g_cachedOutputColorImage = VK_NULL_HANDLE;
+        g_cachedOutputColorView = VK_NULL_HANDLE;
+
+        void** deviceVtbl = *reinterpret_cast<void***>(device);
+        auto createTexture = reinterpret_cast<CreateTextureFn>(deviceVtbl[kCreateTextureVtableIndex]);
+        HRESULT hr = createTexture(device, static_cast<UINT>(nativeW), static_cast<UINT>(nativeH), 1,
+            kD3DUSAGE_RENDERTARGET, kD3DFMT_A8R8G8B8, kD3DPOOL_DEFAULT, &g_outputColorTexture, nullptr);
+        if (FAILED(hr) || !g_outputColorTexture) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-output] CreateTexture FAILED (hr=0x%08lX) for a real "
+                "%dx%d DLSS output buffer.", hr, nativeW, nativeH);
+            LogFromController(buf);
+            g_outputColorTexture = nullptr;
+            return;
+        }
+
+        void** texVtbl = *reinterpret_cast<void***>(g_outputColorTexture);
+        auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevelFn>(texVtbl[kGetSurfaceLevelVtableIndex]);
+        hr = getSurfaceLevel(g_outputColorTexture, 0, &g_outputColorSurface);
+        if (FAILED(hr) || !g_outputColorSurface) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-output] GetSurfaceLevel FAILED (hr=0x%08lX) on the "
+                "real DLSS output texture.", hr);
+            LogFromController(buf);
+            reinterpret_cast<IUnknown*>(g_outputColorTexture)->Release();
+            g_outputColorTexture = nullptr;
+            g_outputColorSurface = nullptr;
+            return;
+        }
+
+        g_outputColorWidth = static_cast<uint32_t>(nativeW);
+        g_outputColorHeight = static_cast<uint32_t>(nativeH);
+        char buf[200];
+        sprintf_s(buf, "[x64-streamline-output] Created a real %ux%u DLSS output texture+surface.",
+            g_outputColorWidth, g_outputColorHeight);
+        LogFromController(buf);
+    }
+
+    if (!g_outputColorSurface) return;
+
+    IUnknown* surfaceUnknown = reinterpret_cast<IUnknown*>(g_outputColorSurface);
+    ID3D9VkInteropTextureX64* interopTexture = nullptr;
+    HRESULT hr = surfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
+        reinterpret_cast<void**>(&interopTexture));
+    if (FAILED(hr) || !interopTexture) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-output] QueryInterface for ID3D9VkInteropTexture "
+                "FAILED (hr=0x%08lX) on our own DLSS output texture.", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    VkImage image = VK_NULL_HANDLE;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
+    interopTexture->Release();
+
+    if (FAILED(hr) || image == VK_NULL_HANDLE) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-output] GetVulkanImageInfo FAILED (hr=0x%08lX) on our "
+                "own DLSS output texture.", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    if (heartbeat) {
+        char buf[350];
+        sprintf_s(buf, "[x64-streamline-output] attempt=%lld image=0x%llx layout=%d format=%d "
+            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u usage=0x%X",
+            s_attemptCount, reinterpret_cast<unsigned long long>(image), static_cast<int>(layout),
+            static_cast<int>(info.format), info.extent.width, info.extent.height, info.extent.depth,
+            info.mipLevels, info.arrayLayers, info.usage);
+        LogFromController(buf);
+    }
+
+    if (!ResolveVulkanFunctionsIfNeeded()) return;
+
+    VkImageView view = GetOrCreateViewX64(image, info.format, info.mipLevels, info.arrayLayers,
+        VK_IMAGE_ASPECT_COLOR_BIT, g_cachedOutputColorImage, g_cachedOutputColorView,
+        "[x64-streamline-output]", "output-color");
+    if (view == VK_NULL_HANDLE) return;
+
+    sl::Resource outputResource(sl::ResourceType::eTex2d, reinterpret_cast<void*>(image),
+        /*mem*/ nullptr, reinterpret_cast<void*>(view), static_cast<uint32_t>(layout));
+    outputResource.width = info.extent.width;
+    outputResource.height = info.extent.height;
+    outputResource.nativeFormat = static_cast<uint32_t>(info.format);
+    outputResource.mipLevels = info.mipLevels;
+    outputResource.arrayLayers = info.arrayLayers;
+    outputResource.usage = info.usage;
+
+    // eValidUntilPresent -- we own this texture for its entire lifetime
+    // (only released on resolution change or DLL unload), so it's always
+    // valid for at least the rest of the current frame.
+    sl::ResourceTag outputTag(&outputResource, sl::kBufferTypeScalingOutputColor,
+        sl::ResourceLifecycle::eValidUntilPresent);
+    StreamlineSetTagForFrameX64(&outputTag, 1);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurfaceX64(void* device, void* pNewZStencil)
 {
     if (pNewZStencil) TagDepthResourceForFrame(pNewZStencil);
@@ -422,6 +600,15 @@ HRESULT STDMETHODCALLTYPE Hook_SetRenderTargetX64(void* device, DWORD renderTarg
 }
 
 } // namespace
+
+// Called once per real frame from Hook_EndScene (overlay_hud.cpp) -- unlike
+// depth/color input, this isn't hooked off a real game call (the game never
+// touches this resource), so it needs its own explicit per-frame call site
+// rather than a MinHook detour.
+void TagStreamlineOutputColorX64()
+{
+    TagOutputColorResourceForFrame();
+}
 
 // Called once, from InstallEndSceneHook (overlay_hud.cpp) -- same one-
 // device-for-this-game's-lifetime guard convention every other x64 hook
