@@ -47,6 +47,12 @@
 #include "frame_benchmark.h"
 #if defined(_M_X64) || defined(_WIN64)
 #include "frame_pacing_x64.h"
+void StreamlineFrameTick(); // streamline_integration_x64.cpp, 2026-09-24 -- real
+    // per-frame slGetNewFrameToken() call, the next unstarted step after
+    // slSetVulkanInfo. Called from Hook_EndScene below, the one confirmed
+    // exactly-once-per-real-frame hook point this project already uses for
+    // every other per-frame diagnostic. No-ops (returns immediately) until
+    // Streamline has actually registered a device via slSetVulkanInfo.
 #endif
 #include "vanilla_settings_sync.h"
 #include "real_settings.h"
@@ -7609,6 +7615,9 @@ HRESULT WINAPI Hook_EndScene(void* device)
     g_lastKnownRenderDevice = device;
     DrawBuildWatermark(device);
     DrawJitterProbeOverlayIfEnabled(device);
+#if defined(_M_X64) || defined(_WIN64)
+    StreamlineFrameTick();
+#endif
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every
     // real frame, internally rate-limited to ~2s and a fast no-op otherwise (see

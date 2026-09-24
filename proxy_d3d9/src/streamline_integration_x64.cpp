@@ -42,14 +42,18 @@ using PFun_slInit_t = sl::Result(const sl::Preferences&, uint64_t);
 using PFun_slShutdown_t = sl::Result();
 using PFun_slGetFeatureRequirements_t = sl::Result(sl::Feature, sl::FeatureRequirements&);
 using PFun_slSetVulkanInfo_t = sl::Result(const sl::VulkanInfo&);
+using PFun_slGetNewFrameToken_t = sl::Result(sl::FrameToken*&, const uint32_t*);
 
 HMODULE g_streamlineModule = nullptr;
 PFun_slInit_t* g_slInit = nullptr;
 PFun_slShutdown_t* g_slShutdown = nullptr;
 PFun_slGetFeatureRequirements_t* g_slGetFeatureRequirements = nullptr;
 PFun_slSetVulkanInfo_t* g_slSetVulkanInfo = nullptr;
+PFun_slGetNewFrameToken_t* g_slGetNewFrameToken = nullptr;
 bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
+sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
+    // refreshed once per real frame by StreamlineFrameTick() -- never freed by us.
 
 bool TryLoadStreamlineInterposer()
 {
@@ -86,27 +90,30 @@ bool TryLoadStreamlineInterposer()
     g_slGetFeatureRequirements = reinterpret_cast<PFun_slGetFeatureRequirements_t*>(
         GetProcAddress(slModule, "slGetFeatureRequirements"));
     g_slSetVulkanInfo = reinterpret_cast<PFun_slSetVulkanInfo_t*>(GetProcAddress(slModule, "slSetVulkanInfo"));
-    if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo) {
-        // Literal text alone is 222 bytes; +MAX_PATH (260) for %s = 482 --
-        // buf[600] leaves real margin (measured via wc -c on the literal,
-        // this project's own standing sprintf_s-overflow lesson).
-        char buf[600];
+    g_slGetNewFrameToken = reinterpret_cast<PFun_slGetNewFrameToken_t*>(
+        GetProcAddress(slModule, "slGetNewFrameToken"));
+    if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo || !g_slGetNewFrameToken) {
+        // Real worst-case measured (wc -c on the literal): 258 bytes; +MAX_PATH
+        // (260) for %s = 518 -- buf[650] leaves real margin (this project's own
+        // standing sprintf_s-overflow lesson).
+        char buf[650];
         sprintf_s(buf, "[streamline] Vendored sl.interposer.dll loaded from '%s' but is missing "
-            "slInit/slShutdown/slGetFeatureRequirements/slSetVulkanInfo exports (corrupted/"
-            "wrong-version file?) -- Streamline will not be initialized this session.", slPath);
+            "slInit/slShutdown/slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken exports "
+            "(corrupted/wrong-version file?) -- Streamline will not be initialized this session.", slPath);
         LogFromController(buf);
         FreeLibrary(slModule);
         g_slInit = nullptr;
         g_slShutdown = nullptr;
         g_slGetFeatureRequirements = nullptr;
         g_slSetVulkanInfo = nullptr;
+        g_slGetNewFrameToken = nullptr;
         return false;
     }
 
     g_streamlineModule = slModule;
     char buf[500];
     sprintf_s(buf, "[streamline] Loaded vendored sl.interposer.dll from '%s' -- slInit/slShutdown/"
-        "slGetFeatureRequirements/slSetVulkanInfo resolved.", slPath);
+        "slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken resolved.", slPath);
     LogFromController(buf);
     return true;
 }
@@ -298,4 +305,49 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
 bool IsStreamlineInitializedX64()
 {
     return g_streamlineInitialized;
+}
+
+// 2026-09-24: real frame-tracking groundwork -- the next unstarted step per
+// slSetVulkanInfo()'s own success log line. slGetNewFrameToken() must be
+// called once per real frame (ProgrammingGuideManualHooking.md); the
+// returned FrameToken is required by every later call this integration will
+// need (slSetTagForFrame, slSetConstants, slEvaluateFeature). Deliberately
+// mirrors this project's own "trivial passthrough first" convention: this
+// slice ONLY calls the API and logs the result, no resource tagging or
+// constants yet (both need real camera/motion-vector data this project
+// hasn't RE'd -- see re_notes/x64_migration/vulkan_dlss_pipeline_research.md
+// item 16, Stage 1 camera-only motion vectors, still unstarted).
+//
+// Called from Hook_EndScene (overlay_hud.cpp), the one confirmed
+// exactly-once-per-real-frame hook point this project already uses for
+// every other per-frame diagnostic/feature. Gated on g_streamlineVulkanInfoSet
+// (not just g_streamlineInitialized) -- calling any Streamline API before
+// slSetVulkanInfo has actually registered a real device is undefined per the
+// manual-hooking guide.
+void StreamlineFrameTick()
+{
+    if (!g_streamlineVulkanInfoSet) return;
+
+    sl::Result result = g_slGetNewFrameToken(g_streamlineCurrentFrameToken, nullptr);
+
+    static long long s_frameTickCount = 0;
+    ++s_frameTickCount;
+    if (result != sl::Result::eOk) {
+        static bool s_failureLogged = false;
+        if (!s_failureLogged) {
+            s_failureLogged = true;
+            char buf[200];
+            sprintf_s(buf, "[streamline] slGetNewFrameToken() FAILED (result=%d, frame=%lld) -- "
+                "frame tracking is not working this session.", static_cast<int>(result), s_frameTickCount);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    if (s_frameTickCount == 1 || (s_frameTickCount % 5000) == 0) {
+        char buf[200];
+        sprintf_s(buf, "[streamline] slGetNewFrameToken() succeeded (frame=%lld, token=0x%p) -- "
+            "real per-frame tracking is live.", s_frameTickCount, static_cast<void*>(g_streamlineCurrentFrameToken));
+        LogFromController(buf);
+    }
 }
