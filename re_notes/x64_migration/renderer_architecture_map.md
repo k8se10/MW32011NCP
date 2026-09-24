@@ -864,6 +864,101 @@ x86's own `func_0x0044d610` and its sibling callees to check whether the
 same invalidation logic exists there before drawing any conclusion about
 this specific function being the regression's real source. Not yet done.
 
+**CORRECTION, same day, follow-up: the `FUN_0049bf50` "x64 equivalent"
+label itself is wrong.** Decompiling the rest of `FUN_0049bf50`'s own
+callees (`func_0x0044d610` above, plus `FUN_004c70a0`/`FUN_0052ae90`/
+`FUN_0048a350`/`FUN_004d6d70`/`FUN_004b15c0`/`FUN_00550d40`) reveals
+x86's `FUN_0049bf50` is genuinely a **per-surface DRAW dispatcher**, not
+a render-target switcher at all: bind material (`func_0x0044d610`), bind
+texture (`FUN_004c70a0`, its own real dedup+`SetTexture`-shaped vtable
+call at offset `0x15c`), toggle a few dedicated render-state flags
+(`FUN_0052ae90`/`FUN_004d6d70`/`FUN_004b15c0`, three near-identical
+tiny wrappers each gated on a different flag byte), set a viewport/
+scissor value (`FUN_0048a350`), then issue exactly ONE real
+`DrawIndexedPrimitive` call (`FUN_00550d40`, vtable offset `0x148` =
+slot 82 in the real IDirect3DDevice9 layout, confirmed by direct
+vtable-slot arithmetic, not a guess). This is a completely different
+responsibility from x64's `FUN_1401dfd80` (a genuine
+`SetRenderTarget`/`SetDepthStencilSurface` framebuffer switcher). **The
+"x64 equivalent of x86's own documented `FUN_0049bf50`" label carried in
+`known_issues_x64.md` since an earlier session was never independently
+re-verified at the decompile level and does not hold up** -- both
+functions get reached from broadly similar contexts (a per-view/per-pass
+setup chain) and were paired on that positional/contextual similarity
+alone, not confirmed behavioral equivalence. **Real, standing
+methodological lesson**: verify a claimed x86≈x64 function pairing by
+actually decompiling both sides before building further comparative
+analysis on it, the same "checking is cheaper than digging" principle
+`CLAUDE.md` already documents, applied here to a cross-architecture
+claim rather than a single-binary one.
+
+**Net effect**: the real x86 equivalent of x64's `FUN_1401dfd80` (if a
+directly comparable render-target-switching function exists in the x86
+build at all) is still genuinely unidentified via `FUN_0049bf50`'s own
+callees -- but see the real, independently-verified match found below via
+a fresh anchor.
+
+**REAL MATCH FOUND, same day, via a different anchor already on record**:
+`known_issues.md` line 11146 already documents a completed x86-side
+vtable-dispatch scan concluding **`FUN_00542cb0` is the ONLY real
+`SetRenderTarget` call site in the entire x86 binary** -- a genuine,
+pre-existing anchor this session had not yet cross-referenced. Decompiled
+it directly (`re_notes/x64_migration/binaries/old_x86/iw5sp.exe`):
+
+```c
+void FUN_00542cb0(int param_1,int param_2)
+{
+  piVar1 = *(int **)(param_1 + 0xc0);
+  iVar2 = *(int *)(param_2 * 0x14 + 0x24bf484);
+  param_2 = param_2 * 0x14;
+  if (*(int *)(*(int *)(param_1 + 0xb44) * 0x14 + 0x24bf484) != iVar2) {
+    (**(code **)(*piVar1 + 0x94))(piVar1,0,iVar2);      // SetRenderTarget
+    ... // reset a handful of tracking fields
+  }
+  if (*(int *)(*(int *)(param_1 + 0xb44) * 0x14 + 0x24bf488) != *(int *)(param_2 + 0x24bf488)) {
+    (**(code **)(*piVar1 + 0x9c))(piVar1,*(int *)(param_2 + 0x24bf488)); // SetDepthStencilSurface
+  }
+}
+```
+
+**This is a genuinely, behaviorally verified match, not another
+positional guess**: indexes a table (`0x14`=20-byte stride, the x86
+equivalent of x64's `0x20`=32-byte stride -- the size difference is
+consistent with 32-bit vs. 64-bit pointer fields, not evidence of a
+different table shape), compares the CURRENTLY-active index's stored
+target/depth-stencil pointers against the REQUESTED index's, and
+conditionally calls the exact same two real D3D9 methods x64's function
+calls (`SetRenderTarget` at vtable `+0x94` = slot 37, `SetDepthStencilSurface`
+at vtable `+0x9c` = slot 39 -- both confirmed by direct vtable-slot
+arithmetic against the real IDirect3DDevice9 layout).
+
+**The real, confirmed difference**: x86's version is SIMPLER than x64's.
+It has NO equivalent of x64's 20-slot cache-invalidation scan (the loop
+checking up to 20 cached surface pointers for a match and invalidating
+stale references via two additional vtable calls at `+0x1c8`/`+0x208`)
+and no equivalent of x64's early-out dedup-on-unchanged-index guard.
+x86 just does the two straightforward compare-and-call checks, nothing
+else. **This is real, concrete, independently-verified evidence that x64
+does genuinely MORE work than x86 for the identical operation** -- the
+first solid confirmation in this whole investigation that something
+concrete changed in the draw-submission path itself, not just an
+inference from live symptoms.
+
+**Honest scope of what this does and doesn't prove**: a 20-iteration
+pointer-comparison loop plus two extra vtable calls is not, on its own,
+a plausible explanation for a 100-165ms frame spike -- that's a
+microsecond-scale cost at most, even run a handful of times per frame.
+This extra x64 logic is more likely a SYMPTOM of a real, larger design
+change (e.g. x64 needing to actively track/invalidate stale render-target
+references because something about resource lifetime management changed
+in the recompile) than the direct cause of the spike itself. **Real next
+step**: find what actually populates/invalidates those 20 cached slots
+elsewhere in the x64 binary, and whether an entry actually gets
+invalidated (not just scanned) during the exact frames the
+`[render-thread-diag]`/`[x64-renderview-select-diag]` burst was captured
+-- that's the real mechanism worth chasing now, not the loop's raw
+iteration cost.
+
 ---
 
 *Status: early, first-pass mapping. Real architectural shape established
