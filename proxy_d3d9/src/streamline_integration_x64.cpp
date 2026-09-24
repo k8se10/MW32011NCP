@@ -10,13 +10,16 @@
 // contract -- jitter itself is already solved, see item 2/analog_input_hooks_x64.cpp).
 //
 // Deliberately mirrors TryLoadVendoredDxvk()'s own real, already-proven-safe
-// loading pattern (dllmain.cpp): resolve a path relative to THIS DLL's own
-// deployed location, LoadLibraryA, validate a real expected export exists
-// before trusting the module, log loudly either way, never take the whole
-// game down on a missing/corrupt vendored file. sl.interposer.dll is NOT
-// committed to git (see .gitignore's own comment) -- a fresh clone genuinely
-// won't have it until someone vendors it locally, exactly like DXVK's own
-// real d3d9.dll build before that one landed.
+// loading pattern (dllmain.cpp): LoadLibraryA, validate a real expected
+// export exists before trusting the module, log loudly either way, never
+// take the whole game down on a missing/corrupt vendored file. As of
+// 2026-09-24 the actual binary is no longer a loose file next to this DLL --
+// it's embedded as an RCDATA resource (proxy_d3d9.rc) and extracted fresh on
+// every launch to %LOCALAPPDATA%\MW32011NCP\runtime_x64\streamline\ (see
+// dxvk_streamline_extract_x64.cpp) -- but the source binary itself is still
+// NOT committed to git (see .gitignore's own comment): a fresh clone needs
+// it vendored locally under third_party/streamline/bin/x64/ before this DLL
+// can even build, exactly like DXVK's own real d3d9.dll build.
 
 #include <windows.h>
 #include <cstdio>
@@ -31,6 +34,7 @@
 extern void LogFromController(const char* msg); // defined in dllmain.cpp -- real
     // external-linkage logger every other file in this codebase uses (dllmain.cpp's
     // own Log() sits inside an anonymous namespace, internal linkage only).
+extern bool ExtractEmbeddedStreamlineX64(char* outDir, size_t outDirSize); // dxvk_streamline_extract_x64.cpp
 
 namespace {
 
@@ -49,22 +53,30 @@ bool g_streamlineVulkanInfoSet = false;
 
 bool TryLoadStreamlineInterposer()
 {
-    HMODULE selfModule = nullptr;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-        reinterpret_cast<LPCSTR>(&TryLoadStreamlineInterposer), &selfModule);
-    char dllDir[MAX_PATH];
-    GetModuleFileNameA(selfModule, dllDir, MAX_PATH);
-    char* lastSlash = strrchr(dllDir, '\\');
-    if (lastSlash) *(lastSlash + 1) = '\0'; else dllDir[0] = '\0';
+    // 2026-09-24: the four Streamline/NVIDIA binaries are now embedded inside
+    // this DLL as RCDATA resources (proxy_d3d9.rc) rather than loose files a
+    // player had to manually place -- extracted fresh on every launch to
+    // %LOCALAPPDATA%\MW32011NCP\runtime_x64\streamline\, then loaded from
+    // there. Direct instruction: "we shouldnt need to have extra dlls in the
+    // game folder. it should all be inside our dll." All four land in the
+    // SAME directory because sl.interposer.dll resolves its own sibling
+    // plugins via its own directory's real file system -- see
+    // dxvk_streamline_extract_x64.cpp's own header comment.
+    char slDir[MAX_PATH];
+    if (!ExtractEmbeddedStreamlineX64(slDir, sizeof(slDir))) {
+        LogFromController("[streamline] StreamlineEnabled=1, but the embedded Streamline SDK "
+            "binaries could not be extracted -- Streamline will not be initialized this session.");
+        return false;
+    }
     char slPath[MAX_PATH];
-    sprintf_s(slPath, "%sstreamline\\sl.interposer.dll", dllDir);
+    sprintf_s(slPath, "%ssl.interposer.dll", slDir);
 
     HMODULE slModule = LoadLibraryA(slPath);
     if (!slModule) {
         char buf[500];
-        sprintf_s(buf, "[streamline] StreamlineEnabled=1, but no vendored sl.interposer.dll was found "
-            "at '%s' (err=%lu) -- Streamline will not be initialized this session. This SDK is not "
-            "bundled with this mod yet.", slPath, GetLastError());
+        sprintf_s(buf, "[streamline] StreamlineEnabled=1, but the extracted sl.interposer.dll at "
+            "'%s' failed to load (err=%lu) -- Streamline will not be initialized this session.",
+            slPath, GetLastError());
         LogFromController(buf);
         return false;
     }

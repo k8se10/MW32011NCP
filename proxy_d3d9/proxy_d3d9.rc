@@ -98,3 +98,36 @@ controller_body_ps4 RCDATA "..\\assets\\controller_diagrams\\ps4_controller_base
 // overlay_hud.cpp's cursor-draw code and analog_input_hooks.cpp's
 // Hook_004d48f0 for the suppress-native/redraw-ours mechanism.
 cursor_arrow RCDATA "..\\assets\\cursor_arrow.png"
+
+// DXVK fork build + NVIDIA Streamline SDK binaries, embedded 2026-09-24 (x64
+// only -- harmless as inert RCDATA bytes in a Win32 build too, but this
+// project's x86 line is discontinued so that's academic). Direct
+// instruction: "we shouldnt need to have extra dlls in the game folder. it
+// should all be inside our dll." Previously loaded via LoadLibraryA against
+// loose files a player/session had to have manually placed in the game's
+// own `dxvk\`/`streamline\` subfolders -- now embedded like every other
+// RCDATA asset in this file, and re-extracted fresh on EVERY launch to
+// %LOCALAPPDATA%\MW32011NCP\runtime_x64\ (dxvk_streamline_extract_x64.cpp,
+// direct follow-up instruction: "this should be on every launch to
+// somehere in appdata"), never the game's own install folder. Extraction
+// writes these out byte-identical, satisfying the NVIDIA
+// RTX SDKs License's "unmodified... object-code form" redistribution term
+// (see CLAUDE.md/AGENTS.md's own "NVIDIA Streamline / DLSS" section) --
+// these binaries themselves are still never modified, just relocated at
+// build time from a committed reference (never modified in transit).
+// Source paths: the DXVK fork's own real build output
+// (dxvk/build_win64/src/d3d9/d3d9.dll, already gitignored by that build
+// tree's own .gitignore -- deliberately NOT proxy_d3d9/third_party/dxvk/x64/
+// d3d9.dll, which stays the tracked, official, reproducible stock v3.1.1
+// release binary; a locally-built fork output must never overwrite that
+// tracked file, corrected same day after doing exactly that once by
+// mistake); the Streamline SDK's real, signed NVIDIA release binaries under
+// proxy_d3d9/third_party/streamline/bin/x64/ (never committed, see
+// .gitignore). Building this fork locally (MSYS2/MinGW/Meson, see
+// dxvk/README.md) is therefore a real build PREREQUISITE for GraphicsApi=
+// Vulkan mode now, the same way third_party/streamline/bin/x64/ already was.
+IDR_DXVK_D3D9     RCDATA "..\\dxvk\\build_win64\\src\\d3d9\\d3d9.dll"
+IDR_SL_INTERPOSER RCDATA "third_party\\streamline\\bin\\x64\\sl.interposer.dll"
+IDR_SL_COMMON     RCDATA "third_party\\streamline\\bin\\x64\\sl.common.dll"
+IDR_SL_DLSS       RCDATA "third_party\\streamline\\bin\\x64\\sl.dlss.dll"
+IDR_NGX_DLSS      RCDATA "third_party\\streamline\\bin\\x64\\nvngx_dlss.dll"

@@ -37,3 +37,15 @@
 #define IDR_FONT_ISOTHERMSANS_ITALIC    102
 #define IDR_FONT_ISOTHERMSANS_UI        103
 #define IDR_FONT_ISOTHERMSANS_UI_ITALIC 104
+
+// DXVK fork build + NVIDIA Streamline SDK binaries, embedded 2026-09-24 (x64
+// only) -- see proxy_d3d9.rc's own comment for why (direct instruction: "we
+// shouldnt need to have extra dlls in the game folder. it should all be
+// inside our dll") and dxvk_streamline_extract_x64.cpp for the runtime
+// extraction that loads them from a private temp location instead of the
+// game's own install folder.
+#define IDR_DXVK_D3D9        110
+#define IDR_SL_INTERPOSER    111
+#define IDR_SL_COMMON        112
+#define IDR_SL_DLSS          113
+#define IDR_NGX_DLSS         114

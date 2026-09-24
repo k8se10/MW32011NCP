@@ -40,6 +40,13 @@ extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cp
 #if defined(_M_X64) || defined(_WIN64)
 void InstallWaitCoalescingHooksX64(); // defined in wait_coalescing_x64.cpp, 2026-09-16
 void InstallIwdReadCacheHooksX64(); // defined in iwd_read_cache_x64.cpp, 2026-09-16
+bool ExtractEmbeddedDxvkX64(char* outPath, size_t outPathSize); // dxvk_streamline_extract_x64.cpp,
+    // 2026-09-24 -- declared here, at true file scope, NOT inside the anonymous
+    // namespace TryLoadVendoredDxvk() itself lives in below (this project's own
+    // documented internal-linkage pitfall, CLAUDE.md S5 -- an extern declaration
+    // written INSIDE an anonymous namespace still gets that namespace's internal
+    // linkage regardless of the extern keyword; confirmed here via a real
+    // -Wundefined-internal warning before this line was added).
 #endif
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
@@ -419,26 +426,35 @@ bool TryLoadVendoredDxvk()
         return false;
     }
 
-    // No stored HMODULE for this DLL exists yet at this point in DllMain -- resolve
-    // it directly from this function's own address (standard, well-known idiom for
-    // "get my own module handle from inside DllMain" without needing DllMain's
-    // hModule parameter threaded through to a file-scope global).
-    HMODULE selfModule = nullptr;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-        reinterpret_cast<LPCSTR>(&TryLoadVendoredDxvk), &selfModule);
-    char dllDir[MAX_PATH];
-    GetModuleFileNameA(selfModule, dllDir, MAX_PATH);
-    char* lastSlash = strrchr(dllDir, '\\');
-    if (lastSlash) *(lastSlash + 1) = '\0'; else dllDir[0] = '\0';
+    // 2026-09-24: the DXVK fork build is now embedded inside this DLL as an
+    // RCDATA resource (proxy_d3d9.rc) rather than a loose file a player had
+    // to manually place -- extracted fresh on every launch to
+    // %LOCALAPPDATA%\MW32011NCP\runtime_x64\dxvk\d3d9.dll, then loaded from
+    // there. Direct instruction: "we shouldnt need to have extra dlls in
+    // the game folder. it should all be inside our dll." See
+    // dxvk_streamline_extract_x64.cpp for the extraction itself -- x64-only
+    // (matches this whole feature's own existing SP-only/x64-only scope);
+    // the extern declaration above is itself x64-guarded, so this call must
+    // be too for the x86 build (still compiled, per this project's own
+    // vcxproj, even though the x86 line itself is discontinued) to link.
+#if !defined(_M_X64) && !defined(_WIN64)
+    Log("[graphics-api] GraphicsApi=Vulkan selected, but this feature is x64-only -- "
+        "falling back to the real system d3d9.dll under this (x86) build.");
+    return false;
+#else
     char dxvkPath[MAX_PATH];
-    sprintf_s(dxvkPath, "%sdxvk\\d3d9.dll", dllDir);
+    if (!ExtractEmbeddedDxvkX64(dxvkPath, sizeof(dxvkPath))) {
+        Log("[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but the embedded "
+            "DXVK build could not be extracted -- falling back to the real system d3d9.dll.");
+        return false;
+    }
 
     HMODULE dxvkModule = LoadLibraryA(dxvkPath);
     if (!dxvkModule) {
         char buf[600];
-        sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but no "
-            "vendored DXVK build was found at '%s' (err=%lu) -- falling back to the real "
-            "system d3d9.dll. DXVK is not bundled with this mod yet.", dxvkPath, GetLastError());
+        sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but the "
+            "extracted DXVK build at '%s' failed to load (err=%lu) -- falling back to the "
+            "real system d3d9.dll.", dxvkPath, GetLastError());
         Log(buf);
         return false;
     }
@@ -484,6 +500,7 @@ bool TryLoadVendoredDxvk()
     // own loader-lock window has long since closed -- see that function's
     // own call site for the real fix.
     return true;
+#endif // _M_X64 || _WIN64
 }
 
 // Loads the real system d3d9.dll by an explicit, unambiguous path so we never
