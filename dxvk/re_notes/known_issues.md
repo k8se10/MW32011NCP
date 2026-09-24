@@ -166,7 +166,7 @@ investigation).
 
 ## #2: DLSS-required `VK_NVX_*` extensions never enabled on native Windows
 
-**Status: Partially Resolved — opt-in patch written (`dxvk.enableNvCudaInteropNative`), not yet built or live-tested.**
+**Status: Partially Resolved — `dxvk.enableNvCudaInteropNative` built and live-confirmed working (both extensions report `1`, previously `0`). A second, separate patch (`DXVK_VULKAN_LOADER_OVERRIDE`) for Streamline's mandatory swapchain hooks is written and build-verified, not yet live-tested. The actual `slGetFeatureRequirements(DLSS)` call still failed on the same live run (`eErrorFeatureMissing`) — root cause was unrelated to this issue (the DLSS plugin binaries were never deployed alongside the interposer; fixed on the `MW32011NCP` side via embedding, 2026-09-24) — a fresh live run with that fix in place hasn't happened yet.**
 
 ### Summary
 
@@ -200,17 +200,46 @@ without them.
   upstream for every game unless a host sets it (e.g. via `DXVK_CONFIG`).
   No executable-detection gate is needed because nothing IW5-specific
   changes. Candidate for proposing upstream.
-- **Not yet verified**: needs a build of this fork and a live run with the
-  option set, confirming the extensions appear on the device and
-  Streamline's `slGetFeatureRequirements(DLSS)` needs are met.
+- **Live-confirmed 2026-09-24**: built via the real MinGW/Meson/Ninja
+  toolchain, swapped into `MW32011NCP`'s deployed install, and run against
+  the live game with `DXVK_CONFIG=dxvk.enableNvCudaInteropNative=True`.
+  The real DXVK device-info log showed both `VK_NVX_binary_import` and
+  `VK_NVX_image_view_handle` reporting `1` (previously `0` against stock
+  `v3.1.1`) — the gate change works as designed.
+
+### Second patch (2026-09-24): `DXVK_VULKAN_LOADER_OVERRIDE`
+
+DXVK resolves `vkGetInstanceProcAddr` from a plain
+`LoadLibraryA("vulkan-1.dll")` (`src/vulkan/vulkan_loader.cpp`) — Streamline's
+manual-hooking mode still needs its own `sl.interposer.dll` acting as the
+actual Vulkan loader for its mandatory swapchain/present hooks
+(`ProgrammingGuideManualHooking.md` section 2.7); `slSetVulkanInfo` alone
+isn't sufficient for that. New env var `DXVK_VULKAN_LOADER_OVERRIDE`: when
+set to an absolute path, tried via `LoadLibraryA` first, before the normal
+winevulkan/vulkan-1 search — unset/empty behaves identically to upstream. A
+path rather than a bare name, since a host that extracts/embeds
+`sl.interposer.dll` to a private location (as `MW32011NCP` now does, via
+`%LOCALAPPDATA%`) can't rely on the normal DLL search order finding it. Not
+game-specific, no executable-detection gate needed, same reasoning as the
+first patch. `MW32011NCP`'s own `TryLoadVendoredDxvk()` sets this env var
+(alongside `DXVK_CONFIG`) whenever `StreamlineEnabled=1`, before DXVK's own
+`d3d9.dll` is loaded.
+
+- **Build-verified**: real ninja build, confirmed via a string check on the
+  built `d3d9.dll`.
+- **Not yet live-tested**: needs a real Streamline session to confirm
+  `sl.interposer.dll` actually intercepts DXVK's Vulkan calls correctly
+  through this path, rather than just loading without error.
 
 ### Remaining work under this issue
 
-- Build this fork and verify on native Windows with an NVIDIA GPU.
-- Streamline's mandatory Vulkan swapchain hooks: DXVK resolves
-  `vkGetInstanceProcAddr` from a plain `LoadLibraryA("vulkan-1.dll")`
-  (`src/vulkan/vulkan_loader.cpp`), so routing it through
-  `sl.interposer.dll` needs a second, separate opt-in patch — not started.
+- Live-test `DXVK_VULKAN_LOADER_OVERRIDE` against a real Streamline
+  session (confirm interception, not just successful load).
+- Re-run the live test now that `MW32011NCP`'s own DLSS-plugin deployment
+  gap is fixed (`sl.dlss.dll`/`nvngx_dlss.dll` were vendored but never
+  reaching the deployed `streamline/` folder — now embedded and extracted
+  automatically) — confirm `slGetFeatureRequirements(DLSS)` succeeds and
+  inspect the real reported queue/extension/feature requirements.
 - Any further Vulkan 1.2/1.3 features or queues Streamline reports as
   required (logged by `MW32011NCP` at init) that DXVK does not already
   enable.
