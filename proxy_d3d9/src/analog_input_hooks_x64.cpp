@@ -299,6 +299,44 @@ constexpr JitterProbeCandidate kJitterProbeCandidates[] = {
 };
 constexpr int kJitterProbeCandidateCount =
     sizeof(kJitterProbeCandidates) / sizeof(kJitterProbeCandidates[0]);
+
+// MW32011NCP, 2026-09-24: real jitter-injection implementation, now that the
+// probe above found and live-confirmed the real target -- Row3[0] (+0x1500)
+// and Row3[1] (+0x1504), both duplicate copies, produce a clean, uniform
+// full-screen X/Y slide (direct user confirmation: "confirmed full screen
+// left right" / "up down this time"), not the shear/corruption every other
+// non-dead candidate produced. See vulkan_dlss_pipeline_research.md item 2
+// for the full trail.
+//
+// Real, standard Halton(2,3) low-discrepancy jitter sequence -- the same
+// reference technique already researched in full for both DLSS/Streamline
+// (section 2.3) and FSR 3.1 (item 12, confirmed identical formula from
+// AMD's own real source). Pure function, no side effects.
+float HaltonSequence(int index, int base)
+{
+    float f = 1.0f;
+    float r = 0.0f;
+    while (index > 0) {
+        f /= static_cast<float>(base);
+        r += f * static_cast<float>(index % base);
+        index /= base;
+    }
+    return r;
+}
+
+// MW32011NCP, 2026-09-24: real, HONEST, NOT-YET-CALIBRATED placeholder scale
+// -- the probe's own 0.25 amplitude already produced a dramatic full-screen
+// slide, meaning the real value-to-pixel conversion factor for +0x1500/
+// +0x1504 is small and genuinely unknown as of this entry. A correct
+// implementation needs this calibrated (e.g. write a known value, measure
+// the real on-screen pixel displacement via a frame capture, solve for the
+// real per-pixel scale) before this constant means anything precise -- kept
+// deliberately conservative (small) in the meantime so ProjectionJitterEnabled,
+// if ever turned on before calibration happens, doesn't reproduce the
+// probe's own dramatic full-screen-slide effect.
+constexpr float kJitterUncalibratedScale = 0.001f;
+constexpr int kJitterPhaseCount = 8; // FSR3.1/DLSS real formula: 8*(display/render)^2 -- render==display (no upscale wired yet), so this reduces to the base case.
+long long g_jitterFrameIndex = 0;
 // MW32011NCP, 2026-09-24: REVISED -- an automatic timed cycle (with an
 // undo-before-reapply "fix" and a clean-baseline gap) was tried and, across
 // three escalating amplitudes, never reproduced the original visible
@@ -1126,6 +1164,37 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
                 "watch for visible screen swim/warp, then set ProjectionMatrixJitterProbeCandidateIndex to the "
                 "next index and relaunch to test the next one", candidate.name);
             LogFromController(buf);
+        }
+    }
+
+    // Real jitter injection -- REAL IMPLEMENTATION, 2026-09-24, now that the
+    // probe above found and live-confirmed the real target. See
+    // kJitterUncalibratedScale/HaltonSequence's own comments above for the
+    // full rationale and the honest, not-yet-calibrated-scale caveat.
+    // Applied to EVERY call (shadow + main-scene pass both) -- the
+    // return-address-based pass discriminator (g_projectionMainScenePassRetAddr)
+    // has never been confirmed to actually fire correctly (see
+    // vulkan_dlss_pipeline_research.md item 2's own honest note), so
+    // excluding the shadow pass specifically is a real, flagged, not-yet-
+    // solved refinement, not silently assumed safe.
+    if (g_modConfig.projectionJitterEnabled) {
+        ++g_jitterFrameIndex;
+        int phase = static_cast<int>(g_jitterFrameIndex % kJitterPhaseCount);
+        float jitterX = (HaltonSequence(phase + 1, 2) - 0.5f) * kJitterUncalibratedScale;
+        float jitterY = (HaltonSequence(phase + 1, 3) - 0.5f) * kJitterUncalibratedScale;
+        *reinterpret_cast<float*>(base + 0x1500) += jitterX;
+        *reinterpret_cast<float*>(base + 0x1504) += jitterY;
+        *reinterpret_cast<float*>(base + 0x1540) += jitterX;
+        *reinterpret_cast<float*>(base + 0x1544) += jitterY;
+
+        static bool s_jitterLogged = false;
+        if (!s_jitterLogged) {
+            s_jitterLogged = true;
+            LogFromController("[x64-jitter] Real jitter injection enabled -- writing a Halton(2,3) offset into "
+                "+0x1500/+0x1504 (both duplicate copies) every frame. Scale is NOT yet calibrated to real pixels "
+                "(kJitterUncalibratedScale, analog_input_hooks_x64.cpp) -- this is pure groundwork for a future "
+                "DLSS/Streamline or FSR 3.1 temporal pass, expect a faint uncorrected shimmer with no benefit "
+                "until one exists.");
         }
     }
 }

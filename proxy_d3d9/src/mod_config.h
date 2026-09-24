@@ -995,6 +995,18 @@ struct ModConfig
     // 5=Row2[1], 6=Row3[0]/near, 7=Row3[1]/far.
     int projectionMatrixJitterProbeCandidateIndex = 0;
 
+    // [Video] ProjectionJitterEnabled (2026-09-24) -- the REAL jitter
+    // implementation, now that the probe above found and live-confirmed the
+    // real target (+0x1500/+0x1504, see vulkan_dlss_pipeline_research.md
+    // item 2). STRICTLY OPT-IN, OFF by default -- two real, honest reasons:
+    // (1) the value-to-pixel scale is not yet calibrated (kJitterUncalibratedScale,
+    // analog_input_hooks_x64.cpp, deliberately conservative in the meantime);
+    // (2) there is no temporal accumulation/resolve pass in this project
+    // yet (the whole point of DLSS/Streamline and FSR 3.1) to consume real
+    // jitter -- enabling this today just adds a faint, unresolved shimmer
+    // with no benefit. Pure groundwork, not a player-facing feature yet.
+    bool projectionJitterEnabled = false;
+
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
     // scans a "plugins" subfolder next to this DLL at startup and loads any DLL

@@ -783,6 +783,11 @@ void WriteDefaultConfig(const char* path)
         "; 4=Row2[0] 5=Row2[1] 6=Row3[0]/near 7=Row3[1]/far. Only takes effect while\n"
         "; ProjectionMatrixJitterProbeEnabled=1. Change and relaunch to test the next one.\n"
         "ProjectionMatrixJitterProbeCandidateIndex=%d\n"
+        "; The REAL jitter implementation, now that the probe above found the real\n"
+        "; target (+0x1500/+0x1504). Pure groundwork, not player-facing yet -- the\n"
+        "; value-to-pixel scale is not yet calibrated, and there's no temporal\n"
+        "; resolve pass (DLSS/FSR3.1) yet to consume real jitter. 0 = off (default).\n"
+        "ProjectionJitterEnabled=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -1064,6 +1069,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.iwdReadAccelEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeCandidateIndex,
+        g_modConfig.projectionJitterEnabled ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1392,6 +1398,7 @@ void LoadModConfig()
                                        g_modConfig.projectionMatrixJitterProbeCandidateIndex, path);
         g_modConfig.projectionMatrixJitterProbeCandidateIndex = v;
     }
+    ReadBool(path, "Video", "ProjectionJitterEnabled", g_modConfig.projectionJitterEnabled);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1419,7 +1426,7 @@ void LoadModConfig()
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
         "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d projectionMatrixJitterProbeEnabled=%d "
-        "projectionMatrixJitterProbeCandidateIndex=%d",
+        "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1457,7 +1464,8 @@ void LoadModConfig()
         g_modConfig.waitCoalescingEnabled ? 1 : 0,
         g_modConfig.iwdReadAccelEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
-        g_modConfig.projectionMatrixJitterProbeCandidateIndex);
+        g_modConfig.projectionMatrixJitterProbeCandidateIndex,
+        g_modConfig.projectionJitterEnabled ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
