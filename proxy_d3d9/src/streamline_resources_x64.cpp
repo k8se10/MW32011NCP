@@ -50,6 +50,8 @@
     // which uses Vulkan types without including a Vulkan header itself.
 #include "../third_party/streamline/include/sl.h"
 #include "../third_party/minhook/include/MinHook.h"
+#include "mod_config.h" // g_modConfig.internalRenderScalePercent
+#include "overlay_hud.h" // GetLastKnownRenderDevice/GetRealScreenSize
 
 extern void LogFromController(const char* msg); // dllmain.cpp
 extern VkInstance GetDxvkVkInstanceX64(); // streamline_integration_x64.cpp
@@ -80,6 +82,40 @@ SetRenderTargetFn g_origSetRenderTarget = nullptr;
 
 long long g_resolveAttemptCount = 0;
 long long g_resolveColorAttemptCount = 0;
+
+// Real, live-caught disambiguation need: SetRenderTarget(0, ...) fires for
+// MANY real render targets per frame (shadow maps, post-process ping-pong
+// buffers, UI compositing), not just the final 3D scene color -- live-
+// confirmed (two distinct resolutions tagged indiscriminately on the first
+// attempt at this: the real 2560x1440 display-resolution target, and the
+// real 5120x2880 internal-render-scale target, at InternalRenderScalePercent
+// =200%). Direct instruction: "internal render scaled percent is what we
+// feed into dlss" -- so the real target is specifically the one at the
+// real internal render-scale resolution, computed the exact same way
+// Hook_RenderResCompute (analog_input_hooks_x64.cpp) already does:
+// target = native * pct / 100. No new RE needed, this is the same real,
+// already-confirmed formula.
+bool ComputeExpectedInternalResolutionX64(uint32_t& outWidth, uint32_t& outHeight)
+{
+    int nativeW = 1920, nativeH = 1080;
+    GetRealScreenSize(GetLastKnownRenderDevice(), nativeW, nativeH);
+    if (nativeW <= 0 || nativeH <= 0) return false;
+
+    int pct = g_modConfig.internalRenderScalePercent;
+    if (pct <= 0) {
+        // Render scale off -- Hook_RenderResCompute's own real gate
+        // (`if (pct > 0)`) never fires either, so the engine renders the
+        // scene at native resolution directly; the expected scene-color
+        // target IS the native/display resolution.
+        outWidth = static_cast<uint32_t>(nativeW);
+        outHeight = static_cast<uint32_t>(nativeH);
+        return true;
+    }
+
+    outWidth = static_cast<uint32_t>(static_cast<int64_t>(nativeW) * pct / 100);
+    outHeight = static_cast<uint32_t>(static_cast<int64_t>(nativeH) * pct / 100);
+    return true;
+}
 
 // Real Vulkan functions, resolved dynamically -- see this file's own top
 // comment for why (no Vulkan import library linked in this project).
@@ -325,15 +361,28 @@ void TagColorResourceForFrame(void* renderTarget)
         return;
     }
 
+    // Real disambiguation filter -- SetRenderTarget(0, ...) fires for many
+    // real render targets per frame (shadow maps, post-process, UI), not
+    // just the final 3D scene color. Only the target at the real internal
+    // render-scale resolution ("internal render scaled percent is what we
+    // feed into dlss", direct instruction) is the one DLSS actually wants.
+    uint32_t expectedWidth = 0, expectedHeight = 0;
+    bool haveExpected = ComputeExpectedInternalResolutionX64(expectedWidth, expectedHeight);
+    bool resolutionMatches = haveExpected &&
+        info.extent.width == expectedWidth && info.extent.height == expectedHeight;
+
     if (heartbeat) {
-        char buf[350];
+        char buf[400];
         sprintf_s(buf, "[x64-streamline-color] attempt=%lld image=0x%llx layout=%d format=%d "
-            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u samples=%d usage=0x%X",
+            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u samples=%d usage=0x%X expected=%ux%u match=%d",
             g_resolveColorAttemptCount, reinterpret_cast<unsigned long long>(image), static_cast<int>(layout),
             static_cast<int>(info.format), info.extent.width, info.extent.height, info.extent.depth,
-            info.mipLevels, info.arrayLayers, static_cast<int>(info.samples), info.usage);
+            info.mipLevels, info.arrayLayers, static_cast<int>(info.samples), info.usage,
+            expectedWidth, expectedHeight, resolutionMatches ? 1 : 0);
         LogFromController(buf);
     }
+
+    if (!resolutionMatches) return; // a real, different render target this frame -- not the scene color
 
     if (!ResolveVulkanFunctionsIfNeeded()) return;
 
