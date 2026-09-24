@@ -181,6 +181,12 @@
     <ClCompile Include="src\dxvk_streamline_extract_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-24: real camera-to-world matrix construction +
+         per-frame history tracking, built on the just-confirmed view-matrix
+         RE. See that file's own header comment. -->
+    <ClCompile Include="src\streamline_camera_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <!-- x64-only, 2026-09-16; see iwd_read_cache_x64.cpp's own header
          comment for attribution. -->
     <ClCompile Include="src\iwd_read_cache_x64.cpp" Condition="'$(Platform)'=='x64'">

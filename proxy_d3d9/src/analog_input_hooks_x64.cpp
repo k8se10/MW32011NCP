@@ -91,6 +91,8 @@
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
+void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
+    const float right[3], const float up[3]); // streamline_camera_x64.cpp, 2026-09-24
 // analog_input_hooks.cpp's own generic "is this logical action's physical button
 // currently held" helper (no raw addresses, no __asm -- compiles for both
 // platforms already, see that file's own top-of-file comment). Reused here rather
@@ -1098,6 +1100,32 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
 
     ++g_projectionMatrixBuildFireCount;
     auto* base = reinterpret_cast<unsigned char*>(renderState);
+
+    // Main-scene-pass gating, computed once here (moved up from further down
+    // this function 2026-09-24) so both the real per-frame camera-tracking
+    // call below AND the jitter-injection block later in this function can
+    // share one check -- see the jitter block's own comment for the full
+    // rationale (_ReturnAddress()-based, degrades safely to "off" if the
+    // signature scan never resolved g_projectionMainScenePassRetAddr).
+    void* callerAddr = _ReturnAddress();
+    bool isMainScenePass = g_projectionMainScenePassRetAddr != 0 &&
+        reinterpret_cast<uintptr_t>(callerAddr) == g_projectionMainScenePassRetAddr;
+
+    // MW32011NCP, 2026-09-24: real per-frame camera-to-world matrix tracking
+    // (streamline_camera_x64.cpp) -- called on every MAIN-SCENE-PASS fire
+    // (not the shadow pass, and not just the sparse diagnostic cadence
+    // below), since this needs genuine once-per-real-frame data for the
+    // previous-frame comparison to mean anything. Uses the same confirmed
+    // pos/fwd/right/up offsets the diagnostic log below reads -- see that
+    // block's own comment for the full RE trail.
+    if (isMainScenePass) {
+        const float* camPos = reinterpret_cast<const float*>(base + 0x1590);
+        const float* camFwd = reinterpret_cast<const float*>(base + 0x159c);
+        const float* camRight = reinterpret_cast<const float*>(base + 0x15a8);
+        const float* camUp = reinterpret_cast<const float*>(base + 0x15b4);
+        UpdateStreamlineCameraMatricesX64(camPos, camFwd, camRight, camUp);
+    }
+
     if (g_projectionMatrixBuildFireCount <= 5 || (g_projectionMatrixBuildFireCount % 5000) == 0) {
         const float* row0 = reinterpret_cast<const float*>(base + 0x14d0);
         const float* row1 = reinterpret_cast<const float*>(base + 0x14e0);
@@ -1211,11 +1239,9 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     // reflects the actual call site in FUN_14018e720 that invoked this hook.
     // Degrades safely if the address never resolved this session (signature
     // miss): jitter stays off entirely rather than risk re-introducing the
-    // shadow-pass shimmer this fix exists to remove.
-    void* callerAddr = _ReturnAddress();
-    bool isMainScenePass = g_projectionMainScenePassRetAddr != 0 &&
-        reinterpret_cast<uintptr_t>(callerAddr) == g_projectionMainScenePassRetAddr;
-
+    // shadow-pass shimmer this fix exists to remove. (callerAddr/
+    // isMainScenePass are now computed once at the top of this function --
+    // see that block's own comment.)
     if (g_modConfig.projectionJitterEnabled && !isMainScenePass && g_projectionMainScenePassRetAddr == 0) {
         static bool s_gateMissingLogged = false;
         if (!s_gateMissingLogged) {
