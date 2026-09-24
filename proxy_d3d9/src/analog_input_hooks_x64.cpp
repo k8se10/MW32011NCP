@@ -1112,6 +1112,35 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
             g_projectionMatrixBuildFireCount, renderState,
             row0[0], row0[1], row0[2], row0[3], row1[0], row1[1], row1[2], row1[3]);
         LogFromController(buf);
+
+        // MW32011NCP, 2026-09-24: real, READ-ONLY candidate camera-basis diagnostic --
+        // DLSS/Streamline Stage 1 (camera-only motion vectors) view-matrix RE.
+        // FUN_1401e0880 (x64) is called on this SAME render-state struct base,
+        // immediately before FUN_1401e13e0 (this hook's own target), inside the
+        // shadow/main-scene-pass orchestrator (FUN_14018e720) -- decompiled this
+        // session, it computes frustum-corner offsets from three candidate basis
+        // vectors plus an origin, all read from a wholesale-copied camera-context
+        // block at this struct's own +0x1490..+0x1630 span:
+        //   +0x1580/1584/1588 -> candidate FORWARD (scaled by near-plane distance)
+        //   +0x1550/1554/1558 -> candidate RIGHT    (scaled by frustum half-width)
+        //   +0x1560/1564/1568 -> candidate UP       (scaled by -(frustum half-height))
+        //   +0x1590/1594/1598 -> candidate camera POSITION (copied to +0x15e0..15ec
+        //     as a homogeneous (x,y,z,1.0) point -- exactly the sl::Constants::cameraPos
+        //     shape) -- see re_notes/x64_migration/vulkan_dlss_pipeline_research.md
+        //     item 17 for the full RE trail. NOT YET LIVE-CONFIRMED -- this log line
+        //     is the live-verification step itself: real basis vectors should show
+        //     unit-length-ish magnitudes and rotate as the player looks around;
+        //     position should track real world-space movement. Zero behavior change.
+        const float* fwd = reinterpret_cast<const float*>(base + 0x1580);
+        const float* right = reinterpret_cast<const float*>(base + 0x1550);
+        const float* up = reinterpret_cast<const float*>(base + 0x1560);
+        const float* pos = reinterpret_cast<const float*>(base + 0x1590);
+        char camBuf[400];
+        sprintf_s(camBuf, "[x64-view-matrix-diag] fwd=[%.4f %.4f %.4f] right=[%.4f %.4f %.4f] "
+            "up=[%.4f %.4f %.4f] pos=[%.4f %.4f %.4f]",
+            fwd[0], fwd[1], fwd[2], right[0], right[1], right[2],
+            up[0], up[1], up[2], pos[0], pos[1], pos[2]);
+        LogFromController(camBuf);
     }
 
     // Empirical jitter-target probe -- strictly opt-in. REVISED 2026-09-24,
