@@ -28,6 +28,14 @@ proxy_d3d9/Release/
 *.log
 *.exp
 *.lib
+# Blanket rule, 2026-09-24: ALL .exe files are build output/binary artifacts and
+# must never be committed, full stop -- direct instruction, following the real
+# copyrighted-game-executable leak found the same day (re_notes/x64_migration/binaries/
+# above). This replaces the prior per-tool-per-file listing below (a real,
+# demonstrated failure mode: memdiff64.exe slipped through because only
+# memdiff.exe was individually listed) -- kept as a blanket rule going forward,
+# not more individual entries to maintain and miss.
+*.exe
 d3d9.dll
 # Exception, 2026-09-23: the vendored, legitimately-committed DXVK build (real
 # third-party library source, same as third_party/minhook/ -- not build output)
@@ -56,12 +64,6 @@ notes.txt
 # tools/ui_harness/ui_hot/bin/), not just one level deep.
 tools/**/bin/
 tools/**/obj/
-vcontroller_sim.exe
-memdiff.exe
-regbreak.exe
-tools/memdiff/diffsnap.exe
-tools/memdiff/dumpregion.exe
-tools/memdiff/readaddr.exe
 
 # memdiff full-process memory snapshots (~400MB each) -- diagnostic scratch data, never
 # meant to be committed
@@ -74,7 +76,6 @@ tools/memdiff/*.snap
 tools/xenia_probe/*.snap
 tools/xenia_probe/*.bmp
 tools/xenia_probe/*.png
-tools/xenia_probe/xenia_probe.exe
 
 # Third-party reference material (cloned locally for research only -- learn from and
 # independently re-verify, never blindly reuse; see re_notes for how any lead from here
