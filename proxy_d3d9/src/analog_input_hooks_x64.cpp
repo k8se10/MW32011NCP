@@ -1111,6 +1111,32 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     bool isMainScenePass = g_projectionMainScenePassRetAddr != 0 &&
         reinterpret_cast<uintptr_t>(callerAddr) == g_projectionMainScenePassRetAddr;
 
+    // TEMPORARY, 2026-09-24: unconditional (not gated) diagnostic for the
+    // first 40 fires -- ROUND 1 result: callerAddr is NEVER the expected
+    // FUN_14018e720-derived address; it's consistently a DIFFERENT function
+    // (FUN_14018a1a0, decompiled: a per-COMMAND dispatcher walking a render
+    // command list, tag-switching on *(*param_1+4), advancing by a stride --
+    // matches renderer_architecture_map.md's own "typed render command ring
+    // buffer" finding). This means the same caller/return-address fires
+    // repeatedly per frame for what may be several DIFFERENT viewports/
+    // passes (shadow cascades, PIP, minimap, etc.), not the two-call
+    // shadow/main split FUN_14018e720 has. ROUND 2: also dump pos/fwd here,
+    // unconditionally, to see empirically whether these repeated same-caller
+    // fires carry the SAME camera data (safe to track every fire) or
+    // genuinely DIFFERENT data per fire (real per-viewport discrimination
+    // needed, not yet designed).
+    if (g_projectionMatrixBuildFireCount <= 40) {
+        const float* diagPos = reinterpret_cast<const float*>(base + 0x1590);
+        const float* diagFwd = reinterpret_cast<const float*>(base + 0x159c);
+        char gateBuf[300];
+        sprintf_s(gateBuf, "[x64-gate-diag] fire=%lld callerAddr=0x%p expected=0x%p isMainScenePass=%d "
+            "pos=[%.2f %.2f %.2f] fwd=[%.3f %.3f %.3f]",
+            g_projectionMatrixBuildFireCount, callerAddr,
+            reinterpret_cast<void*>(g_projectionMainScenePassRetAddr), isMainScenePass ? 1 : 0,
+            diagPos[0], diagPos[1], diagPos[2], diagFwd[0], diagFwd[1], diagFwd[2]);
+        LogFromController(gateBuf);
+    }
+
     // MW32011NCP, 2026-09-24: real per-frame camera-to-world matrix tracking
     // (streamline_camera_x64.cpp) -- called on every MAIN-SCENE-PASS fire
     // (not the shadow pass, and not just the sparse diagnostic cadence
