@@ -92,12 +92,35 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
         sl::float4x4 cameraToPrevCamera{};
         sl::calcCameraToPrevCamera(cameraToPrevCamera, cameraToWorld, g_prevCameraToWorldX64);
 
-        if (g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 5000) == 0) {
+        // 2026-09-24: this function is called on EVERY nonzero-position fire,
+        // roughly 13 of which are bit-identical within one real frame (see
+        // analog_input_hooks_x64.cpp's own call-site comment) -- a fixed
+        // sparse cadence (first 5, every 5000th) landed on identical-data
+        // ticks essentially every time by pure chance (~13/14 odds per
+        // sample), showing an all-zero translation that looked suspicious
+        // but wasn't a bug, just a sampling artifact. Log real motion
+        // whenever it actually happens instead of gambling on a fixed tick
+        // count, PLUS keep a much sparser heartbeat so a genuinely-idle
+        // camera still confirms the pipeline is alive.
+        float tx = cameraToPrevCamera[3].x, ty = cameraToPrevCamera[3].y, tz = cameraToPrevCamera[3].z;
+        bool realMotion = (fabsf(tx) > 0.0001f) || (fabsf(ty) > 0.0001f) || (fabsf(tz) > 0.0001f);
+        bool heartbeat = g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0;
+
+        // Real-motion logging is rate-limited (this project's own standing
+        // "never unthrottled per-frame" lesson, issue #87) -- a moving
+        // player would otherwise log on roughly every 14th tick, easily
+        // thousands of lines per minute of real play.
+        static ULONGLONG s_lastMotionLogMs = 0;
+        ULONGLONG nowMs = GetTickCount64();
+        bool motionDue = realMotion && (nowMs - s_lastMotionLogMs >= 250);
+
+        if (motionDue || heartbeat) {
+            if (motionDue) s_lastMotionLogMs = nowMs;
             char buf[300];
             sprintf_s(buf, "[x64-streamline-camera] tick=%lld cameraToPrevCamera.translation="
-                "[%.5f %.5f %.5f] (should be near-zero at rest, small and real when moving)",
-                g_streamlineCameraTickCountX64,
-                cameraToPrevCamera[3].x, cameraToPrevCamera[3].y, cameraToPrevCamera[3].z);
+                "[%.5f %.5f %.5f]%s",
+                g_streamlineCameraTickCountX64, tx, ty, tz,
+                realMotion ? " (real motion)" : " (heartbeat, at/near rest)");
             LogFromController(buf);
         }
     } else {
