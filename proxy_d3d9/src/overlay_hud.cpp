@@ -57,6 +57,9 @@ void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp, 2026-09-24 
     // real DLSS output buffer (kBufferTypeScalingOutputColor). Unlike depth/color
     // input this isn't hooked off a real game call (the game never touches this
     // resource -- we own it), so it needs an explicit per-frame call site here.
+void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, 2026-09-24 --
+    // real motion-vectors buffer (kBufferTypeMotionVectors), same "we own this
+    // resource" rationale as the output buffer above.
 void InstallDepthStencilHookX64(void* realDevice); // streamline_resources_x64.cpp,
     // 2026-09-24 -- real resource-tagging groundwork: hooks SetDepthStencilSurface
     // to capture and log the real Vulkan image behind whatever depth-stencil
@@ -7633,6 +7636,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
 #if defined(_M_X64) || defined(_WIN64)
     StreamlineFrameTick();
     TagStreamlineOutputColorX64();
+    TagStreamlineMotionVectorsX64();
 #endif
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every

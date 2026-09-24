@@ -86,6 +86,8 @@ constexpr DWORD kD3DUSAGE_RENDERTARGET = 0x00000001;
 constexpr DWORD kD3DPOOL_DEFAULT = 0;
 constexpr DWORD kD3DFMT_A8R8G8B8 = 21; // matches the real scene color's own
     // confirmed VkFormat 44 (VK_FORMAT_B8G8R8A8_UNORM) via DXVK's translation.
+constexpr DWORD kD3DFMT_G16R16F = 115; // standard D3D9 2-channel 16-bit float --
+    // the real, standard format for a motion-vector buffer (X/Y offset per pixel).
 
 typedef HRESULT(WINAPI* CreateTextureFn)(void* This, UINT Width, UINT Height, UINT Levels,
     DWORD Usage, DWORD Format, DWORD Pool, void** ppTexture, HANDLE* pSharedHandle);
@@ -171,6 +173,22 @@ uint32_t g_outputColorWidth = 0;
 uint32_t g_outputColorHeight = 0;
 VkImage g_cachedOutputColorImage = VK_NULL_HANDLE;
 VkImageView g_cachedOutputColorView = VK_NULL_HANDLE;
+
+// Real motion-vectors buffer (kBufferTypeMotionVectors) -- required per the
+// real DLSS requirement list even for Stage 1 camera-only reconstruction
+// (Constants::cameraMotionIncluded=eFalse tells Streamline to compute
+// camera-induced motion itself, but the tag itself is still mandatory --
+// vulkan_dlss_pipeline_research.md item 17's own round 3 finding). We own
+// this resource entirely, same as the output buffer, but sized to match
+// the color INPUT resolution (the internal render-scale resolution), not
+// the output/native resolution -- motion vectors are spatially aligned
+// with the color being upscaled FROM, not the upscaled result.
+void* g_motionVectorsTexture = nullptr;
+void* g_motionVectorsSurface = nullptr;
+uint32_t g_motionVectorsWidth = 0;
+uint32_t g_motionVectorsHeight = 0;
+VkImage g_cachedMotionVectorsImage = VK_NULL_HANDLE;
+VkImageView g_cachedMotionVectorsView = VK_NULL_HANDLE;
 
 bool ResolveVulkanFunctionsIfNeeded()
 {
@@ -583,6 +601,146 @@ void TagOutputColorResourceForFrame()
     StreamlineSetTagForFrameX64(&outputTag, 1);
 }
 
+// Real motion-vectors buffer (kBufferTypeMotionVectors) -- see the
+// g_motionVectorsTexture block's own comment above for the full design.
+// Same lazy-create/resize-on-change pattern as the output color buffer,
+// but sized to ComputeExpectedInternalResolutionX64() (the color INPUT
+// resolution) rather than the native/output resolution.
+//
+// HONEST GAP, not yet closed: this texture's real initial content is
+// D3D9-undefined (CreateTexture with no initial data), not zeroed. This is
+// harmless for THIS round's deliverable (completing the real required-tag
+// list structurally) since nothing reads it yet -- slSetConstants
+// (Constants::cameraMotionIncluded=eFalse, the flag that tells Streamline
+// this buffer's own content doesn't matter for Stage 1) hasn't been wired
+// yet either. Flagged here so a future session doesn't assume this is
+// already correct once slSetConstants/slEvaluateFeature integration starts
+// -- a real zero-fill (or setting cameraMotionIncluded=eFalse correctly)
+// needs to land before this buffer's content can be trusted.
+void TagMotionVectorsResourceForFrame()
+{
+    static long long s_attemptCount = 0;
+    ++s_attemptCount;
+    bool heartbeat = s_attemptCount <= 5 || (s_attemptCount % 5000) == 0;
+
+    void* device = GetLastKnownRenderDevice();
+    if (!device) return;
+
+    uint32_t expectedWidth = 0, expectedHeight = 0;
+    if (!ComputeExpectedInternalResolutionX64(expectedWidth, expectedHeight)) return;
+
+    if (!g_motionVectorsTexture || g_motionVectorsWidth != expectedWidth ||
+        g_motionVectorsHeight != expectedHeight) {
+        if (g_motionVectorsSurface) {
+            reinterpret_cast<IUnknown*>(g_motionVectorsSurface)->Release();
+            g_motionVectorsSurface = nullptr;
+        }
+        if (g_motionVectorsTexture) {
+            reinterpret_cast<IUnknown*>(g_motionVectorsTexture)->Release();
+            g_motionVectorsTexture = nullptr;
+        }
+        g_cachedMotionVectorsImage = VK_NULL_HANDLE;
+        g_cachedMotionVectorsView = VK_NULL_HANDLE;
+
+        void** deviceVtbl = *reinterpret_cast<void***>(device);
+        auto createTexture = reinterpret_cast<CreateTextureFn>(deviceVtbl[kCreateTextureVtableIndex]);
+        HRESULT hr = createTexture(device, expectedWidth, expectedHeight, 1,
+            kD3DUSAGE_RENDERTARGET, kD3DFMT_G16R16F, kD3DPOOL_DEFAULT, &g_motionVectorsTexture, nullptr);
+        if (FAILED(hr) || !g_motionVectorsTexture) {
+            char buf[220];
+            sprintf_s(buf, "[x64-streamline-mvec] CreateTexture FAILED (hr=0x%08lX) for a real "
+                "%ux%u G16R16F motion-vectors buffer.", hr, expectedWidth, expectedHeight);
+            LogFromController(buf);
+            g_motionVectorsTexture = nullptr;
+            return;
+        }
+
+        void** texVtbl = *reinterpret_cast<void***>(g_motionVectorsTexture);
+        auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevelFn>(texVtbl[kGetSurfaceLevelVtableIndex]);
+        hr = getSurfaceLevel(g_motionVectorsTexture, 0, &g_motionVectorsSurface);
+        if (FAILED(hr) || !g_motionVectorsSurface) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-mvec] GetSurfaceLevel FAILED (hr=0x%08lX) on the real "
+                "motion-vectors texture.", hr);
+            LogFromController(buf);
+            reinterpret_cast<IUnknown*>(g_motionVectorsTexture)->Release();
+            g_motionVectorsTexture = nullptr;
+            g_motionVectorsSurface = nullptr;
+            return;
+        }
+
+        g_motionVectorsWidth = expectedWidth;
+        g_motionVectorsHeight = expectedHeight;
+        char buf[200];
+        sprintf_s(buf, "[x64-streamline-mvec] Created a real %ux%u G16R16F motion-vectors "
+            "texture+surface.", g_motionVectorsWidth, g_motionVectorsHeight);
+        LogFromController(buf);
+    }
+
+    if (!g_motionVectorsSurface) return;
+
+    IUnknown* surfaceUnknown = reinterpret_cast<IUnknown*>(g_motionVectorsSurface);
+    ID3D9VkInteropTextureX64* interopTexture = nullptr;
+    HRESULT hr = surfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
+        reinterpret_cast<void**>(&interopTexture));
+    if (FAILED(hr) || !interopTexture) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-mvec] QueryInterface for ID3D9VkInteropTexture FAILED "
+                "(hr=0x%08lX) on our own motion-vectors texture.", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    VkImage image = VK_NULL_HANDLE;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
+    interopTexture->Release();
+
+    if (FAILED(hr) || image == VK_NULL_HANDLE) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-mvec] GetVulkanImageInfo FAILED (hr=0x%08lX) on our "
+                "own motion-vectors texture.", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    if (heartbeat) {
+        char buf[350];
+        sprintf_s(buf, "[x64-streamline-mvec] attempt=%lld image=0x%llx layout=%d format=%d "
+            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u usage=0x%X",
+            s_attemptCount, reinterpret_cast<unsigned long long>(image), static_cast<int>(layout),
+            static_cast<int>(info.format), info.extent.width, info.extent.height, info.extent.depth,
+            info.mipLevels, info.arrayLayers, info.usage);
+        LogFromController(buf);
+    }
+
+    if (!ResolveVulkanFunctionsIfNeeded()) return;
+
+    VkImageView view = GetOrCreateViewX64(image, info.format, info.mipLevels, info.arrayLayers,
+        VK_IMAGE_ASPECT_COLOR_BIT, g_cachedMotionVectorsImage, g_cachedMotionVectorsView,
+        "[x64-streamline-mvec]", "motion-vectors");
+    if (view == VK_NULL_HANDLE) return;
+
+    sl::Resource mvecResource(sl::ResourceType::eTex2d, reinterpret_cast<void*>(image),
+        /*mem*/ nullptr, reinterpret_cast<void*>(view), static_cast<uint32_t>(layout));
+    mvecResource.width = info.extent.width;
+    mvecResource.height = info.extent.height;
+    mvecResource.nativeFormat = static_cast<uint32_t>(info.format);
+    mvecResource.mipLevels = info.mipLevels;
+    mvecResource.arrayLayers = info.arrayLayers;
+    mvecResource.usage = info.usage;
+
+    sl::ResourceTag mvecTag(&mvecResource, sl::kBufferTypeMotionVectors,
+        sl::ResourceLifecycle::eValidUntilPresent);
+    StreamlineSetTagForFrameX64(&mvecTag, 1);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurfaceX64(void* device, void* pNewZStencil)
 {
     if (pNewZStencil) TagDepthResourceForFrame(pNewZStencil);
@@ -608,6 +766,13 @@ HRESULT STDMETHODCALLTYPE Hook_SetRenderTargetX64(void* device, DWORD renderTarg
 void TagStreamlineOutputColorX64()
 {
     TagOutputColorResourceForFrame();
+}
+
+// Same real per-frame call-site rationale as TagStreamlineOutputColorX64
+// above -- this project owns the motion-vectors resource too.
+void TagStreamlineMotionVectorsX64()
+{
+    TagMotionVectorsResourceForFrame();
 }
 
 // Called once, from InstallEndSceneHook (overlay_hud.cpp) -- same one-
