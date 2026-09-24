@@ -1175,13 +1175,38 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     // Real jitter injection -- REAL IMPLEMENTATION, 2026-09-24, now that the
     // probe above found and live-confirmed the real target. See
     // HaltonSequence's own big comment above for the derived-not-guessed
-    // NDC-unit calibration rationale. Applied to EVERY call (shadow +
-    // main-scene pass both) -- the return-address-based pass discriminator
-    // (g_projectionMainScenePassRetAddr) has never been confirmed to
-    // actually fire correctly (see vulkan_dlss_pipeline_research.md item
-    // 2's own honest note), so excluding the shadow pass specifically is a
-    // real, flagged, not-yet-solved refinement, not silently assumed safe.
-    if (g_modConfig.projectionJitterEnabled) {
+    // NDC-unit calibration rationale.
+    //
+    // Main-scene-pass gating -- FIXED same day, root cause found: the
+    // return-address discriminator (g_projectionMainScenePassRetAddr) WAS
+    // being correctly resolved at startup (see the signature-scan block
+    // below, "[x64-jitter-probe] Main-scene-pass return address resolved");
+    // it was simply never actually CONSULTED here -- this block wrote to
+    // every call (shadow-map pass included) unconditionally, which is the
+    // real cause of the shadow shimmer this was flagged for, not a failed
+    // resolution. Gated now via _ReturnAddress(), which (called from inside
+    // this MinHook detour, before or after the real call-through -- the
+    // caller's own return address doesn't change mid-frame-of-this-function)
+    // reflects the actual call site in FUN_14018e720 that invoked this hook.
+    // Degrades safely if the address never resolved this session (signature
+    // miss): jitter stays off entirely rather than risk re-introducing the
+    // shadow-pass shimmer this fix exists to remove.
+    void* callerAddr = _ReturnAddress();
+    bool isMainScenePass = g_projectionMainScenePassRetAddr != 0 &&
+        reinterpret_cast<uintptr_t>(callerAddr) == g_projectionMainScenePassRetAddr;
+
+    if (g_modConfig.projectionJitterEnabled && !isMainScenePass && g_projectionMainScenePassRetAddr == 0) {
+        static bool s_gateMissingLogged = false;
+        if (!s_gateMissingLogged) {
+            s_gateMissingLogged = true;
+            LogFromController("[x64-jitter] ProjectionJitterEnabled=1, but the main-scene-pass "
+                "return address never resolved this session (signature miss) -- refusing to jitter "
+                "at all rather than risk shadow-pass shimmer. See the "
+                "[x64-jitter-probe] signature-scan log line above for the real cause.");
+        }
+    }
+
+    if (g_modConfig.projectionJitterEnabled && isMainScenePass) {
         int renderWidth = 1920, renderHeight = 1080;
         GetRealScreenSize(GetLastKnownRenderDevice(), renderWidth, renderHeight);
         if (renderWidth <= 0) renderWidth = 1920;

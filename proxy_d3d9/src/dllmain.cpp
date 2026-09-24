@@ -47,6 +47,15 @@ bool ExtractEmbeddedDxvkX64(char* outPath, size_t outPathSize); // dxvk_streamli
     // written INSIDE an anonymous namespace still gets that namespace's internal
     // linkage regardless of the extern keyword; confirmed here via a real
     // -Wundefined-internal warning before this line was added).
+bool ExtractEmbeddedStreamlineX64(char* outDir, size_t outDirSize); // dxvk_streamline_extract_x64.cpp,
+    // 2026-09-24 -- same file, called a second time from TryLoadVendoredDxvk()
+    // (see that function's own comment) so DXVK_VULKAN_LOADER_OVERRIDE can be
+    // set to the real extracted sl.interposer.dll path BEFORE DXVK's own
+    // d3d9.dll is loaded/its Vulkan instance is created. Pure file I/O (no
+    // LoadLibrary of the Streamline binaries themselves) -- safe to call this
+    // early from DllMain, unlike TryInitStreamlineX64() itself (see that
+    // function's own loader-lock comment for why THAT one stays deferred to
+    // Hook_CreateDevice).
 #endif
 
 // Deliberately NOT including <d3d9.h>: its prototypes for Direct3DCreate9/D3DPERF_*/etc.
@@ -442,6 +451,41 @@ bool TryLoadVendoredDxvk()
         "falling back to the real system d3d9.dll under this (x86) build.");
     return false;
 #else
+    // MW32011DXVK fork patch, 2026-09-24: when Streamline is also enabled,
+    // point DXVK's own Vulkan loader at the real extracted sl.interposer.dll
+    // via DXVK_VULKAN_LOADER_OVERRIDE (vulkan_loader.cpp, this fork's own
+    // second opt-in patch) BEFORE DXVK's d3d9.dll is even loaded, so its
+    // eventual vkCreateInstance/vkCreateDevice calls route through
+    // Streamline's own real, NVIDIA-signed interposer -- required for
+    // Streamline's mandatory Vulkan swapchain hooks (manual-hooking guide
+    // section 2.7; slSetVulkanInfo alone, already wired, is not sufficient).
+    // Extraction here is pure file I/O (CreateFileA/WriteFile), never
+    // LoadLibrary of the Streamline binaries themselves -- safe from DllMain,
+    // unlike actually loading/initializing them (TryInitStreamlineX64, still
+    // correctly deferred to Hook_CreateDevice for that reason). Also sets
+    // DXVK_CONFIG=dxvk.enableNvCudaInteropNative=True (this fork's first
+    // patch) the same way, so both patches are active together whenever
+    // Streamline is the reason Vulkan mode is being used at all.
+    if (g_modConfig.streamlineEnabled) {
+        char slDir[MAX_PATH];
+        if (ExtractEmbeddedStreamlineX64(slDir, sizeof(slDir))) {
+            char slInterposerPath[MAX_PATH];
+            sprintf_s(slInterposerPath, "%ssl.interposer.dll", slDir);
+            SetEnvironmentVariableA("DXVK_VULKAN_LOADER_OVERRIDE", slInterposerPath);
+            SetEnvironmentVariableA("DXVK_CONFIG", "dxvk.enableNvCudaInteropNative=True");
+            char buf[500];
+            sprintf_s(buf, "[graphics-api] StreamlineEnabled=1 -- DXVK_VULKAN_LOADER_OVERRIDE set to "
+                "'%s', DXVK_CONFIG set to enable the NVX CUDA interop extensions DLSS needs.",
+                slInterposerPath);
+            Log(buf);
+        } else {
+            Log("[graphics-api] StreamlineEnabled=1, but the embedded Streamline binaries could not "
+                "be extracted this early -- DXVK will use its normal Vulkan loader search instead "
+                "(Streamline will still try its own extraction/load later from Hook_CreateDevice, "
+                "but its swapchain hooks will be unavailable this session).");
+        }
+    }
+
     char dxvkPath[MAX_PATH];
     if (!ExtractEmbeddedDxvkX64(dxvkPath, sizeof(dxvkPath))) {
         Log("[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but the embedded "
