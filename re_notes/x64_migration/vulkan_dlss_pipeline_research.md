@@ -585,6 +585,116 @@ those two specific cases (raw dump already captured,
 `stage_listener_invoker2.txt`, case `0x11` at line ~1368) for a per-entity
 loop and whatever identity it assigns/reads per entity.
 
+**Step (a)/(b) RESOLVED, 2026-09-24, direct instruction to keep pursuing
+"true"/real per-object motion vectors ("the engine wont produce these but
+im sure we can locate"). Full fresh decompile pass against the real,
+persistent analyzed Ghidra project (`ghidra_project_x64_analyzed`), not the
+raw `-noanalysis` project — genuinely decisive, real per-entity identity AND
+a real, narrow, stable transform-capture hook point both found, closing the
+two open pieces item 4 above left unresolved.**
+
+1. **Category 1 (`DAT_141c23028`, stride `0x90`, active-flag array
+   `DAT_141c35438`) is now CONFIRMED — not inferred from stride alone — to
+   be the real Dynamic Object (DObj) array.** Decompiled `FUN_1401a5830`
+   (case `0x11`, `add scene ent`) in full: its first loop block walks this
+   exact array/stride/active-flag triple, calling `FUN_1401c7aa0` per active
+   slot, which on success calls `FUN_1401d54f0` — which itself logs the
+   engine's own literal debug string **`"R_AddDObjSurfacesCamera"`**
+   (`FUN_1401e84f0(0x1b, "R_AddDObjSurfacesCamera")`) when the surface
+   array runs out of room. `R_AddDObjSurfacesCamera` is a real, decisive,
+   engine-authored name — "DObj" (Dynamic Object) is standard id
+   Tech/Quake3-lineage terminology (matches this project's own already-
+   confirmed IW5/id-Tech ancestry) for exactly the category of entity this
+   whole feature has been trying to identify. `FUN_1401c7aa0`/its shared
+   tail-call `FUN_1401c7660` themselves turn out to be visibility/culling/
+   surface-count-registration work (matches — not contradicts — item 11's
+   own "spatial-cell registration, not draw-dispatch" finding for this same
+   function), not transform computation; the real per-frame TRANSFORM is
+   written earlier, by a separate function (next point).
+2. **CPU skinning independently reconfirmed with the real per-bone matrix
+   math now fully read (`FUN_1401cc320`, case `0x10`, `skin model`).**
+   Full decompile shows real quaternion-to-4x4-matrix construction (a
+   genuine, textbook quaternion-to-rotation-matrix expansion, `fVar18..41`)
+   computed fresh EVERY FRAME into `local_30d0`, a **local stack array**
+   (3110 floats), one 16-float (4x4, last row implicit `[0,0,0,1]`) matrix
+   per bone, then handed to one of three transform/blend functions
+   (`FUN_1401cd3e0`/`FUN_1401ccb30`/`FUN_1401ce3d0`, gated by the same real
+   `r_sse_skinning`/`r_fastSkin` flags item 16 already found) that actually
+   applies the blend to vertex data. **Real, concrete consequence for this
+   feature's own plan**: since the bone palette never leaves the stack in a
+   retained, globally-addressable form, capturing/replaying it in a
+   hand-authored shader (point 3 of the original plan, "Real, honest
+   complexity" above) is the WRONG approach for this engine — there is no
+   stable palette to capture. The right approach instead: since skinning
+   already fully happens on the CPU, the real per-vertex OUTPUT positions
+   (post-skin, in whatever buffer `FUN_1401cd3e0`/`ccb30`/`ce3d0` write to)
+   are themselves the real per-frame pose — diffing that buffer directly
+   against a retained copy from the previous frame (keyed by the same
+   per-surface identity already used to route each draw) gives true
+   per-vertex object-space velocity with ZERO skinning math replicated
+   anywhere in this project's own code. Simpler than the original plan, not
+   just different — real skinning-shader authoring is no longer needed at
+   all for this engine specifically.
+3. **The real per-frame transform-CAPTURE hook point found: `FUN_1401d62c0`
+   (and its near-identical sibling `FUN_1401d5840`) — a narrow, shared
+   "register this DObj instance's current-frame transform" API.** Found via
+   `FindDataWriters.java` against the confirmed DObj array base
+   (`DAT_141c23028`): this function allocates the next free slot
+   (`DAT_141c22fac`, the same index space category 1's own array already
+   uses), then writes a real, fresh **`float[3]` world position** (its own
+   `param_5`, copied verbatim into the slot's own position fields) plus an
+   orientation-derived basis (computed from `param_2` via
+   `FUN_140040520`/`FUN_140040500`/`FUN_1402bd380` into the slot's own
+   rotation-row fields — the exact same fields `FUN_1401a5830`'s own
+   category-3 block was independently seen reading as a 3x3 rotation row,
+   cross-confirming the field identity from two independent angles). This
+   is precisely the "capture, don't compute" data point item 1 of this
+   section's own plan called for — the real engine-computed transform,
+   available every frame with zero need to understand *how* any given
+   entity is animating or moving. **Only one direct `CALL` xref found**
+   (`FUN_14006e040`, decompiled in full — a real weapon-viewmodel update
+   function, confirming the call shape: `param_1`=model/object handle,
+   `param_2`=position/orientation source buffer, `param_3`=flags,
+   `param_4`=another flags word, `param_5`=`float[3]` world position,
+   `param_6`=an SSE-skinning-gate byte) — the other two xrefs
+   (`0x144450798`, `0x14049c838`/`0x14049c84c`) are DATA references,
+   consistent with `FUN_1401d62c0` also being reached indirectly through a
+   per-model-type function-pointer table (the real, general "every dynamic
+   world entity" path — AI, players, vehicles, dropped items — almost
+   certainly funnels through one of those table slots rather than a second
+   direct, by-name call site, matching `FUN_1401c7660`'s own
+   label-pointer-passing signature seen in point 1). **Real, deliberate
+   design conclusion, not a gap**: this project does not need to enumerate
+   or hook every caller — `FUN_1401d62c0`/`FUN_1401d5840` are themselves the
+   real, narrow, stable shared choke point every DObj instance's transform
+   passes through before the render stage ever reads it, exactly the kind
+   of hook target this project's own §2.3 "hook at the API boundary, not
+   deep engine internals" philosophy already prefers. Hooking both
+   (distinguished by whichever extra parameter differs between them — not
+   yet diffed byte-for-byte, a small remaining confirmation step) and
+   capturing `param_5` (position) plus the resolved orientation basis, keyed
+   by the resulting slot index, gives a real current+previous-frame
+   transform pair for every DObj, submitted the same way regardless of
+   entity type.
+4. **Net, real status change**: every piece section 2.6's own "Net, honest
+   scope" paragraph above listed as still open is now resolved in principle
+   — stable per-entity identity (point 1), the skinned-draw convention
+   (point 2, and simpler than originally planned), and the real capture
+   hook point (point 3). What remains is real, bounded implementation work,
+   not further unknowns: (i) diff `FUN_1401d62c0` vs `FUN_1401d5840` to
+   confirm which is used when (both, one, or a variant selector); (ii)
+   confirm the exact orientation-basis field layout `FUN_140040520`/`500`/
+   `FUN_1402bd380` produce (decompiled by name only so far, not yet read in
+   full); (iii) locate the real post-skin vertex OUTPUT buffer point 2 above
+   assumes exists (inside `FUN_1401cd3e0`/`ccb30`/`ce3d0`, not yet
+   decompiled) to confirm skinned draws really can be captured the same
+   "diff a retained buffer" way as rigid DObj transforms; (iv) build the
+   actual capture/retain cache (keyed by DObj slot index) and the small
+   hand-authored velocity shader pair for rigid (non-skinned) draws, which
+   no longer needs any bone-palette replication per point 2's correction.
+   **Not yet implemented, not yet live-tested — real RE findings only, this
+   round.**
+
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
 Directly listed `src/games/` in `github.com/clshortfuse/renodx` (main branch,
