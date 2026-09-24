@@ -117,6 +117,14 @@ re_notes/ghidra_project/
 # doesn't untrack something already committed).
 re_notes/ghidra_project_x64/
 
+# Same policy, real full (non-`-noanalysis`) analyzed Ghidra projects for both
+# binaries (2026-09-24) -- kept on disk (each ~80MB) so future caller-search work
+# doesn't re-pay the ~110s analysis time, added directly to this rule from the
+# start this time rather than found unprotected after the fact like the entry
+# above.
+re_notes/x64_migration/ghidra_project_x86_analyzed/
+re_notes/x64_migration/ghidra_project_x64_analyzed/
+
 # Internal-only technical detail on unpatched vulnerabilities (exact function
 # addresses, precise buffer/offset values, exact fix implementation logic) -- same
 # redaction policy and file-naming convention as the sibling MW32011NSP project's

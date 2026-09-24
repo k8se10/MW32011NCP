@@ -27,6 +27,17 @@ the locked signature-scanning policy (`CLAUDE.md` §5/§10.3), never
 hardcode one of these into shipped hook code — resolve a real signature at
 runtime instead.
 
+**Tooling note, 2026-09-24**: real, full (non-`-noanalysis`) Ghidra
+analysis passes now exist for BOTH binaries, saved as persistent
+projects rather than disposable scratch imports — `re_notes/x64_migration/ghidra_project_x64_analyzed/`
+and `re_notes/x64_migration/ghidra_project_x86_analyzed/`. These properly
+populate the reference manager, resolving the indirect-call/data-table
+blind spot this project's own `-noanalysis` convention has hit
+repeatedly. Open either with `-process iw5sp.exe -noanalysis -readOnly`
+(no re-import needed) for any future real caller search — prefer this
+over a fresh scratch `-noanalysis` import when the question is "who calls
+this," which a scratch import structurally cannot answer.
+
 ---
 
 ## 1. The big picture
@@ -269,25 +280,21 @@ SSAO-interaction theories — currently untestable because forcing any dvar
 on x64 needs a native `SetDvarBool`/`SetDvarInt` this project hasn't found
 yet (`known_issues_x64.md` issue #6).
 
-🟢 **Consumer FOUND, 2026-09-24** — `FUN_1401d40eb` (likely a mid-function
-cut, real entry point slightly earlier in the same contiguous code, but
-the code region is unambiguous). Found via a new, reusable technique
-after five prior reference-scan attempts against the table's own address
-all failed (the table is never referenced directly by name/address —
-creation functions are handed a record pointer by their caller instead):
-a raw scan for `CALL [reg+disp32]` against `CreateRenderTarget`'s real
-x64 vtable offset (`0xE0`, slot 28) found exactly one hit in the whole
-binary. Real, confirmed cross-references tying this into everything else
-already mapped: sizes from the exact same `InternalRenderScalePercent`
-globals (`_DAT_141888670`/`674` unclamped, `_DAT_141888678`/`67c`
-tier-clamped) already hooked elsewhere; reads a creation parameter from
-`_DAT_1404d0750` (confirming the "fourth sub-table" below really is real
-per-target creation data, not dead data); writes its created surface
-pointer into the exact same `0x141bb6e00`-range block the activation
-function (below) reads its own cache from — the creation and activation
-systems share one underlying surface-pointer array. 🔴 Not yet found:
-this function's own caller (the real per-target dispatch loop, presumably
-iterating all 19 table entries).
+🟢 **Consumer FOUND and fully resolved, 2026-09-24.** Real entry point:
+**`FUN_1401d4040`** (the earlier `FUN_1401d40eb` was a confirmed
+mid-function cut into this same function). Creates the core
+`R_RENDERTARGET_SCENE` render target and depth-stencil (named via a real
+string pointer), then conditionally (MSAA-gated) creates
+`R_RENDERTARGET_RESOLVED_SCENE` and its own depth-stencil too — by direct
+name reference, not a generic loop over the 19-entry table in §6 below.
+Sizes from the exact same `InternalRenderScalePercent` globals already
+hooked elsewhere; writes its surface pointer into the same
+`0x141bb6e00`-range block the activation function reads its cache from.
+**Its real (non-table) caller is `FUN_1401d44f0`** — already a known
+function in this project's own work, the render-scale-driven SAVED_SCREEN
+tier-clamp computation. This directly ties render-scale computation →
+render-target creation → render-target activation into one confirmed,
+connected system.
 
 ### Render-target ACTIVATION (switching which target is bound)
 
@@ -318,18 +325,17 @@ guessing.
 
 Live-observed firing pattern: this is what
 `[x64-renderview-select-diag]` tracks — normally quiet, but fires in
-rapid multi-index bursts (e.g. `1→2→6→7→8→6→8→1→2→1`) at specific,
-still-unidentified moments. 🟡 Best-supported (not confirmed) reading:
-`FUN_1401dfd80` is reached from at least two structurally distinct
-contexts (a generic per-technique/material dispatch table, and a second
-table matching the render-target descriptor's own indexing stride) —
-consistent with it being a commonly-invoked shared utility called many
-times per frame, meaning the burst itself may be an unremarkable
-multi-pass sequence rather than a single rare trigger. Finding its real
-CALL-instruction consumers hit this project's own known `-noanalysis`
-reference-manager blind spot (both known references are DATA references,
-not calls) — needs a real analysis pass or live tracing. See §7 for why
-this matters.
+rapid multi-index bursts (e.g. `1→2→6→7→8→6→8→1→2→1`) at specific
+moments. 🟢 **Confirmed, 2026-09-24, via a real full analysis pass**: this
+function has **40 real callers** across the binary — a genuinely
+widely-used shared utility, not a narrow or rare code path. Real, direct
+confirmation: motion blur's own already-known x64 trigger chain
+(`FUN_14018def0`/`FUN_14018e720`) is among the 40 callers. This strongly
+supports the "unremarkable multi-pass sequence" reading of the observed
+burst (several of 40 real callers firing in the same frame) over a single
+anomalous trigger — though which specific combination fires during the
+two captured spike moments still isn't pinned down without live
+player-action correlation. See §7 for why this matters.
 
 ---
 
@@ -434,18 +440,19 @@ during the exact frames the live capture caught.
    function, every single frame — no cross-thread hand-off ever needed
    for the normal case. This directly confirms the "thread hand-off is
    the real regression, not lost parallelism" theory.
-2. **What triggers the `FUN_1401dfd80` view-index burst that precedes
-   both observed spike/thread-handoff events, and is it genuinely rare or
-   an unremarkable multi-pass sequence?** Needs a real Ghidra analysis
-   pass (not `-noanalysis`) or live tracing to find the actual
-   CALL-instruction consumers — reference-manager searching hit its known
-   blind spot.
+2. ~~What triggers the `FUN_1401dfd80` view-index burst?~~ **Largely
+   answered** — 40 real callers found, strongly supporting "unremarkable
+   multi-pass sequence" over a single rare trigger. Real remaining
+   sliver: which specific combination of callers fires during the two
+   captured spike moments — needs live player-action correlation, not
+   more static tracing.
 3. **Who writes into `FUN_1401dfd80`'s 20-slot texture-unbind table, and
    does a real invalidation (not just the scan) fire during a spike?**
-   Needs a real analysis pass or a new, narrowly-targeted live diagnostic.
-4. **`FUN_1401d40eb`'s own caller** (the render-target table's real
-   per-entry dispatch loop) — not yet found, real next step now that the
-   creation function itself is located.
+   Now tractable with the real, saved x64 analysis project available —
+   real next step, not yet attempted with it.
+4. ~~`FUN_1401d40eb`'s own caller~~ **RESOLVED** — real entry point is
+   `FUN_1401d4040`, called from `FUN_1401d44f0` (the already-known
+   render-scale tier-clamp function). See §6.
 5. **Material/shader binding** — how a drawn surface's shader program and
    texture samplers actually get bound per-draw-call. Untouched so far,
    though `FUN_1400a5a20` (a generic named-asset lookup, type-tag-

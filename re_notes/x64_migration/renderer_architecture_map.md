@@ -1228,6 +1228,51 @@ do at all, since main-thread submission was already its unconditional
 default. This is the strongest, most directly evidenced finding in the
 entire investigation.
 
+### Same full-analysis pass applied to x64, same day — two more real questions resolved
+
+Direct instruction: "run one for the entire x64 one too." A matching full
+Ghidra analysis pass against the x64 binary (`re_notes/x64_migration/ghidra_project_x64_analyzed/`,
+also saved, not scratch) resolved two more of this session's open
+questions immediately, with the reference manager now properly populated:
+
+**`FUN_1401dfd80` has 40 real callers, not an unknown few.** Real,
+substantial confirmation of Fork 1's own "best-supported, not confirmed"
+reading: this is a widely-used shared utility, called from dozens of
+distinct functions across the binary (`FUN_1401bc190`, `FUN_1401950a0`
+x2, `FUN_140197790`, `FUN_140186a60`, `FUN_14018e720` x2, `FUN_14018e0d0`
+x4, `FUN_14018def0`, `FUN_14018e010`, `FUN_14018ea20`, `FUN_1401939f0`
+x6, `FUN_14018eec0` x2, `FUN_1401945a0`, `FUN_1401949c0` x3, and 15
+others). **Real, direct connection found**: `FUN_14018def0` and
+`FUN_14018e720` are BOTH already independently confirmed elsewhere in
+this project's own work as motion blur's own real x64 trigger chain
+(`x64_feature_parity_audit.md` row #45) — motion blur's trigger directly
+calls the render-view activator. With 40 real, independent call sites
+across the binary, the observed multi-index burst reads much more
+confidently now as an ordinary multi-pass sequence (several of these 40
+callers firing in the same frame, e.g. shadow pass + post-effect + motion
+blur's own trigger) than a single rare anomalous trigger -- though which
+SPECIFIC combination fires during the two captured spike moments still
+isn't pinned down without live player-action correlation.
+
+**The render-target creator's real entry point and caller are both
+found.** The function found via the vtable-call-site scan (previously
+`FUN_1401d40eb`, flagged as a likely mid-function cut) has its real start
+at **`FUN_1401d4040`** -- confirmed via full decompile: creates the core
+`R_RENDERTARGET_SCENE` render target and its depth-stencil surface
+(named via a real string pointer, `PTR_s_R_RENDERTARGET_SCENE_1404d0750`),
+then conditionally (gated by `DAT_141885488`) creates
+`R_RENDERTARGET_RESOLVED_SCENE` and its own depth-stencil too — i.e. this
+one function creates the two named targets a real MSAA-resolve setup
+needs, by direct name reference, not by looping over the generic
+19-entry table found in section 5b. **Its only real (non-data-table)
+caller is `FUN_1401d44f0`** -- already an independently-known function in
+this project's own existing work, the render-scale-driven SAVED_SCREEN
+tier-clamp computation function (`known_issues_x64.md` issue #4's own
+trail). This is a real, direct, now-confirmed link tying together the
+render-scale computation → render-target creation → render-target
+activation chain as one connected system, not three separately-inferred
+pieces.
+
 ### Fork 5 — entity-category identity (`gen drawsurfs`/`add scene ent` follow-up)
 
 **Confirmed, real answer**: case `0x03` (`cell scene ent`) and case
