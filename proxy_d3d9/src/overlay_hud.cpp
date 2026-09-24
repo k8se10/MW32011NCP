@@ -7503,6 +7503,46 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
 // corner text, derived from (build date - release version/commit), not hand-maintained (see GetBuildWatermarkString,
 // mod_config.cpp). REMOVE ENTIRELY once 1.0 ships (see CLAUDE.md/AGENTS.md "pre-1.0" rule); every pre-1.0 version
 // must carry it, so this call is intentionally unconditional -- no config toggle.
+// MW32011NCP, 2026-09-24: real external-linkage accessor into
+// analog_input_hooks_x64.cpp's own anonymous-namespace jitter-probe state
+// (returns nullptr when the probe is off). See its own header comment for
+// the full rationale. REVISED same day -- one fixed candidate per process
+// launch now (see g_modConfig.projectionMatrixJitterProbeCandidateIndex),
+// no more active/clean phase to track.
+extern "C" const char* GetCurrentJitterProbeCandidateNameX64();
+
+// MW32011NCP, 2026-09-24: draws the currently selected jitter-probe
+// candidate name in large, bright text top-center of the screen -- pure
+// RE-verification tooling (see ProjectionMatrixJitterProbeEnabled's own
+// comment, mod_config.h). Draws every frame the probe is enabled; a no-op
+// (single accessor call, no texture work) the rest of the time.
+void DrawJitterProbeOverlayIfEnabled(void* device)
+{
+    const char* candidateName = GetCurrentJitterProbeCandidateNameX64();
+    if (!candidateName) return;
+
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+    static void* s_jpTexture = nullptr;
+    static char s_jpRenderedFor[128] = "";
+    static int s_jpLastFontHeight = 0;
+    constexpr int kJpFontHeightPx = 42;
+    char text[160];
+    sprintf_s(text, "JITTER PROBE: %s", candidateName);
+    if (!EnsureLeftAlignedTextTexture(device, s_jpTexture, s_jpRenderedFor, sizeof(s_jpRenderedFor), text,
+                                       s_jpLastFontHeight, kJpFontHeightPx, FontRole::Default))
+        return;
+    const int widthPx = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, kJpFontHeightPx, FontRole::Default);
+    const float jpScale = static_cast<float>(kJpFontHeightPx) / 20.0f;
+    const float drawX = (1920.0f - static_cast<float>(widthPx)) * 0.5f; // horizontally centered, 1920x1080 design space
+    constexpr float kJpTopMarginPx = 60.0f;
+    constexpr DWORD kJpColor = 0xFFFF3030u; // bright red, fully opaque -- unmissable
+    DrawGenericTexturedQuad(device, s_jpTexture, drawX * scaleX, kJpTopMarginPx * scaleY,
+                              static_cast<float>(kTextureWidth) * scaleX * jpScale,
+                              static_cast<float>(kTextureHeight) * scaleY * jpScale,
+                              kJpColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+}
+
 void DrawBuildWatermark(void* device)
 {
     float scaleX = 1.0f, scaleY = 1.0f;
@@ -7568,6 +7608,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // resolution sources, so they only cancelled out by coincidence).
     g_lastKnownRenderDevice = device;
     DrawBuildWatermark(device);
+    DrawJitterProbeOverlayIfEnabled(device);
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every
     // real frame, internally rate-limited to ~2s and a fast no-op otherwise (see

@@ -299,7 +299,13 @@ constexpr JitterProbeCandidate kJitterProbeCandidates[] = {
 };
 constexpr int kJitterProbeCandidateCount =
     sizeof(kJitterProbeCandidates) / sizeof(kJitterProbeCandidates[0]);
-constexpr double kJitterProbeSecondsPerCandidate = 4.0;
+// MW32011NCP, 2026-09-24: REVISED -- an automatic timed cycle (with an
+// undo-before-reapply "fix" and a clean-baseline gap) was tried and, across
+// three escalating amplitudes, never reproduced the original visible
+// distortion -- direct user instruction to go back to testing one fixed
+// candidate per process launch instead (see
+// g_modConfig.projectionMatrixJitterProbeCandidateIndex). No timed cycling
+// remains; kept simple and manual.
 
 // MW32011NCP, 2026-09-17: real reverse (ID -> text) resolution for the
 // interned string IDs VM_Notify's own live traffic surfaces -- found via the
@@ -1045,7 +1051,6 @@ void __fastcall Hook_PmoveTick(void* param1)
 // function and the real matrix matches the RE trail's predicted layout.
 void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
 {
-    void* retAddr = _ReturnAddress();
     g_realProjectionMatrixBuild(renderState);
 
     ++g_projectionMatrixBuildFireCount;
@@ -1053,7 +1058,12 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     if (g_projectionMatrixBuildFireCount <= 5 || (g_projectionMatrixBuildFireCount % 5000) == 0) {
         const float* row0 = reinterpret_cast<const float*>(base + 0x14d0);
         const float* row1 = reinterpret_cast<const float*>(base + 0x14e0);
-        char buf[256];
+        // MW32011NCP, 2026-09-24: widened from 256 -- real worst-case with
+        // 8 %.6f floats plus %lld/%p was a close enough call (literal text
+        // alone is 107 bytes) to fix proactively after the sibling
+        // [x64-jitter-probe] buffer overflow this same session already
+        // proved this exact bug class is live and real, not hypothetical.
+        char buf[400];
         sprintf_s(buf, "[x64-proj-matrix-diag] fired (count=%lld) struct=0x%p row0=[%.6f %.6f %.6f %.6f] "
             "row1=[%.6f %.6f %.6f %.6f]",
             g_projectionMatrixBuildFireCount, renderState,
@@ -1061,24 +1071,60 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
         LogFromController(buf);
     }
 
-    // Empirical jitter-target probe -- strictly opt-in, main-scene-pass only
-    // (never the shadow pass). See kJitterProbeCandidates's own comment for
-    // the full rationale.
-    if (g_modConfig.projectionMatrixJitterProbeEnabled &&
-        g_projectionMainScenePassRetAddr != 0 &&
-        reinterpret_cast<uintptr_t>(retAddr) == g_projectionMainScenePassRetAddr) {
+    // Empirical jitter-target probe -- strictly opt-in. REVISED 2026-09-24,
+    // direct user instruction after several same-session live-test rounds:
+    // "lets go back to the known working accumulated version of this, then
+    // we can instead of switching, do one by one each in config then
+    // relaunch and test, slower but clean every single time." Back to the
+    // exact original mechanism that WAS live-confirmed visible (continuous
+    // `+=` every fire, no undo) rather than the "corrected" bounded/held
+    // versions that all produced zero visible effect across three
+    // escalating amplitudes -- whatever made the original version visible
+    // (very possibly the real answer to the open "does the async render
+    // backend need sustained/repeated writes to ever pick this up" question
+    // this session's own attempts at a bounded/held value couldn't settle)
+    // is preserved exactly. Scope is now ONE candidate per process launch,
+    // selected via config (g_modConfig.projectionMatrixJitterProbeCandidateIndex)
+    // rather than an automatic timed cycle -- a fresh process launch per
+    // candidate guarantees no state (accumulated or otherwise) carries over
+    // from a previous test, giving a genuinely clean read every time.
+    if (g_modConfig.projectionMatrixJitterProbeEnabled) {
+        // MW32011NCP, 2026-09-24: real startup delay, direct user request
+        // ("maybe start it after a timer not immediately like 25s") -- lets
+        // the game reach actual gameplay (past loading screens/main menu)
+        // before the probe ever writes anything, so the distortion is
+        // observed cleanly in-level rather than immediately at launch.
+        static long long s_firstFireTickMs = 0;
+        long long nowTickMs = static_cast<long long>(GetTickCount64());
+        if (s_firstFireTickMs == 0) s_firstFireTickMs = nowTickMs;
+        constexpr long long kJitterProbeStartDelayMs = 25000;
+        if (nowTickMs - s_firstFireTickMs < kJitterProbeStartDelayMs) return;
+
+        int idx = g_modConfig.projectionMatrixJitterProbeCandidateIndex;
+        if (idx < 0 || idx >= kJitterProbeCandidateCount) idx = 0;
+        const JitterProbeCandidate& candidate = kJitterProbeCandidates[idx];
         double nowSeconds = GetTickCount64() / 1000.0;
-        int candidateIdx = static_cast<int>(nowSeconds / kJitterProbeSecondsPerCandidate) % kJitterProbeCandidateCount;
-        const JitterProbeCandidate& candidate = kJitterProbeCandidates[candidateIdx];
         float perturbation = 0.25f * static_cast<float>(sin(nowSeconds * 3.0));
         *reinterpret_cast<float*>(base + candidate.offset) += perturbation;
+        *reinterpret_cast<float*>(base + 0x40 + candidate.offset) += perturbation;
 
-        static int s_lastLoggedCandidateIdx = -1;
-        if (candidateIdx != s_lastLoggedCandidateIdx) {
-            s_lastLoggedCandidateIdx = candidateIdx;
-            char buf[200];
-            sprintf_s(buf, "[x64-jitter-probe] now perturbing candidate %s -- watch for visible screen "
-                "swim/warp for the next %.0fs", candidate.name, kJitterProbeSecondsPerCandidate);
+        static bool s_logged = false;
+        if (!s_logged) {
+            s_logged = true;
+            // MW32011NCP, 2026-09-24: CRITICAL, real launch-crash bug found
+            // and fixed live -- buf[220] was already ~219 bytes consumed by
+            // the format string's own literal text alone, before ever
+            // substituting %s, guaranteeing a real sprintf_s overflow
+            // (FAST_FAIL_INVALID_ARG, this UCRT fails fast rather than
+            // truncating) on every single launch with the probe enabled --
+            // the exact same recurring bug class this project has hit
+            // multiple times before (CLAUDE.md/known_issues_x64.md), this
+            // time self-inflicted in the same session that introduced it.
+            // Widened generously (400, real margin, not just "big enough").
+            char buf[400];
+            sprintf_s(buf, "[x64-jitter-probe] perturbing candidate %s (both copies) for the whole session -- "
+                "watch for visible screen swim/warp, then set ProjectionMatrixJitterProbeCandidateIndex to the "
+                "next index and relaunch to test the next one", candidate.name);
             LogFromController(buf);
         }
     }
@@ -7385,6 +7431,22 @@ extern "C" bool IsReadyUpHudElemTextDrawnX64()
 {
     LONG t = g_hudElemReadyTextSeenTickX64;
     return t != 0 && (GetTickCount() - static_cast<DWORD>(t)) < 500;
+}
+
+// MW32011NCP, 2026-09-24: real external-linkage accessor (this file's own
+// established pattern for anonymous-namespace-internal state, e.g.
+// GetMainThreadId in dllmain.cpp) so overlay_hud.cpp can draw the currently
+// active jitter-probe candidate name on screen -- letting a human live-test
+// just READ which candidate is active instead of cross-referencing log
+// timestamps against a fixed 4s-per-candidate cycle by hand. Uses the exact
+// same GetTickCount64()-driven selection Hook_ProjectionMatrixBuild itself
+// uses, so what's drawn always matches what's actually being perturbed.
+extern "C" const char* GetCurrentJitterProbeCandidateNameX64()
+{
+    if (!g_modConfig.projectionMatrixJitterProbeEnabled) return nullptr;
+    int idx = g_modConfig.projectionMatrixJitterProbeCandidateIndex;
+    if (idx < 0 || idx >= kJitterProbeCandidateCount) idx = 0;
+    return kJitterProbeCandidates[idx].name;
 }
 
 // Trace support for overlay_hud's [menuhint-trace] (2026-09-22): native Back draws processed since the last visible pass.

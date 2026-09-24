@@ -986,6 +986,14 @@ struct ModConfig
     // this on WILL visibly warp/swim the screen while active -- do not
     // enable during normal play.
     bool projectionMatrixJitterProbeEnabled = false;
+    // Which single candidate (index into kJitterProbeCandidates,
+    // analog_input_hooks_x64.cpp) to perturb this session -- REVISED
+    // 2026-09-24, direct user instruction: test one candidate per process
+    // launch (accumulating write, no undo -- the exact mechanism that was
+    // originally live-confirmed visible) rather than an automatic timed
+    // cycle. 0=Row0[2], 1=Row0[3], 2=Row1[2], 3=Row1[3], 4=Row2[0],
+    // 5=Row2[1], 6=Row3[0]/near, 7=Row3[1]/far.
+    int projectionMatrixJitterProbeCandidateIndex = 0;
 
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp

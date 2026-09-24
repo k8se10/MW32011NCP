@@ -773,12 +773,16 @@ void WriteDefaultConfig(const char* path)
         "; risk if wrong) -- stays at the real, documented Win32 API layer only.\n"
         "; Live-tested (2026-09-21) -- on by default. 0 = off, 1 = on (default).\n"
         "IwdReadAccelEnabled=%d\n"
-        "; Developer/RE-verification tool only, never a player-facing feature. Cycles\n"
-        "; a large, obviously-visible perturbation through candidate float slots in\n"
-        "; the real projection matrix to empirically find the safe jitter-injection\n"
-        "; target for the planned DLSS/FSR3.1 work. WILL visibly warp the screen\n"
-        "; while active. 0 = off (default), 1 = on -- do not enable during normal play.\n"
+        "; Developer/RE-verification tool only, never a player-facing feature. Adds a\n"
+        "; visible perturbation to ONE candidate float slot in the real projection\n"
+        "; matrix (selected below) to empirically find the safe jitter-injection\n"
+        "; target for the planned DLSS/FSR3.1 work. WILL visibly warp the screen.\n"
+        "; 0 = off (default), 1 = on -- do not enable during normal play.\n"
         "ProjectionMatrixJitterProbeEnabled=%d\n"
+        "; Which candidate to perturb (0-7): 0=Row0[2] 1=Row0[3] 2=Row1[2] 3=Row1[3]\n"
+        "; 4=Row2[0] 5=Row2[1] 6=Row3[0]/near 7=Row3[1]/far. Only takes effect while\n"
+        "; ProjectionMatrixJitterProbeEnabled=1. Change and relaunch to test the next one.\n"
+        "ProjectionMatrixJitterProbeCandidateIndex=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -1059,6 +1063,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.waitCoalescingEnabled ? 1 : 0,
         g_modConfig.iwdReadAccelEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
+        g_modConfig.projectionMatrixJitterProbeCandidateIndex,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1382,6 +1387,11 @@ void LoadModConfig()
     ReadBool(path, "Video", "WaitCoalescingEnabled", g_modConfig.waitCoalescingEnabled);
     ReadBool(path, "Video", "IwdReadAccelEnabled", g_modConfig.iwdReadAccelEnabled);
     ReadBool(path, "Video", "ProjectionMatrixJitterProbeEnabled", g_modConfig.projectionMatrixJitterProbeEnabled);
+    {
+        int v = GetPrivateProfileIntA("Video", "ProjectionMatrixJitterProbeCandidateIndex",
+                                       g_modConfig.projectionMatrixJitterProbeCandidateIndex, path);
+        g_modConfig.projectionMatrixJitterProbeCandidateIndex = v;
+    }
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1408,7 +1418,8 @@ void LoadModConfig()
         "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
-        "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d projectionMatrixJitterProbeEnabled=%d",
+        "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d projectionMatrixJitterProbeEnabled=%d "
+        "projectionMatrixJitterProbeCandidateIndex=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1445,7 +1456,8 @@ void LoadModConfig()
         g_modConfig.framePacingEnabled ? 1 : 0,
         g_modConfig.waitCoalescingEnabled ? 1 : 0,
         g_modConfig.iwdReadAccelEnabled ? 1 : 0,
-        g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0);
+        g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
+        g_modConfig.projectionMatrixJitterProbeCandidateIndex);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
