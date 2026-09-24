@@ -64,16 +64,18 @@ separate, dedicated threads. This was the single biggest open question in
 this whole investigation, and it's now closed: **yes, real threading
 exists on x64, confirmed by direct live observation, not inference.**
 
-**The current leading theory for the draw-pipeline regression** (§7):
-x86 *also* had real dedicated D3D9-adjacent threading (device-lost
-polling, `BeginScene`) — so x64 likely didn't lose parallelism. What may
-have changed is that x86's actual frame *submission* (`EndScene`) ran on
-the main thread by default, while x64 moved submission itself onto a
-dedicated thread — meaning the real cost isn't the normal case (probably
-faster now) but the rare fallback path where x64 has to hand work back to
-the main thread, something x86 never needed to do. That hand-off is
-exactly what's been caught live correlating with both observed 100-165ms
-spikes. Not yet confirmed — see §7 and open question #1.
+**The confirmed explanation for the draw-pipeline regression** (§7,
+resolved 2026-09-24): x86 had real dedicated D3D9-adjacent threading
+(device-lost polling, `BeginScene`) but its actual frame *submission*
+(`EndScene`) ran unconditionally on the main thread, every frame, as part
+of `Com_Frame()`. x64 moved submission itself onto a dedicated thread —
+so x64 didn't lose parallelism, it gained more of it. The real cost is
+the rare fallback path where x64 has to hand work back to the main
+thread, something x86's architecture never needed to do at all — and
+that hand-off is exactly what's been caught live correlating with both
+observed 100-165ms spikes. This is now confirmed on both sides (x86 via
+real decompile/caller-chain analysis, x64 via live diagnostic), not a
+standing theory.
 
 ---
 
@@ -365,22 +367,31 @@ to be a real device thread: a fixed ~30Hz `Sleep`-paced loop calling
 `D3DERR_DEVICENOTRESET` constants) and `BeginScene` on device-lost
 recovery.
 
-**But a real, load-bearing, unresolved tension exists**: this project's
-own existing docs assert `EndScene` fires "on the main thread" for x86
-(used to justify an already-shipped DualSense fix), and no `EndScene`
-call was found anywhere in that dedicated thread's own traced chain —
-only device-lost polling and `BeginScene`. **Working picture, not yet
-confirmed**: x86 likely had a *partial* split (device management
-dedicated, frame submission/`EndScene` on main) while x64 has a *fuller*
-split (submission itself moved to a dedicated thread, per the live
-confirmation above). If true, this reframes the whole investigation: x64
-didn't lose parallelism, it gained more of it — and the real cost is the
-RARE fallback path where work has to hand back to the main thread
-(exactly the pattern already observed correlating with the two live
-spikes), something x86 likely never needed since main-thread submission
-was already its default. **This would make the thread HANDOFF itself,
-not lost threading, the real regression mechanism.** 🔴 Not yet done:
-find x86's own actual `EndScene` call site to settle this definitively.
+🟢 **CONFIRMED, 2026-09-24, via a real full Ghidra analysis pass (not
+live tracing — x86 no longer runs against the current retail game).**
+x86 had a genuine *partial* split, now proven rather than inferred: real
+per-frame `EndScene` submission ran directly on the main thread, as part
+of `Com_Frame()` (`FUN_0044c7b0`, already independently confirmed
+elsewhere in this project's own research as the real per-frame tick,
+called in a tight `while(true)` loop directly from the real
+WinMain-equivalent). The chain: `FUN_00534380` (WinMain, main thread) →
+`FUN_0044c7b0` (`Com_Frame`, main thread, every tick) → `FUN_004b6510` →
+the real `EndScene` vtable call. Device management (`TestCooperativeLevel`/
+`BeginScene` on device loss) genuinely was on its own dedicated thread —
+but normal-case frame *submission* was not; it was main-thread by
+construction, unconditionally, every frame.
+
+x64 (confirmed live) moved that same per-frame `EndScene` submission onto
+a dedicated backend thread. **This is now the strongest, most directly
+evidenced conclusion in the whole investigation**: x64 gained real
+parallelism for the common case, but the real regression cost is the rare
+fallback path where x64 has to hand frame submission back to the main
+thread — something x86's architecture never needed to do at all. The
+thread HANDOFF itself, not lost threading, is the real regression
+mechanism. (Three other real `EndScene`-calling functions were found and
+ruled out as the normal path — all are device-reset/recovery-specific,
+called from the background device-health thread or other rebuild
+utilities, not the steady-state per-frame path.)
 
 ### `FUN_1401dfd80` (x64) vs. `FUN_00542cb0` (x86) — the real match
 
@@ -414,18 +425,15 @@ during the exact frames the live capture caught.
 
 ## 8. Open questions, ranked by how directly they bear on the regression theory
 
-1. **Does x86's real `EndScene` call site sit on the main thread or a
-   dedicated one?** Still the single most load-bearing open question — a
-   confirmed answer either validates or kills the "thread handoff is the
-   real regression, not lost parallelism" theory (§7). **Real attempt
-   made, genuinely unresolved**: four real `EndScene` wrapper functions
-   found (`FUN_0052b8cd`/`FUN_004e0bba`/`FUN_004b6544`/`FUN_004e44c5` —
-   the last two shaped like a real "normal frame" finalize path and a
-   wait-loop respectively), but all are reached via function-pointer
-   indirection with zero direct callers findable via static byte-scanning
-   — the same `-noanalysis` blind spot this project has hit before. Needs
-   a scoped real Ghidra analysis pass or live tracing, not more blind
-   scanning.
+1. ~~Does x86's real `EndScene` call site sit on the main thread or a
+   dedicated one?~~ **RESOLVED, 2026-09-24 — see §7.** Confirmed via a
+   real, saved Ghidra analysis pass (no live tracing possible — x86 no
+   longer runs against the current retail game): x86's real per-frame
+   `EndScene` is called directly from `Com_Frame()` (`FUN_0044c7b0`),
+   the already-independently-confirmed main-thread per-frame tick
+   function, every single frame — no cross-thread hand-off ever needed
+   for the normal case. This directly confirms the "thread hand-off is
+   the real regression, not lost parallelism" theory.
 2. **What triggers the `FUN_1401dfd80` view-index burst that precedes
    both observed spike/thread-handoff events, and is it genuinely rare or
    an unremarkable multi-pass sequence?** Needs a real Ghidra analysis

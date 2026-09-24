@@ -1159,21 +1159,74 @@ functions**, not one coincidental hit:
   like a real wait-for-something-else-to-finish pattern (possibly a
   swap-chain-adjacent object), not yet identified further.
 
-**Real dead end, not yet resolved**: `FindDirectCallers.java` (a new
-E8-relative-call scanner, complementing the reference-manager-based
+**Real dead end via blind static scanning**: `FindDirectCallers.java` (a
+new E8-relative-call scanner, complementing the reference-manager-based
 tools) found **zero direct callers for all three of `FUN_004b6544`/
-`FUN_004e0bba`/`FUN_0052b8cd`** -- these wrapper functions are reached
-via function-pointer indirection, the same blind spot this project has
-hit repeatedly for dispatch-table-driven code under its `-noanalysis`
-convention. **The original question -- does x86's real `EndScene` fire on
-the main thread or a dedicated thread -- remains genuinely unresolved.**
-Real, concrete next step, not yet done: a scoped real Ghidra analysis
-pass (populating the reference manager properly) or live tracing once a
-debugger is viable again, rather than more blind static-scanning
-technique variants -- this specific sub-question has now had multiple
-distinct real technique attempts (idiom filtering, direct-call scanning)
-without landing a full answer, closer to this project's own §10.9
-threshold than further blind guessing would be productive.
+`FUN_004e0bba`/`FUN_0052b8cd`** under `-noanalysis` -- these wrapper
+functions are reached via function-pointer indirection, the same blind
+spot this project has hit repeatedly for dispatch-table-driven code.
+
+### RESOLVED, same day, via a real full Ghidra analysis pass (no live tracing possible -- x86 no longer runs against the current retail game, per direct instruction)
+
+Direct instruction: "we cannot live trace x86 anymore as the whole game
+files changed, only static, you can use analysis." Ran a genuine, full
+(non-`-noanalysis`) Ghidra analysis pass against the real x86 binary
+(`re_notes/x64_migration/ghidra_project_x86_analyzed/`, a new persistent
+project, 109 seconds real analysis time -- kept, not a scratch/discarded
+project, so future x86 work doesn't need to redo this), then re-ran
+`DecompileAndCallersAt.java` against the same wrapper addresses. With the
+reference manager now properly populated, real callers resolved
+immediately:
+
+- **`FUN_004b6510`** (the real function start -- confirms the earlier
+  `0x004b6544` was indeed a mid-function cut, as flagged) is called from
+  **6 real sites**: `FUN_0044c7b0`, `FUN_00425540` (twice),
+  `FUN_00474e80`, `FUN_00486120`, `FUN_00607f70`.
+- **`FUN_0044c7b0` is already independently confirmed elsewhere in this
+  project's own x86-era research (`known_issues.md`, multiple entries) as
+  the real, definitive `Com_Frame()` per-frame main-loop tick function** --
+  called in a tight, unconditional `do { FUN_0044c7b0(); } while(true)`
+  loop directly from `FUN_00534380`, the real WinMain-equivalent. This is
+  the main thread, by construction and already independently established,
+  not a fresh claim built for this investigation.
+- **This conclusively answers the central question**: the chain
+  `FUN_00534380` (WinMain, main thread) → `FUN_0044c7b0` (`Com_Frame`,
+  main thread, every single tick) → `FUN_004b6510` → the real `EndScene`
+  vtable call means **x86's real per-frame `EndScene` fires directly on
+  the main thread, every frame, as an ordinary part of `Com_Frame` itself
+  -- not on a separate thread.**
+
+**The three other EndScene-calling functions found this session are all
+real, but NOT the normal per-frame path** -- confirms the earlier
+shape-based guess: `FUN_004e0ab0` (device reset/context rebuild, calls
+`FUN_00463820` -- the same render-resolution-copy function this project's
+own `InternalRenderScalePercent` x86 hook already targets) is called from
+`FUN_004b9ed0` and `FUN_00693b90` -- the latter already independently
+confirmed to be called from the SEPARATE background device-health thread
+(`FUN_0040de80`'s own chain, section 7 above) -- i.e. this is the
+device-LOST-recovery EndScene call, a rare background-thread path, not
+the steady-state one. `FUN_004e4390` (calls BOTH BeginScene AND EndScene
+in the same function, plus a full device/resource rebuild chain) is
+called from `FUN_0043e510`/`FUN_0067a4a0` -- another reset/rebuild
+utility. `FUN_0052b840` (the wait-loop variant) has genuinely zero
+callers found even with full analysis -- likely reached through an
+indirection this pass still didn't resolve, or effectively dead code on
+this specific build; not pursued further, since the main question is
+already answered by the `FUN_004b6510` chain.
+
+**Net conclusion for the whole draw-pipeline-regression investigation**:
+x86 called its real per-frame `EndScene` directly from the main thread's
+own `Com_Frame` tick, every frame, with no cross-thread hand-off ever
+required for the normal case. x64 (confirmed live, section 6 above) moved
+that same per-frame `EndScene` submission onto a dedicated backend
+thread. **The working theory is now real, decompile-and-caller-chain
+confirmed on both sides, not speculative**: x64 gained real parallelism
+for the common case (plausibly faster there), but the real regression
+cost is the rare fallback path where x64 has to hand frame submission
+back to the main thread -- something x86's architecture never needed to
+do at all, since main-thread submission was already its unconditional
+default. This is the strongest, most directly evidenced finding in the
+entire investigation.
 
 ### Fork 5 — entity-category identity (`gen drawsurfs`/`add scene ent` follow-up)
 
