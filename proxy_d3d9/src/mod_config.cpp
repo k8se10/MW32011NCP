@@ -773,6 +773,12 @@ void WriteDefaultConfig(const char* path)
         "; risk if wrong) -- stays at the real, documented Win32 API layer only.\n"
         "; Live-tested (2026-09-21) -- on by default. 0 = off, 1 = on (default).\n"
         "IwdReadAccelEnabled=%d\n"
+        "; Developer/RE-verification tool only, never a player-facing feature. Cycles\n"
+        "; a large, obviously-visible perturbation through candidate float slots in\n"
+        "; the real projection matrix to empirically find the safe jitter-injection\n"
+        "; target for the planned DLSS/FSR3.1 work. WILL visibly warp the screen\n"
+        "; while active. 0 = off (default), 1 = on -- do not enable during normal play.\n"
+        "ProjectionMatrixJitterProbeEnabled=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -1052,6 +1058,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.framePacingEnabled ? 1 : 0,
         g_modConfig.waitCoalescingEnabled ? 1 : 0,
         g_modConfig.iwdReadAccelEnabled ? 1 : 0,
+        g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1374,6 +1381,7 @@ void LoadModConfig()
     ReadBool(path, "Video", "FramePacingEnabled", g_modConfig.framePacingEnabled);
     ReadBool(path, "Video", "WaitCoalescingEnabled", g_modConfig.waitCoalescingEnabled);
     ReadBool(path, "Video", "IwdReadAccelEnabled", g_modConfig.iwdReadAccelEnabled);
+    ReadBool(path, "Video", "ProjectionMatrixJitterProbeEnabled", g_modConfig.projectionMatrixJitterProbeEnabled);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1400,7 +1408,7 @@ void LoadModConfig()
         "hudFontIdLogging=%d hudFontIdLoggingX64=%d hudGlyphPositionLogging=%d listItemPositionLogging=%d "
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
-        "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d",
+        "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d projectionMatrixJitterProbeEnabled=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1436,7 +1444,8 @@ void LoadModConfig()
         g_modConfig.disableControllerInputX64 ? 1 : 0,
         g_modConfig.framePacingEnabled ? 1 : 0,
         g_modConfig.waitCoalescingEnabled ? 1 : 0,
-        g_modConfig.iwdReadAccelEnabled ? 1 : 0);
+        g_modConfig.iwdReadAccelEnabled ? 1 : 0,
+        g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

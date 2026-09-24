@@ -228,6 +228,79 @@ constexpr const char* kVmNotifySignature =
 using VmNotifyFn = void(__fastcall*)(unsigned int notifyListOwnerId, unsigned int stringValue, void* top);
 VmNotifyFn g_realVmNotify = nullptr;
 
+// MW32011NCP, 2026-09-24: the real x64 projection-matrix-build function
+// (FUN_1401e13e0 in the reference Ghidra project) -- the jitter-injection
+// hook point the DLSS/Streamline and FSR 3.1 roadmaps both need (see
+// re_notes/x64_migration/vulkan_dlss_pipeline_research.md item 2 for the
+// full RE trail). Found via a whole-binary displacement-reference scan.
+// Operates on the single fixed global per-frame render-state struct
+// (&DAT_1415e7c70 in Ghidra) -- gated by a dirty-flag check
+// (dword [RCX+0x17c0] != 2), called twice per frame from FUN_14018e720
+// (once for the shadow-map pass, once for the main scene pass) and once
+// more from FUN_1401950a0. A FULL decompile (not just the prologue)
+// confirmed the real 16-float layout at +0x14d0 (duplicated at +0x1510):
+// Row0 [2*Xscale,0,0,0], Row1 [0,Yscale,0,0] (both confirmed live, see the
+// diagnostic hook below), Row2 [0,0,0,0] -- entirely zero, NOT the
+// textbook D3D9 [0,0,zf/(zf-zn),1] shape -- and Row3 [nearTerm,farTerm,
+// 1.0f,1.0f]. This is a genuine nonstandard layout, meaning the standard
+// "jitter goes into M[2][0]/M[2][1]" convention can't be assumed to
+// transfer here without confirmation (see kJitterProbeCandidates below).
+// THIS IS A READ-ONLY DIAGNOSTIC HOOK (log-and-call-through, zero behavior
+// change by default) per this project's own "trivial passthrough first"
+// convention (CLAUDE.md/AGENTS.md, Production Ready Only) -- the optional
+// jitter PROBE (strictly opt-in, see kJitterProbeCandidates) is a
+// deliberate, human-observed visual test, not a real jitter implementation.
+constexpr const char* kProjectionMatrixBuildSignature =
+    "48 8B C4 53 48 81 EC D0 00 00 00 83 B9 C0 17 00 00 02 48 8B D9 "
+    "0F 84 ?? ?? ?? ?? 48 89 78 08";
+
+using ProjectionMatrixBuildFn = void(__fastcall*)(void* renderState);
+ProjectionMatrixBuildFn g_realProjectionMatrixBuild = nullptr;
+long long g_projectionMatrixBuildFireCount = 0;
+
+// MW32011NCP, 2026-09-24: FUN_14018e720, the real caller that invokes the
+// projection-matrix builder TWICE per frame -- once for the shadow-map pass
+// (return address anchor+0x23E), once for the main scene pass (return
+// address anchor+0x2E1). A third caller, FUN_1401950a0, is not scoped here.
+// Real, disassembly-confirmed prologue anchor (unique, no PC-relative refs
+// in this span) -- resolved once at startup so Hook_ProjectionMatrixBuild
+// can distinguish "main scene pass" from "shadow pass" via _ReturnAddress(),
+// since jitter (and this probe) must never touch the shadow pass.
+constexpr const char* kProjectionPassDispatchSignature =
+    "40 57 48 83 EC 40 48 8B 3D ?? ?? ?? ?? 8B 8F 34 1A 04 00 85 C9 "
+    "?? ?? 39 8F 38 1A 04 00 0F 84 ?? ?? ?? ?? 8B 87 38 1A 04 00 48 89 5C 24 58";
+constexpr ptrdiff_t kProjectionShadowPassRetOffset = 0x23E;
+constexpr ptrdiff_t kProjectionMainScenePassRetOffset = 0x2E1;
+uintptr_t g_projectionMainScenePassRetAddr = 0;
+
+// MW32011NCP, 2026-09-24: empirical jitter-target probe -- see the big
+// comment above kProjectionMatrixBuildSignature for why this exists instead
+// of a direct jitter write (the real 16-float layout is confirmed
+// nonstandard, and this project has no RenderDoc/PIX or SM3 shader-bytecode
+// disassembly workflow set up to confirm the correct offset statically).
+// Cycles a large (0.25), obviously-visible sine perturbation through every
+// plausible candidate float slot, one at a time, main-scene-pass only.
+// Meant to be watched live by a human: if a slot IS read by the vertex
+// shader for position, the screen will visibly swim/warp while that slot is
+// active; a slot with zero visible effect across its whole window is very
+// likely not consumed for position. STRICTLY OPT-IN via
+// g_modConfig.projectionMatrixJitterProbeEnabled (default false) -- never a
+// player-facing feature, purely a one-off RE verification tool.
+struct JitterProbeCandidate { ptrdiff_t offset; const char* name; };
+constexpr JitterProbeCandidate kJitterProbeCandidates[] = {
+    { 0x14d8, "Row0[2] (+0x14d8)" },
+    { 0x14dc, "Row0[3] (+0x14dc)" },
+    { 0x14e8, "Row1[2] (+0x14e8)" },
+    { 0x14ec, "Row1[3] (+0x14ec)" },
+    { 0x14f0, "Row2[0] (+0x14f0)" },
+    { 0x14f4, "Row2[1] (+0x14f4)" },
+    { 0x1500, "Row3[0]/near-term (+0x1500)" },
+    { 0x1504, "Row3[1]/far-term (+0x1504)" },
+};
+constexpr int kJitterProbeCandidateCount =
+    sizeof(kJitterProbeCandidates) / sizeof(kJitterProbeCandidates[0]);
+constexpr double kJitterProbeSecondsPerCandidate = 4.0;
+
 // MW32011NCP, 2026-09-17: real reverse (ID -> text) resolution for the
 // interned string IDs VM_Notify's own live traffic surfaces -- found via the
 // same anchor-and-follow technique as everything else in this cluster, this
@@ -959,6 +1032,56 @@ void __fastcall Hook_PmoveTick(void* param1)
     // Controller_Get* call below only ever reads the already-cached sample).
     Controller_RequestPoll();
     g_realPmoveTick(param1);
+}
+
+// Read-only diagnostic (plus an opt-in visual probe, see
+// kJitterProbeCandidates above) for the real projection-matrix-build
+// function -- see kProjectionMatrixBuildSignature's own big comment above
+// for the full RE trail and struct-offset detail. Calls through FIRST, then
+// reads/logs the FRESH just-computed values (not the previous call's stale
+// data -- the struct is a persistent, dirty-flag-gated cache, so reading
+// before call-through would show whatever was last written, not this
+// call's own result) -- confirms the signature resolved to the right
+// function and the real matrix matches the RE trail's predicted layout.
+void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
+{
+    void* retAddr = _ReturnAddress();
+    g_realProjectionMatrixBuild(renderState);
+
+    ++g_projectionMatrixBuildFireCount;
+    auto* base = reinterpret_cast<unsigned char*>(renderState);
+    if (g_projectionMatrixBuildFireCount <= 5 || (g_projectionMatrixBuildFireCount % 5000) == 0) {
+        const float* row0 = reinterpret_cast<const float*>(base + 0x14d0);
+        const float* row1 = reinterpret_cast<const float*>(base + 0x14e0);
+        char buf[256];
+        sprintf_s(buf, "[x64-proj-matrix-diag] fired (count=%lld) struct=0x%p row0=[%.6f %.6f %.6f %.6f] "
+            "row1=[%.6f %.6f %.6f %.6f]",
+            g_projectionMatrixBuildFireCount, renderState,
+            row0[0], row0[1], row0[2], row0[3], row1[0], row1[1], row1[2], row1[3]);
+        LogFromController(buf);
+    }
+
+    // Empirical jitter-target probe -- strictly opt-in, main-scene-pass only
+    // (never the shadow pass). See kJitterProbeCandidates's own comment for
+    // the full rationale.
+    if (g_modConfig.projectionMatrixJitterProbeEnabled &&
+        g_projectionMainScenePassRetAddr != 0 &&
+        reinterpret_cast<uintptr_t>(retAddr) == g_projectionMainScenePassRetAddr) {
+        double nowSeconds = GetTickCount64() / 1000.0;
+        int candidateIdx = static_cast<int>(nowSeconds / kJitterProbeSecondsPerCandidate) % kJitterProbeCandidateCount;
+        const JitterProbeCandidate& candidate = kJitterProbeCandidates[candidateIdx];
+        float perturbation = 0.25f * static_cast<float>(sin(nowSeconds * 3.0));
+        *reinterpret_cast<float*>(base + candidate.offset) += perturbation;
+
+        static int s_lastLoggedCandidateIdx = -1;
+        if (candidateIdx != s_lastLoggedCandidateIdx) {
+            s_lastLoggedCandidateIdx = candidateIdx;
+            char buf[200];
+            sprintf_s(buf, "[x64-jitter-probe] now perturbing candidate %s -- watch for visible screen "
+                "swim/warp for the next %.0fs", candidate.name, kJitterProbeSecondsPerCandidate);
+            LogFromController(buf);
+        }
+    }
 }
 
 // FUN_140014a80 -- the confirmed x64 Pmove-entry Sprint pm_flags writer (called
@@ -7859,6 +7982,70 @@ void InstallAnalogInputHooksX64()
                         "the fix is a direct write here.");
                 }
             }
+        }
+    }
+
+    // Real projection-matrix-build diagnostic (Hook_ProjectionMatrixBuild, see
+    // kProjectionMatrixBuildSignature's own big comment above for the full
+    // RE trail -- vulkan_dlss_pipeline_research.md item 2). Log-and-forward
+    // only, zero behavior change -- independent of every other hook in this
+    // function; a failure here costs only this one diagnostic, nothing else.
+    // This is groundwork for the DLSS/Streamline and FSR 3.1 jitter-injection
+    // work, not itself a gameplay feature.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kProjectionMatrixBuildSignature);
+        if (!r.found) {
+            LogFromController("[x64-proj-matrix-diag] FATAL: signature did not resolve -- projection-matrix "
+                "diagnostic not installed this session (no gameplay impact either way, this hook is "
+                "diagnostic-only)");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ProjectionMatrixBuild),
+                                                    reinterpret_cast<void**>(&g_realProjectionMatrixBuild));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-proj-matrix-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-proj-matrix-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-proj-matrix-diag] Diagnostic hook installed and enabled -- "
+                        "log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-proj-matrix-diag]' lines during play (expect ~2 fires per frame, once for the "
+                        "shadow-map pass and once for the main scene pass) to confirm the RE trail: row0 should "
+                        "show a real X-scale term with 0 elsewhere, row1 a real Y-scale term with 0 elsewhere -- "
+                        "this confirms the real hook point for future jitter injection before any perturbation "
+                        "is written here.");
+                }
+            }
+        }
+    }
+
+    // Resolve (no hook, just cache -- same pattern as kFindDvarX64Signature
+    // etc.) the real caller that invokes the projection-matrix builder for
+    // the MAIN SCENE PASS specifically, so Hook_ProjectionMatrixBuild's
+    // jitter probe (and, eventually, the real jitter write) can exclude the
+    // shadow-map pass via _ReturnAddress(). A failure here just means the
+    // probe never activates (config-gated anyway, off by default) -- no
+    // impact on the diagnostic hook above.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kProjectionPassDispatchSignature);
+        if (!r.found) {
+            LogFromController("[x64-jitter-probe] FATAL: projection-pass-dispatch signature did not resolve -- "
+                "the jitter probe (config-gated, off by default) will never activate this session");
+        } else {
+            g_projectionMainScenePassRetAddr = r.address + kProjectionMainScenePassRetOffset;
+            char buf[200];
+            sprintf_s(buf, "[x64-jitter-probe] Main-scene-pass return address resolved (0x%llX) -- "
+                "ProjectionMatrixJitterProbeEnabled is available if turned on in config.",
+                static_cast<unsigned long long>(g_projectionMainScenePassRetAddr));
+            LogFromController(buf);
         }
     }
 

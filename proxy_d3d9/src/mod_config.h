@@ -970,6 +970,23 @@ struct ModConfig
     // API layer only. Off by default -- not yet live-tested.
     bool iwdReadAccelEnabled = true; // default ON (2026-09-21): confirmed live
 
+    // [Video] ProjectionMatrixJitterProbeEnabled (2026-09-24) -- STRICTLY
+    // OPT-IN, OFF by default, developer/RE-verification tool only, never a
+    // player-facing feature. Cycles a large, obviously-visible sine
+    // perturbation through every plausible jitter-target float slot in the
+    // real projection matrix (Hook_ProjectionMatrixBuild, main-scene-pass
+    // only), one at a time, so a human watching the game live can see which
+    // slot (if any) the vertex shader actually reads for position -- this
+    // project's own real 16-float layout for that matrix is confirmed
+    // nonstandard (see kProjectionMatrixBuildSignature's own comment,
+    // analog_input_hooks_x64.cpp), so the textbook "jitter goes into
+    // M[2][0]/M[2][1]" assumption can't be trusted without this kind of
+    // live confirmation, and this project has no RenderDoc/PIX or shader-
+    // bytecode-disassembly workflow set up yet as an alternative. Turning
+    // this on WILL visibly warp/swim the screen while active -- do not
+    // enable during normal play.
+    bool projectionMatrixJitterProbeEnabled = false;
+
     // [Plugins] (2026-08-25) -- STRICTLY OPT-IN, OFF by default, same pattern as
     // useCustomOptionsScreen/autoMantleEnabled above. When enabled, plugin_loader.cpp
     // scans a "plugins" subfolder next to this DLL at startup and loads any DLL
