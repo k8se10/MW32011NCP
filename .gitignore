@@ -125,6 +125,18 @@ re_notes/ghidra_project_x64/
 re_notes/x64_migration/ghidra_project_x86_analyzed/
 re_notes/x64_migration/ghidra_project_x64_analyzed/
 
+# CRITICAL, found 2026-09-24: the real, copyrighted Activision game executables
+# (iw5sp.exe/iw5mp.exe, both the x64 and preserved-old-x86 copies) were tracked
+# and committed to `main` back on 2026-09-03 (issue #111's own "preserved
+# binaries" commit) and were live/downloadable from the public repo this whole
+# time -- a real, active legal/copyright exposure, not caught until now. Ignored
+# here immediately; the already-committed copies still need a full
+# git-filter-repo history purge + force-push, same precedent as the 2026-09-15
+# releases/ghidra_project_x64 incident -- see that entry's own reasoning, it
+# applies here even more directly (these are literal unmodified game binaries,
+# not documentation or a research database).
+re_notes/x64_migration/binaries/
+
 # Internal-only technical detail on unpatched vulnerabilities (exact function
 # addresses, precise buffer/offset values, exact fix implementation logic) -- same
 # redaction policy and file-naming convention as the sibling MW32011NSP project's
