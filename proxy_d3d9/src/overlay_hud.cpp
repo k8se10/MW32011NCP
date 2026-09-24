@@ -60,6 +60,11 @@ void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp, 2026-09-24 
 void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, 2026-09-24 --
     // real motion-vectors buffer (kBufferTypeMotionVectors), same "we own this
     // resource" rationale as the output buffer above.
+void CaptureObjectMotionSnapshotX64(); // streamline_object_motion_x64.cpp, 2026-09-24 --
+    // real per-object (DObj) transform capture, groundwork for real per-object
+    // motion vectors (research doc section 2.6). SP-only, self-gated inside.
+    // Not yet wired into the actual motion-vectors D3D9 texture -- this is the
+    // capture/diagnostic step only.
 void InstallDepthStencilHookX64(void* realDevice); // streamline_resources_x64.cpp,
     // 2026-09-24 -- real resource-tagging groundwork: hooks SetDepthStencilSurface
     // to capture and log the real Vulkan image behind whatever depth-stencil
@@ -7637,6 +7642,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     StreamlineFrameTick();
     TagStreamlineOutputColorX64();
     TagStreamlineMotionVectorsX64();
+    CaptureObjectMotionSnapshotX64();
 #endif
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every

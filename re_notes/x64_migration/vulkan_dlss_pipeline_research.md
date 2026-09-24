@@ -787,6 +787,44 @@ two open pieces item 4 above left unresolved.**
      into the real per-object motion-vector contribution `sl::Constants`
      expects. Not yet implemented, not yet live-tested this round — this
      round is the completed research, ready to hand to implementation.
+   - **ROUND 5, same day: piece (a) implemented — real per-frame DObj
+     transform capture, direct user authorization to proceed ("yes").** New
+     file, `streamline_object_motion_x64.cpp`. Real, verified AOB
+     signatures (built from the exact disassembled bytes of
+     `FUN_1401d62c0`'s own allocation block and `FUN_1401a5830`'s own
+     active-flag-array walk, both confirmed against live RIP-relative math
+     before committing — e.g. the `DAT_141c22fb8` LEA's own disp32 computed
+     by hand against its known next-instruction address and cross-checked
+     to land exactly on the expected symbol) resolve three real addresses
+     ONCE at first call, cached for the session (this project's own
+     signature-scan policy, CLAUDE.md SS5/SS10.3): the position array base
+     (`DAT_141c22fb8`, rotation at `+0xC`, same stride), the live-count
+     counter (`DAT_141c22fac`, resolved and logged for cross-checking, not
+     trusted as a scan bound), and the active-flag array
+     (`DAT_141c35438`, found as a real fixed-base-plus-literal-offset
+     rather than its own independent RIP-relative reference). Every real
+     frame (`Hook_EndScene`, SP-only via `GetDetectedGameExecutable()`,
+     matching `streamline_integration_x64.cpp`'s own established gating
+     convention exactly): swaps current→previous, then scans the full main
+     DObj pool (slots 0..0x1FF — the small 8-slot viewmodel-class reserved
+     pool is deliberately OUT of scope this round, see the file's own header
+     comment: `FUN_1401d5840`'s reserved-pool branch skips the same
+     active-registration bookkeeping the main pool's branch performs, so
+     `DAT_141c35438` isn't a meaningful gate for it, and first-person
+     weapon geometry is screen-locked to the camera anyway, a low-value
+     target), gated purely by the real active-flag byte, `memcpy`-ing
+     position+rotation straight out of live game memory (SEH-guarded, per
+     this project's own standing convention for any raw native-memory
+     read) into a retained snapshot. A `[x64-dobj-motion]` heartbeat logs
+     active/newly-active counts and one real sample position delta per
+     tick for live verification. Build-verified (x64 Release, 0 errors),
+     `dumpbin /headers` confirms genuine `8664 machine (x64)` output,
+     deployed to the live install. **Not yet live-tested — this round is
+     the capture step only.** Deliberately does NOT yet feed this data into
+     `sl::Constants`/the motion-vectors D3D9 texture — pieces (b) (skinned-
+     surface diff) and (c) (the actual velocity computation/write) remain
+     real, scoped, not-yet-started follow-up work, same as this section's
+     own "Net, real status change" note already flagged.
 
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 

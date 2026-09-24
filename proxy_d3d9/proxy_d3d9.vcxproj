@@ -194,6 +194,12 @@
     <ClCompile Include="src\streamline_resources_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-24: real per-object (DObj) transform capture,
+         groundwork for real per-object motion vectors. See that file's own
+         header comment. -->
+    <ClCompile Include="src\streamline_object_motion_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <!-- x64-only, 2026-09-16; see iwd_read_cache_x64.cpp's own header
          comment for attribution. -->
     <ClCompile Include="src\iwd_read_cache_x64.cpp" Condition="'$(Platform)'=='x64'">
