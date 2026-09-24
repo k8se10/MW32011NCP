@@ -59,10 +59,11 @@
 extern void LogFromController(const char* msg);
 extern bool IsDxvkActive(); // dllmain.cpp -- see g_dxvkActive's own comment there
 #if defined(_M_X64) || defined(_WIN64)
-extern bool TryInitStreamlineX64(); // streamline_integration_x64.cpp, 2026-09-24 --
-    // deliberately called from here (after CreateDevice returns), NOT from DllMain --
-    // see that file's own header comment and dllmain.cpp's TryLoadVendoredDxvk() for
-    // the real loader-lock-hang history behind that choice.
+extern bool TryInitStreamlineX64(IUnknown* d3d9Device); // streamline_integration_x64.cpp,
+    // 2026-09-24 -- deliberately called from here (after CreateDevice returns), NOT from
+    // DllMain -- see that file's own header comment and dllmain.cpp's TryLoadVendoredDxvk()
+    // for the real loader-lock-hang history behind that choice. Takes the just-created
+    // device so it can QueryInterface DXVK's Vulkan-interop interface for slSetVulkanInfo.
 #endif
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
 extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp
@@ -979,11 +980,14 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
     // -- CreateDevice can in principle be called more than once (Reset/
     // device-loss recovery paths elsewhere in this project already handle
     // that for other state), Streamline's own slInit() should not be
-    // re-invoked on every call.
+    // re-invoked on every call. Only attempted once CreateDevice actually
+    // produced a device -- slSetVulkanInfo needs DXVK's VkDevice behind it,
+    // and a failed first CreateDevice must not burn the one-shot attempt.
     static bool s_streamlineInitAttempted = false;
-    if (!s_streamlineInitAttempted) {
+    if (!s_streamlineInitAttempted && SUCCEEDED(hr) && ppReturnedDeviceInterface &&
+        *ppReturnedDeviceInterface) {
         s_streamlineInitAttempted = true;
-        TryInitStreamlineX64();
+        TryInitStreamlineX64(static_cast<IUnknown*>(*ppReturnedDeviceInterface));
     }
 #endif
 

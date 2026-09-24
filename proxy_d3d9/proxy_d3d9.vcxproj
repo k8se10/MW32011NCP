@@ -75,7 +75,7 @@
       <PreprocessorDefinitions>WIN32;_WINDOWS;_USRDLL;PROXYD3D9_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>third_party\minhook\include;third_party\minhook\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\minhook\include;third_party\minhook\src;..\dxvk\include\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -222,6 +222,7 @@
     <ClInclude Include="src\frame_pacing_x64.h" />
     <ClInclude Include="src\wait_coalescing_x64.h" />
     <ClInclude Include="src\iwd_read_cache_x64.h" />
+    <ClInclude Include="src\dxvk_interop_x64.h" />
     <ClInclude Include="src\controller_input.h" />
     <ClInclude Include="src\dualsense_input.h" />
     <ClInclude Include="src\mod_config.h" />
