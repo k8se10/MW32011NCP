@@ -65,6 +65,10 @@ void CaptureObjectMotionSnapshotX64(); // streamline_object_motion_x64.cpp, 2026
     // motion vectors (research doc section 2.6). SP-only, self-gated inside.
     // Not yet wired into the actual motion-vectors D3D9 texture -- this is the
     // capture/diagnostic step only.
+void EnsureObjectMotionGlobalsResolvedX64(); // streamline_object_motion_x64.cpp,
+    // 2026-09-24 -- the one-time signature scan for the above, called at
+    // device-creation time (see InstallEndSceneHook's call site) instead of
+    // lazily from the render loop, per that file's own "huge fps cost" fix.
 void InstallDepthStencilHookX64(void* realDevice); // streamline_resources_x64.cpp,
     // 2026-09-24 -- real resource-tagging groundwork: hooks SetDepthStencilSurface
     // to capture and log the real Vulkan image behind whatever depth-stencil
@@ -8088,6 +8092,11 @@ void InstallEndSceneHook(void* realDevice)
     InstallDepthStencilHookX64(realDevice); // real resource-tagging groundwork,
         // 2026-09-24 -- guarded internally (g_origSetDepthStencilSurface), safe
         // to call every time this function runs.
+    EnsureObjectMotionGlobalsResolvedX64(); // real one-time signature scan,
+        // 2026-09-24 -- guarded internally, safe to call every time this
+        // function runs; moved here (device-creation time) specifically to
+        // keep the actual scan off the live render loop -- see that
+        // function's own comment for the "huge fps cost" this fixes.
 #endif
 
     if (g_origEndScene) return; // hooks already installed -- one device for this game's lifetime

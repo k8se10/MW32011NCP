@@ -140,18 +140,36 @@ bool ResolveObjectMotionGlobalsX64()
 
 } // namespace
 
-// Called once per real frame (Hook_EndScene, overlay_hud.cpp). SP-only,
-// gated here (matching streamline_integration_x64.cpp's own
-// GetDetectedGameExecutable() convention) since these signatures were found
-// and verified against iw5sp.exe only.
-void CaptureObjectMotionSnapshotX64()
+// REAL LIVE BUG, fixed 2026-09-24: this resolve used to run lazily on the
+// FIRST call to CaptureObjectMotionSnapshotX64() below -- i.e. from inside
+// Hook_EndScene, already deep in the live render loop. signature_scan.cpp's
+// own FindPattern is a naive O(module_size * pattern_length) linear byte
+// scan (deliberately simple, since every other signature in this codebase
+// resolves once at device-creation/DllMain time, before real frames start
+// rendering -- see that file's own header comment) -- running TWO ~67-68
+// byte patterns against the WHOLE game module from inside a live frame
+// stalls that exact frame for a real, user-visible amount of time, live-
+// reported as "huge fps cost" the same session this landed. Every sibling
+// Streamline piece in this codebase does its own one-time signature/setup
+// work at device-creation time instead (InstallDepthStencilHookX64 et al,
+// called from InstallEndSceneHook, itself called once per device BEFORE the
+// render loop starts spinning) -- this function is the same fix applied
+// here: called once from InstallEndSceneHook's own device-creation-time
+// init path, not lazily from the render loop.
+void EnsureObjectMotionGlobalsResolvedX64()
 {
     if (GetDetectedGameExecutable() != GameExecutable::SP) return;
+    if (g_dobjGlobalsResolveTriedX64) return;
+    g_dobjGlobalsResolveTriedX64 = true;
+    g_dobjGlobalsResolvedX64 = ResolveObjectMotionGlobalsX64();
+}
 
-    if (!g_dobjGlobalsResolveTriedX64) {
-        g_dobjGlobalsResolveTriedX64 = true;
-        g_dobjGlobalsResolvedX64 = ResolveObjectMotionGlobalsX64();
-    }
+// Called once per real frame (Hook_EndScene, overlay_hud.cpp). Pure
+// per-frame read -- the one-time signature resolve above must already have
+// run (EnsureObjectMotionGlobalsResolvedX64, called at device-creation
+// time); this function never scans anything itself.
+void CaptureObjectMotionSnapshotX64()
+{
     if (!g_dobjGlobalsResolvedX64) return;
 
     static long long s_tickCount = 0;

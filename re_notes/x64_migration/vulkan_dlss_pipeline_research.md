@@ -825,6 +825,33 @@ two open pieces item 4 above left unresolved.**
      surface diff) and (c) (the actual velocity computation/write) remain
      real, scoped, not-yet-started follow-up work, same as this section's
      own "Net, real status change" note already flagged.
+   - **ROUND 5 FOLLOW-UP, same day: real live regression, "huge fps cost,"
+     root-caused and fixed.** The very first live test of the round-5 build
+     reported a severe frame-rate hit, and `proxy_d3d9.log` showed the
+     session ending after only 5 real frames (never reaching the next
+     5000-tick heartbeat) — consistent with the user hitting a real stall
+     and quitting almost immediately, not a sustained per-frame cost from
+     the capture loop itself (which is a handful of cheap, cache-friendly
+     byte reads). Root cause: `ResolveObjectMotionGlobalsX64()` was called
+     LAZILY on the FIRST `CaptureObjectMotionSnapshotX64()` call — i.e.
+     from inside `Hook_EndScene`, already deep in the live render loop.
+     `signature_scan.cpp`'s own `FindPattern` is a deliberately naive
+     O(module_size × pattern_length) linear byte scan (correct design for
+     a one-time, at-startup resolve, which is how every OTHER signature in
+     this codebase actually uses it) — running this project's two new
+     ~67/68-byte patterns against the whole game module from inside a live
+     frame stalls that exact frame for a real, user-visible span, landing
+     mid-gameplay instead of at load time like every sibling Streamline
+     resolve already does (`InstallDepthStencilHookX64` et al, called from
+     `InstallEndSceneHook` at device-creation time, before the render loop
+     starts spinning). **Fixed**: split into `EnsureObjectMotionGlobalsResolvedX64()`
+     (the one-time scan, now called from `InstallEndSceneHook`'s own
+     device-creation-time init path, alongside `InstallDepthStencilHookX64`)
+     and `CaptureObjectMotionSnapshotX64()` (the per-frame read, now a pure
+     flag check with zero scanning ever). Build-verified (0 errors),
+     `dumpbin /headers` confirms genuine x64 output, deployed. **Not yet
+     re-tested live** — this is the fix for the reported regression, not
+     yet independently reconfirmed fixed by a fresh playtest.
 
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
