@@ -111,6 +111,25 @@ bool ExtractEmbeddedDxvkX64(char* outPath, size_t outPathSize)
 // TryLoadStreamlineInterposer().
 bool ExtractEmbeddedStreamlineX64(char* outDir, size_t outDirSize)
 {
+    // 2026-09-24: real, live-caught bug -- this function is called TWICE in
+    // one launch (TryLoadVendoredDxvk, to set DXVK_VULKAN_LOADER_OVERRIDE
+    // before DXVK loads; TryLoadStreamlineInterposer, to actually LoadLibrary
+    // sl.interposer.dll later). By the second call, DXVK has already
+    // LoadLibrary'd sl.interposer.dll itself (via that same override), so
+    // re-extracting (CreateFileA GENERIC_WRITE/CREATE_ALWAYS) fails with a
+    // real ERROR_SHARING_VIOLATION (err=32) -- Windows won't let a loaded
+    // module's backing file be reopened for write. Live log:
+    // "[embed] Failed to extract embedded Streamline file 'sl.interposer.dll'
+    // (err=32)." Cached per-process now: extraction still happens fresh on
+    // every real game LAUNCH (a new process, per the direct "every launch to
+    // appdata" instruction), but only once per launch, not once per call.
+    static bool s_extracted = false;
+    static char s_cachedDir[MAX_PATH] = {};
+    if (s_extracted) {
+        sprintf_s(outDir, outDirSize, "%s", s_cachedDir);
+        return true;
+    }
+
     char dir[MAX_PATH];
     if (!GetRuntimeDirX64(dir, sizeof(dir))) {
         LogFromController("[embed] Could not resolve %LOCALAPPDATA% -- cannot extract the "
@@ -142,5 +161,7 @@ bool ExtractEmbeddedStreamlineX64(char* outDir, size_t outDirSize)
     }
 
     sprintf_s(outDir, outDirSize, "%s", subDir);
+    sprintf_s(s_cachedDir, "%s", subDir);
+    s_extracted = true;
     return true;
 }
