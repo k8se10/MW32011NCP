@@ -294,7 +294,17 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     // project's own hardware-tier research settled on.
     sl::Feature featuresToLoad[] = { sl::kFeatureDLSS };
     sl::Preferences pref{};
-    pref.flags = sl::PreferenceFlags::eUseManualHooking;
+    // 2026-09-24: eUseFrameBasedResourceTagging added -- real, live-caught
+    // bug. slSetTagForFrame() failed every time with eErrorInvalidIntegration
+    // (result=19) until this flag was found: sl_core_api.h's own doc comment
+    // on the deprecated slSetTag() function states plainly "Use the version
+    // of this function that takes a sl::FrameToken instead - slSetTagForFrame
+    // and set sl::PreferenceFlags::eUseFrameBasedResourceTagging" -- this
+    // project already uses the FrameToken-based slSetTagForFrame exclusively
+    // (never the deprecated slSetTag), so this flag was required from the
+    // start and simply missing.
+    pref.flags = sl::PreferenceFlags::eUseManualHooking
+        | sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     pref.renderAPI = sl::RenderAPI::eVulkan;
     pref.featuresToLoad = featuresToLoad;
     pref.numFeaturesToLoad = 1;
