@@ -68,6 +68,28 @@
     <IntDir>obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
 
+  <!-- 2026-09-24: whether the embedded DXVK-fork/Streamline RCDATA resources
+       (proxy_d3d9.rc, resource.h) can actually be embedded THIS build.
+       Real, CI-breaking gap found and fixed same day: these binaries are
+       either proprietary NVIDIA releases (never committed, see .gitignore)
+       or this fork's own locally-built output (dxvk/build_win64/, also
+       gitignored), and a fresh CI checkout has neither. Embedding was
+       previously unconditional, turning what used to be an optional RUNTIME
+       LoadLibraryA dependency (graceful "file missing, feature just unavailable"
+       degradation, per this project's own standing convention) into a hard
+       BUILD-time one, which is what actually broke CI (a real build failure,
+       not just a missing feature). MW3NCP_EMBED_NVIDIA_DXVK is only defined
+       when every source file the .rc needs is confirmed present locally.
+       CI (and any fresh clone without local vendoring) simply skips embedding
+       these five RCDATA entries; FindResourceA on their IDs then fails
+       exactly like a missing loose file used to, hitting the same already-
+       logged "could not be extracted" fallback path this session's own
+       dxvk_streamline_extract_x64.cpp already handles. No .cpp changes
+       needed for this; pure build-graph gating. -->
+  <PropertyGroup>
+    <HaveEmbeddedNvidiaDxvkBinaries Condition="Exists('..\dxvk\build_win64\src\d3d9\d3d9.dll') and Exists('third_party\streamline\bin\x64\sl.interposer.dll') and Exists('third_party\streamline\bin\x64\sl.common.dll') and Exists('third_party\streamline\bin\x64\sl.dlss.dll') and Exists('third_party\streamline\bin\x64\nvngx_dlss.dll')">true</HaveEmbeddedNvidiaDxvkBinaries>
+  </PropertyGroup>
+
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -77,6 +99,9 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>third_party\minhook\include;third_party\minhook\src;..\dxvk\include\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions Condition="'$(HaveEmbeddedNvidiaDxvkBinaries)'=='true'">MW3NCP_EMBED_NVIDIA_DXVK=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <ModuleDefinitionFile>def\proxy_d3d9.def</ModuleDefinitionFile>

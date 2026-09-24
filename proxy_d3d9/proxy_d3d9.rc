@@ -126,8 +126,25 @@ cursor_arrow RCDATA "..\\assets\\cursor_arrow.png"
 // .gitignore). Building this fork locally (MSYS2/MinGW/Meson, see
 // dxvk/README.md) is therefore a real build PREREQUISITE for GraphicsApi=
 // Vulkan mode now, the same way third_party/streamline/bin/x64/ already was.
+//
+// #ifdef MW3NCP_EMBED_NVIDIA_DXVK, 2026-09-24: real, CI-breaking gap found
+// and fixed same day -- these five RCDATA lines turn what used to be an
+// OPTIONAL RUNTIME dependency (LoadLibraryA on a loose file, gracefully
+// logged-and-skipped if missing) into a hard BUILD-time one, since rc.exe
+// fails the whole build if a referenced source file doesn't exist. CI (and
+// any fresh clone without these binaries vendored locally) has neither the
+// proprietary NVIDIA releases nor this fork's own local build output, so
+// MW3NCP_EMBED_NVIDIA_DXVK (proxy_d3d9.vcxproj's own
+// HaveEmbeddedNvidiaDxvkBinaries check, Exists() on all five paths) is only
+// defined when a real local dev vendoring is actually present -- everyone
+// else's build simply skips embedding, and FindResourceA on these IDs at
+// runtime fails exactly like a missing loose file used to (already handled
+// by dxvk_streamline_extract_x64.cpp's existing "could not be extracted"
+// log-and-fall-back path -- no .cpp changes needed for this gate).
+#ifdef MW3NCP_EMBED_NVIDIA_DXVK
 IDR_DXVK_D3D9     RCDATA "..\\dxvk\\build_win64\\src\\d3d9\\d3d9.dll"
 IDR_SL_INTERPOSER RCDATA "third_party\\streamline\\bin\\x64\\sl.interposer.dll"
 IDR_SL_COMMON     RCDATA "third_party\\streamline\\bin\\x64\\sl.common.dll"
 IDR_SL_DLSS       RCDATA "third_party\\streamline\\bin\\x64\\sl.dlss.dll"
 IDR_NGX_DLSS      RCDATA "third_party\\streamline\\bin\\x64\\nvngx_dlss.dll"
+#endif

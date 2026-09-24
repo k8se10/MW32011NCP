@@ -54,7 +54,17 @@ jobs:
             project: security/tools/ncp_plugin_netcode_fixes/ncp_plugin_netcode_fixes.vcxproj
 
     steps:
+      # 2026-09-24: submodules: true added after a real CI failure -- dxvk/'s
+      # own five real submodules (Vulkan-Headers, SPIRV-Headers,
+      # mingw-directx-headers, dxbc-spirv, libdisplay-info) had .gitmodules
+      # entries missing entirely at the repo root until this same commit (see
+      # .gitmodules and dxvk/.gitmodules's own pre-existing, never-merged
+      # copy), so even with that fixed, a plain checkout still leaves them as
+      # empty gitlink directories without this flag -- confirmed the actual
+      # cause via the real failing run (C1083: vulkan/vulkan_core.h not found).
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
