@@ -666,6 +666,16 @@ This project vendors and links the following third-party library:
   of DXVK is real but explicitly unofficial per the upstream project's own docs;
   this mod loads it directly (not layered under ReShade or any other framework)
   the same way this project already hooks the real system `d3d9.dll`.
+- **[NVIDIA Streamline](https://github.com/NVIDIAGameWorks/Streamline)**
+  (`proxy_d3d9/third_party/streamline/`) — Copyright (c) 2023 NVIDIA
+  Corporation, MIT license (see
+  `proxy_d3d9/third_party/streamline/license.txt`). Only the real, public
+  SDK headers are vendored here (not the source build system, sample code,
+  or platform binaries) — real, compiled, signed `sl.*.dll`/NGX runtime
+  binaries (a separate license, NVIDIA's own DLSS SDK EULA, not MIT) will be
+  vendored separately once real DLSS integration work begins; see
+  `re_notes/x64_migration/vulkan_dlss_pipeline_research.md` section 2.4 for
+  the full licensing research and section 2 for the integration plan.
 
 The x64 line's `[Video] FramePacingEnabled` frame-pacing limiter
 (`proxy_d3d9/src/frame_pacing_x64.cpp`), `[Video] WaitCoalescingEnabled`
