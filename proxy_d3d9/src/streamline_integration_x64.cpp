@@ -43,6 +43,8 @@ using PFun_slShutdown_t = sl::Result();
 using PFun_slGetFeatureRequirements_t = sl::Result(sl::Feature, sl::FeatureRequirements&);
 using PFun_slSetVulkanInfo_t = sl::Result(const sl::VulkanInfo&);
 using PFun_slGetNewFrameToken_t = sl::Result(sl::FrameToken*&, const uint32_t*);
+using PFun_slSetTagForFrame_t = sl::Result(const sl::FrameToken&, const sl::ViewportHandle&,
+    const sl::ResourceTag*, uint32_t, sl::CommandBuffer*);
 
 HMODULE g_streamlineModule = nullptr;
 PFun_slInit_t* g_slInit = nullptr;
@@ -50,10 +52,16 @@ PFun_slShutdown_t* g_slShutdown = nullptr;
 PFun_slGetFeatureRequirements_t* g_slGetFeatureRequirements = nullptr;
 PFun_slSetVulkanInfo_t* g_slSetVulkanInfo = nullptr;
 PFun_slGetNewFrameToken_t* g_slGetNewFrameToken = nullptr;
+PFun_slSetTagForFrame_t* g_slSetTagForFrame = nullptr;
 bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
 sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
     // refreshed once per real frame by StreamlineFrameTick() -- never freed by us.
+VkInstance g_dxvkVkInstanceX64 = VK_NULL_HANDLE; // cached in RegisterDxvkVulkanDeviceWithStreamline,
+VkDevice g_dxvkVkDeviceX64 = VK_NULL_HANDLE;     // 2026-09-24 -- real handles, exposed via
+    // GetDxvkVkInstanceX64()/GetDxvkVkDeviceX64() below for streamline_resources_x64.cpp's
+    // own real vkCreateImageView call (resource tagging needs a real VkImageView, which
+    // ID3D9VkInteropTexture::GetVulkanImageInfo alone does not provide).
 
 bool TryLoadStreamlineInterposer()
 {
@@ -92,14 +100,18 @@ bool TryLoadStreamlineInterposer()
     g_slSetVulkanInfo = reinterpret_cast<PFun_slSetVulkanInfo_t*>(GetProcAddress(slModule, "slSetVulkanInfo"));
     g_slGetNewFrameToken = reinterpret_cast<PFun_slGetNewFrameToken_t*>(
         GetProcAddress(slModule, "slGetNewFrameToken"));
-    if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo || !g_slGetNewFrameToken) {
-        // Real worst-case measured (wc -c on the literal): 258 bytes; +MAX_PATH
-        // (260) for %s = 518 -- buf[650] leaves real margin (this project's own
+    g_slSetTagForFrame = reinterpret_cast<PFun_slSetTagForFrame_t*>(
+        GetProcAddress(slModule, "slSetTagForFrame"));
+    if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo
+        || !g_slGetNewFrameToken || !g_slSetTagForFrame) {
+        // Real worst-case measured (wc -c on the literal): 289 bytes; +MAX_PATH
+        // (260) for %s = 549 -- buf[700] leaves real margin (this project's own
         // standing sprintf_s-overflow lesson).
-        char buf[650];
+        char buf[700];
         sprintf_s(buf, "[streamline] Vendored sl.interposer.dll loaded from '%s' but is missing "
-            "slInit/slShutdown/slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken exports "
-            "(corrupted/wrong-version file?) -- Streamline will not be initialized this session.", slPath);
+            "slInit/slShutdown/slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/"
+            "slSetTagForFrame exports (corrupted/wrong-version file?) -- Streamline will not be "
+            "initialized this session.", slPath);
         LogFromController(buf);
         FreeLibrary(slModule);
         g_slInit = nullptr;
@@ -107,13 +119,14 @@ bool TryLoadStreamlineInterposer()
         g_slGetFeatureRequirements = nullptr;
         g_slSetVulkanInfo = nullptr;
         g_slGetNewFrameToken = nullptr;
+        g_slSetTagForFrame = nullptr;
         return false;
     }
 
     g_streamlineModule = slModule;
     char buf[500];
     sprintf_s(buf, "[streamline] Loaded vendored sl.interposer.dll from '%s' -- slInit/slShutdown/"
-        "slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken resolved.", slPath);
+        "slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/slSetTagForFrame resolved.", slPath);
     LogFromController(buf);
     return true;
 }
@@ -168,6 +181,12 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
     // The Vulkan handles are owned by DXVK's device and outlive this
     // interface reference -- releasing it here does not invalidate them.
     interopDevice->Release();
+
+    // 2026-09-24: cache the real instance/device for reuse by
+    // streamline_resources_x64.cpp, which needs to call real Vulkan API
+    // functions directly (vkCreateImageView) -- resource tagging groundwork.
+    g_dxvkVkInstanceX64 = vkInstance;
+    g_dxvkVkDeviceX64 = vkDevice;
 
     if (vkInstance == VK_NULL_HANDLE || vkPhysDev == VK_NULL_HANDLE ||
         vkDevice == VK_NULL_HANDLE || vkQueue == VK_NULL_HANDLE) {
@@ -307,6 +326,21 @@ bool IsStreamlineInitializedX64()
     return g_streamlineInitialized;
 }
 
+// Real DXVK Vulkan instance/device handles, cached once real registration
+// succeeds -- streamline_resources_x64.cpp's own real vkCreateImageView call
+// needs these directly (resource tagging groundwork, 2026-09-24). Returns
+// VK_NULL_HANDLE if Streamline/DXVK registration hasn't happened yet;
+// callers must check.
+VkInstance GetDxvkVkInstanceX64()
+{
+    return g_dxvkVkInstanceX64;
+}
+
+VkDevice GetDxvkVkDeviceX64()
+{
+    return g_dxvkVkDeviceX64;
+}
+
 // 2026-09-24: real frame-tracking groundwork -- the next unstarted step per
 // slSetVulkanInfo()'s own success log line. slGetNewFrameToken() must be
 // called once per real frame (ProgrammingGuideManualHooking.md); the
@@ -350,4 +384,49 @@ void StreamlineFrameTick()
             "real per-frame tracking is live.", s_frameTickCount, static_cast<void*>(g_streamlineCurrentFrameToken));
         LogFromController(buf);
     }
+}
+
+// 2026-09-24: real slSetTagForFrame wrapper -- the next unstarted step after
+// frame tracking. Called from streamline_resources_x64.cpp with a real
+// sl::ResourceTag array (built from the DXVK-interop-resolved depth image).
+// Uses the real, already-tracked FrameToken and viewport 0 (this project
+// only ever has one active render viewport). cmdBuffer is deliberately
+// nullptr -- valid per slSetTagForFrame's own doc comment ("optional and can
+// be null if ALL tags are null or have eValidUntilPresent life-cycle") as
+// long as every tag this project supplies uses ResourceLifecycle::
+// eValidUntilPresent, which streamline_resources_x64.cpp's own tags do.
+// Gated the same way every other post-slSetVulkanInfo Streamline call in
+// this codebase is: no-ops (returns false) until the real device has been
+// registered.
+bool StreamlineSetTagForFrameX64(const sl::ResourceTag* tags, uint32_t numTags)
+{
+    if (!g_streamlineVulkanInfoSet) return false;
+    if (!g_streamlineCurrentFrameToken) return false;
+
+    sl::ViewportHandle viewport(static_cast<uint32_t>(0));
+    sl::Result result = g_slSetTagForFrame(*g_streamlineCurrentFrameToken, viewport,
+        tags, numTags, nullptr);
+
+    static long long s_tagTickCount = 0;
+    ++s_tagTickCount;
+    bool heartbeat = s_tagTickCount <= 5 || (s_tagTickCount % 5000) == 0;
+    if (result != sl::Result::eOk) {
+        static bool s_failureLogged = false;
+        if (!s_failureLogged || heartbeat) {
+            s_failureLogged = true;
+            char buf[200];
+            sprintf_s(buf, "[streamline] slSetTagForFrame() FAILED (result=%d, tick=%lld, "
+                "numTags=%u)", static_cast<int>(result), s_tagTickCount, numTags);
+            LogFromController(buf);
+        }
+        return false;
+    }
+
+    if (heartbeat) {
+        char buf[150];
+        sprintf_s(buf, "[streamline] slSetTagForFrame() succeeded (tick=%lld, numTags=%u)",
+            s_tagTickCount, numTags);
+        LogFromController(buf);
+    }
+    return true;
 }
