@@ -1183,6 +1183,29 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
             row0[0], row0[1], row0[2], row0[3], row1[0], row1[1], row1[2], row1[3]);
         LogFromController(buf);
 
+        // MW32011NCP, 2026-09-24: real, READ-ONLY diagnostic -- the +0x14d0
+        // "projection matrix" above turned out (via real constant values
+        // read statically: DAT_1403e3e6c=1.0, DAT_1403e416c=-1.0,
+        // DAT_1403e52e8=-2.0) to be a PURE width/height screen-space
+        // transform with zero FOV/near/far dependency -- not the real 3D
+        // camera projection matrix. FUN_1401e0880 (the same function that
+        // supplied the confirmed camera pos/fwd/right/up) ALSO copies a
+        // separate "FOV/aspect/near/far-shaped" 6-qword block plus 3 extra
+        // floats from the real camera-context struct into THIS struct's own
+        // +0x17ac..+0x17f8 span (vulkan_dlss_pipeline_research.md item 17's
+        // own real finding, decompiled but never read live) -- dumping it
+        // raw here to find the actual 3D projection parameters. Zero
+        // behavior change.
+        const float* fovBlock = reinterpret_cast<const float*>(base + 0x17ac);
+        char fovBuf[350];
+        sprintf_s(fovBuf, "[x64-fov-block-diag] +0x17ac=[%.6f %.6f %.6f] +0x17c8=[%.6f %.6f %.6f %.6f] "
+            "+0x17d8=[%.6f %.6f %.6f %.6f] +0x17e8=[%.6f %.6f %.6f %.6f]",
+            fovBlock[0], fovBlock[1], fovBlock[2],
+            fovBlock[7], fovBlock[8], fovBlock[9], fovBlock[10],
+            fovBlock[11], fovBlock[12], fovBlock[13], fovBlock[14],
+            fovBlock[15], fovBlock[16], fovBlock[17], fovBlock[18]);
+        LogFromController(fovBuf);
+
         // MW32011NCP, 2026-09-24: real camera position + orthonormal view-basis
         // offsets -- CONFIRMED, not guessed, via a real live-data capture (round 2's
         // full-block dump) mathematically verified: three unit-length vectors,
