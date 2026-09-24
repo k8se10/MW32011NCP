@@ -7643,10 +7643,42 @@ HRESULT WINAPI Hook_EndScene(void* device)
     DrawBuildWatermark(device);
     DrawJitterProbeOverlayIfEnabled(device);
 #if defined(_M_X64) || defined(_WIN64)
-    StreamlineFrameTick();
-    TagStreamlineOutputColorX64();
-    TagStreamlineMotionVectorsX64();
-    CaptureObjectMotionSnapshotX64();
+    // Real, direct QueryPerformanceCounter timing (2026-09-24) -- NOT wrapped
+    // by ourOwnTotalMs (frame_benchmark.cpp's own hardcoded 6-category sum,
+    // which predates every one of these calls and doesn't include any of
+    // them -- the SAME blind spot the 2026-09-23 VRAM-diagnostic timing fix
+    // above already caught once for a different set of new calls; "ourOwnTotalMs
+    // stays near-zero" was WRONGLY read as ruling out this project's own code
+    // for the live-reported sustained fps drop this session). Logs only when
+    // a call takes >=1ms, same convention as that precedent, so this stays
+    // silent in the normal/fast case.
+    {
+        LARGE_INTEGER freq{}, t0{}, t1{}, t2{}, t3{}, t4{};
+        QueryPerformanceFrequency(&freq);
+        auto ms = [&](LARGE_INTEGER a, LARGE_INTEGER b) {
+            return (static_cast<double>(b.QuadPart - a.QuadPart) * 1000.0) / static_cast<double>(freq.QuadPart);
+        };
+
+        QueryPerformanceCounter(&t0);
+        StreamlineFrameTick();
+        QueryPerformanceCounter(&t1);
+        TagStreamlineOutputColorX64();
+        QueryPerformanceCounter(&t2);
+        TagStreamlineMotionVectorsX64();
+        QueryPerformanceCounter(&t3);
+        CaptureObjectMotionSnapshotX64();
+        QueryPerformanceCounter(&t4);
+
+        double msFrameTick = ms(t0, t1), msOutputTag = ms(t1, t2), msMvecTag = ms(t2, t3), msDobj = ms(t3, t4);
+        double msTotal = msFrameTick + msOutputTag + msMvecTag + msDobj;
+        if (msTotal >= 1.0) {
+            char buf[220];
+            sprintf_s(buf, "[x64-streamline-timing] frameTick=%.3fms outputTag=%.3fms mvecTag=%.3fms "
+                "dobjCapture=%.3fms total=%.3fms",
+                msFrameTick, msOutputTag, msMvecTag, msDobj, msTotal);
+            LogFromController(buf);
+        }
+    }
 #endif
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every
