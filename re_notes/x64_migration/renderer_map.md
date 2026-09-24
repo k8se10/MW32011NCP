@@ -62,7 +62,18 @@ scene setup (culling, shadow gathering, drawsurf generation) and the
 actual D3D9 submission (`EndScene` and everything feeding it) happen on
 separate, dedicated threads. This was the single biggest open question in
 this whole investigation, and it's now closed: **yes, real threading
-exists, confirmed by direct live observation, not inference.**
+exists on x64, confirmed by direct live observation, not inference.**
+
+**The current leading theory for the draw-pipeline regression** (§7):
+x86 *also* had real dedicated D3D9-adjacent threading (device-lost
+polling, `BeginScene`) — so x64 likely didn't lose parallelism. What may
+have changed is that x86's actual frame *submission* (`EndScene`) ran on
+the main thread by default, while x64 moved submission itself onto a
+dedicated thread — meaning the real cost isn't the normal case (probably
+faster now) but the rare fallback path where x64 has to hand work back to
+the main thread, something x86 never needed to do. That hand-off is
+exactly what's been caught live correlating with both observed 100-165ms
+spikes. Not yet confirmed — see §7 and open question #1.
 
 ---
 
@@ -209,10 +220,21 @@ against the engine's own already-maintained "active this frame" flag
 (which also directly supplies the motion-vector-invalid sentinel case:
 newly-active index this frame = no valid previous-frame transform).
 
-🔴 **Not yet confirmed**: which category is actually "dynamic models"
-(0x141c23028 is the strong candidate, not proven), and whether case `0x03`
-(`cell scene ent`, one stage earlier) feeds these same index arrays or has
-its own separate identity space.
+🟢 **Confirmed**: case `0x03` (`cell scene ent`, one stage earlier) shares
+the exact same array/index space as the `FUN_1401c7aa0` category — verified
+via direct offset arithmetic (`0x141c23028 - 0x141c22fb8 = 0x70`, matching
+the `0x90` stride's own field layout). A motion-vector cache can key off
+this one array starting from case `0x03`'s own processing.
+
+🟡 **Reframed, not settled**: `FUN_1401c7aa0`/`c7b70`/`c7b30` all tail-call
+into one shared function (`FUN_1401c7660`) that turns out to be a real
+spatial-cell/position-slot **registration** system (position caching, LOD
+dedup, a reverb-zone proximity probe, cell-table registration) — not a
+draw-dispatch path as originally assumed. `FUN_1401c7aa0` (full 6-float
+transform, largest record) is still the best-supported candidate for
+"dynamic models" on parameter-shape grounds, but that's now a weaker,
+unconfirmed claim. `FUN_1401a7450` is NOT an entity category at all — it's
+the shared reverb/nearest-point probe those three call internally.
 
 ---
 
@@ -245,25 +267,67 @@ SSAO-interaction theories — currently untestable because forcing any dvar
 on x64 needs a native `SetDvarBool`/`SetDvarInt` this project hasn't found
 yet (`known_issues_x64.md` issue #6).
 
-🔴 **Not yet found**: the function that walks this table and issues the
-real `CreateTexture`/`CreateRenderTarget` calls (five distinct byte-
-pattern-scan techniques tried, all negative — needs a real, scoped Ghidra
-analysis pass or live tracing instead of more blind scanning).
+🟢 **Consumer FOUND, 2026-09-24** — `FUN_1401d40eb` (likely a mid-function
+cut, real entry point slightly earlier in the same contiguous code, but
+the code region is unambiguous). Found via a new, reusable technique
+after five prior reference-scan attempts against the table's own address
+all failed (the table is never referenced directly by name/address —
+creation functions are handed a record pointer by their caller instead):
+a raw scan for `CALL [reg+disp32]` against `CreateRenderTarget`'s real
+x64 vtable offset (`0xE0`, slot 28) found exactly one hit in the whole
+binary. Real, confirmed cross-references tying this into everything else
+already mapped: sizes from the exact same `InternalRenderScalePercent`
+globals (`_DAT_141888670`/`674` unclamped, `_DAT_141888678`/`67c`
+tier-clamped) already hooked elsewhere; reads a creation parameter from
+`_DAT_1404d0750` (confirming the "fourth sub-table" below really is real
+per-target creation data, not dead data); writes its created surface
+pointer into the exact same `0x141bb6e00`-range block the activation
+function (below) reads its own cache from — the creation and activation
+systems share one underlying surface-pointer array. 🔴 Not yet found:
+this function's own caller (the real per-target dispatch loop, presumably
+iterating all 19 table entries).
 
 ### Render-target ACTIVATION (switching which target is bound)
 
 🟢 **`FUN_1401dfd80`** — the real per-frame render-VIEW activator (as
 opposed to the creation-side table above). Real shape: an early-out if
 the requested view index matches the currently-active one; a loop
-scanning up to 20 cached surface-pointer slots to invalidate stale
-references (two D3D9 vtable calls at `+0x1c8`/`+0x208`); then direct
+scanning up to 20 cached surface-pointer slots (see below); then direct
 `SetRenderTarget`/`SetDepthStencilSurface` calls (vtable `+0x128`/`+0x138`
 in the x64 build's own vtable layout).
+
+🟢 **The 20-slot "cache" is texture-sampler-stage tracking, not a generic
+resource cache — confirmed via vtable-slot arithmetic.** The table spans
+exactly `struct+0x70` through `struct+0x10F`, ending precisely where the
+real D3D9 device pointer begins at `+0x110` (a confirmed struct layout).
+The invalidation call at `+0x208` is `SetTexture` (slot 65). This is
+standard D3D9 render-to-texture hazard avoidance: before binding a
+surface as a render target, any sampler stage currently using that same
+surface as a shader INPUT must first be unbound, since D3D9 disallows a
+resource being simultaneously a render target and a bound input. x86's
+equivalent (`FUN_00542cb0`, §7) has no version of this — which may mean
+x64's pipeline genuinely does more render-to-texture round-tripping than
+x86's did (real, necessary bookkeeping for a different pipeline shape),
+not wasted overhead bolted onto an unchanged one. 🔴 Still open: who
+writes non-zero values into the table, and whether a real invalidation
+(not just the scan) actually fires during ordinary play — both need a
+real analysis pass or a new targeted live diagnostic, not static
+guessing.
 
 Live-observed firing pattern: this is what
 `[x64-renderview-select-diag]` tracks — normally quiet, but fires in
 rapid multi-index bursts (e.g. `1→2→6→7→8→6→8→1→2→1`) at specific,
-still-unidentified moments. See §7 for why this matters.
+still-unidentified moments. 🟡 Best-supported (not confirmed) reading:
+`FUN_1401dfd80` is reached from at least two structurally distinct
+contexts (a generic per-technique/material dispatch table, and a second
+table matching the render-target descriptor's own indexing stride) —
+consistent with it being a commonly-invoked shared utility called many
+times per frame, meaning the burst itself may be an unremarkable
+multi-pass sequence rather than a single rare trigger. Finding its real
+CALL-instruction consumers hit this project's own known `-noanalysis`
+reference-manager blind spot (both known references are DATA references,
+not calls) — needs a real analysis pass or live tracing. See §7 for why
+this matters.
 
 ---
 
@@ -292,9 +356,31 @@ occurrences) — and both times, the very next frame spiked to 100-165ms
 resuming. Both switches were immediately preceded by a burst of
 `FUN_1401dfd80` (§6) view-index changes.
 
-🔴 **Not yet found**: what native condition triggers that view-index
-burst, and whether the same handoff-to-main-thread pattern exists (or is
-absent) on x86.
+🟢 **Real, major finding, 2026-09-24: x86 also had genuine dedicated
+D3D9-adjacent threading — the regression is likely NOT "x64 lost
+parallelism."** Of the x86 build's own already-documented
+`setjmp3`-guarded infinite-loop threads, one (`FUN_0040de80`) is confirmed
+to be a real device thread: a fixed ~30Hz `Sleep`-paced loop calling
+`TestCooperativeLevel` (confirmed via the real `D3DERR_DEVICELOST`/
+`D3DERR_DEVICENOTRESET` constants) and `BeginScene` on device-lost
+recovery.
+
+**But a real, load-bearing, unresolved tension exists**: this project's
+own existing docs assert `EndScene` fires "on the main thread" for x86
+(used to justify an already-shipped DualSense fix), and no `EndScene`
+call was found anywhere in that dedicated thread's own traced chain —
+only device-lost polling and `BeginScene`. **Working picture, not yet
+confirmed**: x86 likely had a *partial* split (device management
+dedicated, frame submission/`EndScene` on main) while x64 has a *fuller*
+split (submission itself moved to a dedicated thread, per the live
+confirmation above). If true, this reframes the whole investigation: x64
+didn't lose parallelism, it gained more of it — and the real cost is the
+RARE fallback path where work has to hand back to the main thread
+(exactly the pattern already observed correlating with the two live
+spikes), something x86 likely never needed since main-thread submission
+was already its default. **This would make the thread HANDOFF itself,
+not lost threading, the real regression mechanism.** 🔴 Not yet done:
+find x86's own actual `EndScene` call site to settle this definitively.
 
 ### `FUN_1401dfd80` (x64) vs. `FUN_00542cb0` (x86) — the real match
 
@@ -328,25 +414,32 @@ during the exact frames the live capture caught.
 
 ## 8. Open questions, ranked by how directly they bear on the regression theory
 
-1. **What triggers the `FUN_1401dfd80` view-index burst that precedes
-   both observed spike/thread-handoff events?** The single most direct
-   remaining lead — trace this function's own callers, or correlate a
-   future live capture against actual player action at the exact frame
-   numbers.
-2. **What populates/invalidates the 20-slot cache in `FUN_1401dfd80`,
-   and does an actual invalidation (not just a scan) fire during a spike?**
-3. **Does x86 exhibit the same main-thread handoff pattern at all?**
-   Needs either a working downgrader-based live test, or tracing x86's
-   own equivalent of `Hook_EndScene`'s calling thread statically.
-4. **Where is the render-target table's real consumer** (the function
-   issuing `CreateTexture`/`CreateRenderTarget` from the table in §6)?
+1. **Does x86's real `EndScene` call site sit on the main thread or a
+   dedicated one?** Now the single most load-bearing open question — a
+   confirmed answer here either validates or kills the "thread handoff is
+   the real regression, not lost parallelism" theory (§7). Needs tracing
+   x86's own real `EndScene`/`Present`-adjacent call chain, likely from
+   the already-known device pointer (`DAT_021cd928`) forward.
+2. **What triggers the `FUN_1401dfd80` view-index burst that precedes
+   both observed spike/thread-handoff events, and is it genuinely rare or
+   an unremarkable multi-pass sequence?** Needs a real Ghidra analysis
+   pass (not `-noanalysis`) or live tracing to find the actual
+   CALL-instruction consumers — reference-manager searching hit its known
+   blind spot.
+3. **Who writes into `FUN_1401dfd80`'s 20-slot texture-unbind table, and
+   does a real invalidation (not just the scan) fire during a spike?**
+   Needs a real analysis pass or a new, narrowly-targeted live diagnostic.
+4. **`FUN_1401d40eb`'s own caller** (the render-target table's real
+   per-entry dispatch loop) — not yet found, real next step now that the
+   creation function itself is located.
 5. **Material/shader binding** — how a drawn surface's shader program and
    texture samplers actually get bound per-draw-call. Untouched so far,
    though `FUN_1400a5a20` (a generic named-asset lookup, type-tag-
    confirmed against `tools/iw5oat`'s own `IW5::XAssetType` enum) is a
    real, reusable anchor for this.
-6. **Which `add scene ent` category (§5) is "dynamic models"**, and
-   whether `cell scene ent` (case `0x03`) shares its identity space.
+6. **Which `add scene ent` category (§5) is "dynamic models"** —
+   `FUN_1401c7aa0` remains the best-supported candidate but is unconfirmed
+   after the real spatial-registration-system reframing found this pass.
 
 ---
 

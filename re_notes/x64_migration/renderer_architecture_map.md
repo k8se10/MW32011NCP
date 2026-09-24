@@ -961,6 +961,179 @@ iteration cost.
 
 ---
 
+## 9. Five parallel deep-dive forks, 2026-09-24 — real progress on every thread, one major reframing of the regression theory
+
+Direct instruction: "lets do some thorough deep multi ended investigations
+here." Five independent forks launched in parallel, each chasing a
+different open question from `renderer_map.md` §8. Pure investigation, no
+file edits (except one real, reusable tooling addition, noted below) —
+consolidated here by the coordinator after all five reported back.
+
+### Fork 1 — what triggers `FUN_1401dfd80`'s multi-index burst
+
+**Real finding, partial**: `FUN_1401dfd80` is reached from at least two
+structurally distinct table contexts — a large, generic per-technique/
+material dispatch table (`FUN_1401dfd80`'s RVA appears once, paired with
+a distinct "small" function at `0x14047f5ec`, inside a dense alternating
+large/small-function-RVA table starting near `0x144450f3c`), and a second
+table with a genuine `0x20`-byte stride matching the render-target
+descriptor table's own indexing scheme (`0x14049d0b0`/`0x14049d0fc`).
+Also found and resolved: a suspected "third function" at `0x1401dfdac`
+is not separate — it's inside `FUN_1401dfda7`, an MSVC-cloned,
+byte-identical twin of `FUN_1401dfd80` for a call site that already had
+the same inputs live in different registers (`unaff_RSI`/`unaff_R15`/
+`unaff_R12`/`in_EAX`), not a functionally heavier variant.
+
+**Hit the project's own known `-noanalysis` reference-manager blind
+spot** trying to find the real CALL-instruction consumer of either
+table — both known reference sites are DATA references, not calls, and
+Ghidra's reference manager only sees a call once its site is
+disassembled. **Best-supported reading, not confirmed**: `FUN_1401dfd80`
+looks like a commonly-invoked, shared "activate render target N" utility
+called from many places per frame (multiple materials/passes each
+declaring a different target), consistent with the observed burst being
+an unremarkable multi-pass sequence rather than a single rare trigger —
+but this doesn't rule in or out a real anomaly at the specific moments
+captured live. **Real next step**: a scoped Ghidra analysis pass (not
+`-noanalysis`) or live tracing to find the actual call sites.
+
+### Fork 2 — who writes/invalidates the 20-slot cache, and what is it really for
+
+**Real, significant reframing**: the "20-slot cache" is not a generic
+resource cache at all. Vtable-slot arithmetic against the confirmed real
+x64 `IDirect3DDevice9` layout shows the invalidation call (`+0x208`) is
+**`SetTexture`** (slot 65), and the table spans exactly `lVar1+0x70`
+through `lVar1+0x10F` — 20 qwords, ending precisely where the real D3D9
+device pointer begins at `+0x110` (confirmed struct layout, not
+coincidence). This is real, standard D3D9 render-to-texture hazard
+avoidance: before binding a surface as a render target, any texture
+sampler stage where that same surface is currently bound as a shader
+INPUT must first be unbound (`SetTexture(stage, NULL)`), since D3D9
+disallows a resource being simultaneously a render target and an input.
+
+**Consequence for the regression theory**: x86's equivalent
+(`FUN_00542cb0`, section 8) having no version of this logic doesn't
+necessarily mean "x64 added wasted overhead" — it may mean **x64's render
+pipeline does genuinely more render-to-texture round-tripping than x86's
+did**, and this is real, necessary correctness bookkeeping for a
+different underlying pipeline structure, not bloat layered onto an
+unchanged one. Still doesn't explain a 100ms+ spike by itself (the scan
+is microseconds) — sharpens the real question toward "why does x64 need
+more frequent render-target/texture role swaps," not "is this loop slow."
+
+**Not resolved**: who writes non-zero values into the table (the real
+`SetTexture` wrapper that also records the bound surface pointer) —
+`FindVtableCallSites`-style searching needs a real analysis pass, a raw
+byte-pattern scan for the `+0x208` call shape hit a 20-result cap with an
+unfiltered, too-loose pattern. Also not resolved: whether a real
+invalidation (not just the scan) fires during ordinary gameplay vs. only
+rare events — a live-behavior question needing a new targeted diagnostic
+(log inside the `if (*plVar6 == lVar2)` branch specifically) or live
+debugging, not static analysis.
+
+### Fork 3 — the render-target table's real consumer — FOUND
+
+**Real result, via a genuinely different technique after five prior
+dead ends** (per `CLAUDE.md` §10.9's own "Fresh Perspective" threshold).
+Root cause of the five prior failures, found by first decompiling x86's
+own known reference (`FUN_00682d70`, the SAVED_SCREEN creator): the
+creation function never references the render-target NAME STRING or
+descriptor table directly — it's handed a record pointer by ITS caller.
+Scanning for references *to the table* was never going to find it.
+
+New approach: a new, reusable script
+(`re_notes/ghidra_scripts/ScanVtableOffsetCalls.java`, raw-scans `.text`
+for `CALL [reg+disp32]` against a given vtable slot offset regardless of
+which register holds the pointer) searched x64 for `CreateRenderTarget`'s
+real vtable offset (slot 28 → `0xE0` in the 8-byte x64 vtable). **Exactly
+one hit in the entire binary**, `0x1401d40eb` — the same "only one real
+call site" shape already confirmed for `SetRenderTarget` on x86.
+Decompiled; real, confirmed cross-references to prior findings:
+
+- Reads `_DAT_141888670`/`674` (the exact same unclamped W/H globals
+  `InternalRenderScalePercent`'s own hook chain already targets) and
+  `_DAT_141888678`/`67c` (the tier-clamped pair, matching x86's
+  `DAT_021d2e08`/`DAT_021d2e0c` structurally) for sizing.
+- Reads `_DAT_1404d0750` as a creation parameter — this is
+  `0x1404d0740 + 0x10`, confirming section 5b's own "fourth sub-table,
+  not yet identified" really is real per-target creation parameters
+  (a format/dvar-name value), not dead data as originally flagged.
+- Writes its created surface pointer to `_DAT_141bb6e40` — in the exact
+  same `0x141bb6e00`-range global block `FUN_1401dfd80` reads its 20-slot
+  cache from. Real, direct evidence the creation and activation systems
+  share the same underlying surface-pointer array, not two unrelated
+  systems.
+
+**Caveat**: `0x1401d40eb` is very likely a mid-function cut (Ghidra's
+forced function-creation used `in_RAX`/`unaff_R14` as inherited register
+state, meaning the true entry point is probably slightly earlier in the
+same contiguous code) — doesn't weaken the finding, the vtable-call-site
+scan found the right code region unambiguously. **Not yet done**: finding
+this function's own caller (the real per-target dispatch loop presumably
+calling it once per table entry across all 19 named targets).
+
+### Fork 4 — did x86 have a genuine dedicated render-backend thread — the most load-bearing result
+
+**Real, confirmed finding**: x86 DID have genuine dedicated D3D9-adjacent
+threading, not a main-thread-only model. Of the 4 non-main real
+`setjmp3`-guarded infinite-loop threads already on record
+(`known_issues.md`), `FUN_0040de80` is confirmed to be a real device
+thread: a genuine fixed ~30Hz `Sleep`-paced loop calling
+`TestCooperativeLevel` (confirmed via the exact `D3DERR_DEVICELOST`/
+`D3DERR_DEVICENOTRESET` constants) against the engine's own known cached
+device pointer (`DAT_021cd928`, independently corroborated elsewhere in
+this project's existing x86 research), and calling `BeginScene` on
+device-lost recovery.
+
+**Real, honest, unresolved tension — the single most important open
+thread for the whole regression theory now**: this project's own existing
+docs assert `Hook_EndScene` fires "on the main thread" for x86 (used to
+justify a real, already-shipped DualSense fix). No direct `EndScene`
+call was found anywhere in `FUN_0040de80`'s traced chain — only
+device-lost polling and `BeginScene`. **Working picture**: x86 likely had
+a *partial* split (device management on a dedicated thread, actual frame
+submission/`EndScene` on main) while x64 has a *fuller* split
+(submission itself moved to a dedicated thread, confirmed live 2026-09-24
+above). **If this holds, it reframes the whole investigation**: x64
+didn't lose parallelism, it gained more of it — and the real cost isn't
+the normal case (presumably faster now), it's the RARE fallback path
+where work has to hand back to the main thread, something x86 likely
+never needed to do since main-thread submission was already its default.
+That would make the thread HANDOFF itself, not lost threading, the real
+regression mechanism — coherent with every piece found so far (the
+pause-menu tragedy, the heli-sequence dip, MP's constant lag) but not yet
+confirmed. **Real next step, not yet done**: find x86's own actual
+`EndScene` call site to settle whether it really was main-thread-only.
+
+### Fork 5 — entity-category identity (`gen drawsurfs`/`add scene ent` follow-up)
+
+**Confirmed, real answer**: case `0x03` (`cell scene ent`) and case
+`0x11`'s largest category (`FUN_1401c7aa0`, record base `0x141c23028`,
+stride `0x90`) share the exact same array and index space — case `0x03`
+computes `lVar59 = uVar7 * 0x90` and reads at `lVar59 + 0x141c22fb8`
+(`0x141c23028 - 0x141c22fb8 = 0x70`, matching the stride's own field-
+offset arithmetic exactly, confirmed via direct offset math). A motion-
+vector cache can safely key off this one array starting from case
+`0x03`'s own processing.
+
+**Real reframing on "which category is dynamic models"**:
+`FUN_1401a7450` is not an entity-category renderer at all — real shape is
+a nearest-point minimization consistent with an audio reverb-zone/portal
+proximity probe. The other three (`FUN_1401c7aa0`/`b70`/`b30`) all
+tail-call into one shared function, `FUN_1401c7660`, which is a real
+spatial-cell/position-slot REGISTRATION system (position caching,
+LOD/cell-size dedup, free-bucket bitscan, calls the reverb probe above,
+registers into a cell table) — not a draw-dispatch path as originally
+framed. `FUN_1401c7aa0` (passing a full 6-float transform) remains the
+best-supported *candidate* for "dynamic models" on parameter-shape
+grounds alone, but this is now a weaker, unconfirmed claim rather than
+settled fact. Two hand-computed jump-target decompiles were flagged as
+garbage (Ghidra itself warned "possible PIC construction") — don't trust
+or retry those without re-deriving the real targets via Ghidra's own
+disassembly/xref view.
+
+---
+
 *Status: early, first-pass mapping. Real architectural shape established
 (command-buffer frontend/backend split, a stage-based notify/coordination
 layer distinct from the actual draw submission) — the actual draw-call
