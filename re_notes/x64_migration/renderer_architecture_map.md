@@ -820,6 +820,52 @@ rather than each entity type having category-local, stage-local numbering.
 
 ---
 
+## 8. First real x86-vs-x64 structural comparison, 2026-09-24 — `FUN_1401dfd80` vs. its documented x86 equivalent `FUN_0049bf50`
+
+Decompiled `FUN_1401dfd80` (section 6's own render-view activator, found
+while tracing the `[render-thread-diag]`/`[x64-renderview-select-diag]`
+correlation in `known_issues_x64.md` issue #4) against its already-
+documented x86 equivalent `FUN_0049bf50` (`known_issues.md` line 11032),
+using the real, preserved pre-recompile binary
+(`re_notes/x64_migration/binaries/old_x86/iw5sp.exe`) — the first genuine
+side-by-side native-code comparison this whole draw-pipeline-regression
+investigation has done, rather than reasoning from live symptoms alone.
+
+A real structural difference exists, but it is NOT a clean, one-sided
+"x64 added overhead" result:
+
+- **x64**: real, inline D3D9 work directly in this function — a dedup
+  guard (early-returns entirely if the requested view index matches the
+  currently-active one; x86 shows no equivalent at this level), then a
+  loop scanning up to 20 cached surface-pointer slots to invalidate stale
+  references, then direct `SetRenderTarget`-/`SetDepthStencilSurface`-
+  shaped D3D9 vtable calls, all inline in this one function.
+- **x86**: dispatches through ~13 separate named helper functions
+  (`func_0x00443cc0`, `func_0x004d8360`, `func_0x004e5b30`,
+  `func_0x004a2a30`, `func_0x004c2710`, `func_0x0044d610`,
+  `func_0x004c70a0`, `func_0x0052ae90`, `func_0x0048a350`,
+  `func_0x00404860`, `func_0x004d6d70`, `func_0x004b15c0`,
+  `func_0x00550d40`) with NO D3D9 vtable calls visible at this level at
+  all — the real API work is one layer deeper in its own callees, most
+  likely `func_0x0044d610` (shaped like a `SetRenderTarget` wrapper by
+  its call position), not yet decompiled.
+
+**Honest, unresolved question**: does x86's own callee chain contain an
+equivalent cache-invalidation scan that just isn't visible at this
+decompilation depth (meaning the two are functionally equivalent, just
+structured differently — likely ordinary compiler/toolchain inlining
+differences between the two builds, not a real regression), or is the
+20-slot invalidation loop genuinely NEW work added on x64 specifically?
+x64 also has a real, cheap early-out x86 doesn't show at this level,
+which argues against a simple "x64 does strictly more work" reading —
+if anything this one function looks MORE optimized on x64 in that
+specific respect. **Real next step to actually settle this**: decompile
+x86's own `func_0x0044d610` and its sibling callees to check whether the
+same invalidation logic exists there before drawing any conclusion about
+this specific function being the regression's real source. Not yet done.
+
+---
+
 *Status: early, first-pass mapping. Real architectural shape established
 (command-buffer frontend/backend split, a stage-based notify/coordination
 layer distinct from the actual draw submission) — the actual draw-call
