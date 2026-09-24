@@ -230,7 +230,7 @@ DWORD WINAPI SourceWatcherThreadProc(LPVOID)
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
                 if (exitCode == 0) printf("[ui_harness] rebuild OK -- will hot-swap within ~500ms\n");
-                else printf("[ui_harness] rebuild FAILED (exit %lu) -- keeping last good version\n", exitCode);
+                else printf("[ui_harness] rebuild FAILED (exit %lu) -- keeping last good version\n", static_cast<unsigned long>(exitCode));
             } else {
                 printf("[ui_harness] failed to launch MSBuild -- check the hardcoded path in SourceWatcherThreadProc\n");
             }

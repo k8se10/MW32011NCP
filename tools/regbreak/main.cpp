@@ -1,18 +1,26 @@
 // regbreak — dev-only diagnostic tool (not part of the shipped mod). Attaches to a
 // running iw5sp.exe as a real Windows debugger, sets a single software breakpoint
-// (INT3) at a given address, waits for the FIRST hit, dumps the full x86 register
+// (INT3) at a given address, waits for the FIRST hit, dumps the full x64 register
 // context plus targeted memory probes at candidate offsets off each general-purpose
 // register, restores the original byte, and detaches cleanly (DebugActiveProcessStop,
 // with kill-on-exit disabled) so the game keeps running completely undisturbed --
-// used in place of manually driving x32dbg's GUI when the user is mid-session and the
+// used in place of manually driving x64dbg's GUI when the user is mid-session and the
 // inspection needs to happen without interrupting them.
 //
 // Usage: regbreak.exe <hexAddress> [maxWaitSeconds]
 //
-// Built for task #16 (aim assist): confirming what the "unaff_ESI"-style implicit
-// register context actually points to at FUN_0057d7e0's entry, by breaking there live
-// and reading ESI + probing candidate struct offsets already suspected from static
-// decompiles (view-origin, aim-assist target state, usercmd-adjacent fields).
+// Originally built for task #16 (aim assist, x86 era): confirming what the
+// "unaff_ESI"-style implicit register context actually pointed to at FUN_0057d7e0's
+// entry (an x86-only address). That feature was PERMANENTLY REMOVED 2026-07-20 (see
+// CLAUDE.md's "Aim-assist target" entry) and this tool's own candidate-offset table
+// below is x86-era struct-layout data that does NOT carry over to x64 (per this
+// project's own locked policy -- no offset/address is assumed shared between
+// iw5sp.exe's x86 and x64 builds). 2026-09-24: fixed to build against the real x64
+// CONTEXT struct (was still referencing x86-only Eip/Esp/Eax/etc. fields, a genuine
+// compile break against the current SDK) -- the register-reading mechanism itself is
+// now correct for x64, but the probe offsets remain historical x86 data, kept as-is
+// rather than guessed at for x64 relevance; treat any hit against them as a
+// coincidence, not a confirmed x64 offset, until independently re-derived.
 
 #include <windows.h>
 #include <tlhelp32.h>
@@ -39,13 +47,13 @@ DWORD FindProcessId(const wchar_t* exeName)
     return pid;
 }
 
-void DumpProbe(HANDLE hProcess, const char* regName, DWORD regValue)
+void DumpProbe(HANDLE hProcess, const char* regName, DWORD64 regValue)
 {
     if (regValue == 0) {
-        printf("  %s = 0x00000000 (null, skipping probes)\n", regName);
+        printf("  %s = 0x0000000000000000 (null, skipping probes)\n", regName);
         return;
     }
-    printf("  %s = 0x%08lX\n", regName, regValue);
+    printf("  %s = 0x%016llX\n", regName, static_cast<unsigned long long>(regValue));
 
     // Candidate offsets already suspected from static decompiles: usercmd-adjacent
     // fields (+0x1c/+0x1d forwardmove/rightmove-style, +0x20/+0x21, +0x38/+0x3a),
@@ -114,7 +122,8 @@ int main(int argc, char** argv)
         printf("iw5sp.exe not found -- launch the game first.\n");
         return 1;
     }
-    printf("Found iw5sp.exe, PID %lu. Target breakpoint address: 0x%08zX\n", pid, targetAddr);
+    printf("Found iw5sp.exe, PID %lu. Target breakpoint address: 0x%08zX\n",
+           static_cast<unsigned long>(pid), static_cast<size_t>(targetAddr));
 
     if (!DebugActiveProcess(pid)) {
         printf("DebugActiveProcess failed (%lu) -- run this tool as Administrator, and make sure\n"
@@ -194,23 +203,31 @@ int main(int argc, char** argv)
                         ctx.ContextFlags = CONTEXT_FULL;
                         if (hThread && GetThreadContext(hThread, &ctx)) {
                             printf("Registers:\n");
-                            printf("  EIP=0x%08lX  ESP=0x%08lX  EBP=0x%08lX\n", ctx.Eip, ctx.Esp, ctx.Ebp);
-                            printf("  EAX=0x%08lX  EBX=0x%08lX  ECX=0x%08lX  EDX=0x%08lX\n",
-                                   ctx.Eax, ctx.Ebx, ctx.Ecx, ctx.Edx);
-                            printf("  ESI=0x%08lX  EDI=0x%08lX\n", ctx.Esi, ctx.Edi);
-                            printf("\n--- ESI probes ---\n");
-                            DumpProbe(hProcess, "ESI", ctx.Esi);
-                            printf("\n--- EDI probes ---\n");
-                            DumpProbe(hProcess, "EDI", ctx.Edi);
-                            printf("\n--- EAX probes (in case arg is register-passed differently) ---\n");
-                            DumpProbe(hProcess, "EAX", ctx.Eax);
+                            printf("  RIP=0x%016llX  RSP=0x%016llX  RBP=0x%016llX\n",
+                                   static_cast<unsigned long long>(ctx.Rip),
+                                   static_cast<unsigned long long>(ctx.Rsp),
+                                   static_cast<unsigned long long>(ctx.Rbp));
+                            printf("  RAX=0x%016llX  RBX=0x%016llX  RCX=0x%016llX  RDX=0x%016llX\n",
+                                   static_cast<unsigned long long>(ctx.Rax),
+                                   static_cast<unsigned long long>(ctx.Rbx),
+                                   static_cast<unsigned long long>(ctx.Rcx),
+                                   static_cast<unsigned long long>(ctx.Rdx));
+                            printf("  RSI=0x%016llX  RDI=0x%016llX\n",
+                                   static_cast<unsigned long long>(ctx.Rsi),
+                                   static_cast<unsigned long long>(ctx.Rdi));
+                            printf("\n--- RSI probes ---\n");
+                            DumpProbe(hProcess, "RSI", ctx.Rsi);
+                            printf("\n--- RDI probes ---\n");
+                            DumpProbe(hProcess, "RDI", ctx.Rdi);
+                            printf("\n--- RAX probes (in case arg is register-passed differently) ---\n");
+                            DumpProbe(hProcess, "RAX", ctx.Rax);
 
-                            // Restore original byte and rewind EIP by 1 so the real
+                            // Restore original byte and rewind RIP by 1 so the real
                             // instruction executes normally once we continue.
                             SIZE_T bw = 0;
                             WriteProcessMemory(hProcess, reinterpret_cast<LPVOID>(targetAddr), &originalByte, 1, &bw);
                             FlushInstructionCache(hProcess, reinterpret_cast<LPCVOID>(targetAddr), 1);
-                            ctx.Eip -= 1;
+                            ctx.Rip -= 1;
                             SetThreadContext(hThread, &ctx);
                         } else {
                             printf("GetThreadContext failed (%lu)\n", GetLastError());
@@ -236,7 +253,7 @@ int main(int argc, char** argv)
     }
 
     if (!done) {
-        printf("Timed out after %lu ms without the breakpoint hitting.\n", maxWaitMs);
+        printf("Timed out after %lu ms without the breakpoint hitting.\n", static_cast<unsigned long>(maxWaitMs));
         if (breakpointArmed && hProcess) {
             SIZE_T bw = 0;
             WriteProcessMemory(hProcess, reinterpret_cast<LPVOID>(targetAddr), &originalByte, 1, &bw);

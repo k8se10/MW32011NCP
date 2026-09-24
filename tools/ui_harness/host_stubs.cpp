@@ -18,7 +18,27 @@
 #include <windows.h>
 #include <cstdio>
 #include "overlay_hud.h"    // OverlayAnimStyle, GetLastKnownRenderDevice's own signature
-#include "dualsense_input.h" // DualSenseRawState, DualSense_* signatures
+#include "dualsense_input.h" // DualSenseRawState, DualSense_* signatures, Controller_DetectGlyphStyle
+#include "frame_benchmark.h" // FrameBenchmark_AddRumbleMs/AddPollThreadMs
+#include "mod_config.h"      // ModConfig, g_modConfig
+
+// 2026-09-24: controller_input.cpp gained real calls to Controller_DetectGlyphStyle
+// (glyph-style auto-detection), FrameBenchmark_AddRumbleMs/AddPollThreadMs (per-thread
+// benchmark instrumentation, issue #87), and a direct g_modConfig read/write in its own
+// XInputPollThreadProc -- none of which this stub file had been updated for, breaking
+// this host exe's link (LNK2019 x4, found while investigating an unrelated set of
+// real CodeQL alerts). Same "not called by anything we need, stub it out" rationale as
+// every other symbol in this file -- Controller_DetectGlyphStyle returns its own
+// fallback unchanged (this harness has no real DualSense hardware path either way, see
+// the DualSense_* stubs below), the two FrameBenchmark_Add* calls are real no-ops here
+// (this harness doesn't write frametime_benchmark.csv), and g_modConfig needs a real,
+// single definition somewhere for the linker -- this host exe provides it, using the
+// struct's own default member initializers (same defaults the real mod ships with).
+ModConfig g_modConfig;
+
+GlyphStyle Controller_DetectGlyphStyle(GlyphStyle fallback) { return fallback; }
+void FrameBenchmark_AddRumbleMs(double /*ms*/) {}
+void FrameBenchmark_AddPollThreadMs(double /*ms*/) {}
 
 void MarkControllerActivity() {}
 extern "C" DWORD GetLastControllerActivityTickMs() { return 0; }

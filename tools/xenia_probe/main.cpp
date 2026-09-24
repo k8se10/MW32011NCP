@@ -228,7 +228,7 @@ int RunWatch(const std::string& outPrefix)
             Sleep(2000);
         }
     }
-    printf("Found Xenia, PID %lu\n", pid);
+    printf("Found Xenia, PID %lu\n", static_cast<unsigned long>(pid));
 
     HANDLE proc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!proc) {
