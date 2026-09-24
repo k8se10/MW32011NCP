@@ -34,14 +34,83 @@
 #include <cmath>
 #include "../third_party/streamline/include/sl.h"
 #include "../third_party/streamline/include/sl_matrix_helpers.h"
+#include "overlay_hud.h" // GetLastKnownRenderDevice/GetRealScreenSize
 
 extern void LogFromController(const char* msg); // dllmain.cpp
+extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp,
+    // real, already-live-confirmed dvar reader (already used for "cg_fov" itself
+    // in that same file's own ADS zoom-slowdown feature).
 
 namespace {
 
 sl::float4x4 g_prevCameraToWorldX64{};
 bool g_haveStreamlinePrevFrameX64 = false;
 long long g_streamlineCameraTickCountX64 = 0;
+
+// MW32011NCP, 2026-09-24: real 3D perspective projection matrix, built
+// independently of the game's own internal matrix. Two real, live-RE'd
+// dead ends before this: the struct offset originally assumed to be "the
+// projection matrix" (render-state+0x14d0) turned out to be a pure
+// width/height screen-space transform (zero FOV/near/far dependency,
+// confirmed via its real constants: DAT_1403e3e6c=1.0, DAT_1403e416c=-1.0,
+// DAT_1403e52e8=-2.0, solved against live values to recover the real render
+// resolution exactly) -- almost certainly feeds a 2D/post-process pass, not
+// the 3D scene (explains the earlier jitter test's uniform full-screen-slide
+// behavior, the signature of a shifted 2D quad, not real 3D parallax
+// jitter). A second lead (FUN_1401e0880's own "+0x17ac..+0x17f8" block) also
+// turned out wrong when read live -- a camera-position + monotonic-timer
+// record, not FOV/aspect/near/far.
+//
+// Real, confirmed FOV instead: "cg_fov" (GetDvarFloatX64, already
+// live-proven in this exact codebase for ADS zoom-aware look-slowdown).
+// Aspect ratio: real render width/height (GetRealScreenSize, same
+// convention every other per-frame diagnostic in this codebase uses).
+// Standard D3D perspective (LH, row-vector) formula, row-major to match
+// sl::float4x4's own row[4] layout:
+//   xScale = cot(fovX/2);  yScale = xScale * aspect
+//   row0 = (xScale, 0, 0, 0);  row1 = (0, yScale, 0, 0)
+//   row2 = (0, 0, zf/(zf-zn), 1);  row3 = (0, 0, -zn*zf/(zf-zn), 0)
+//
+// Near/far are NOT yet RE'd -- two real, honest attempts (exact "znear"/
+// "zfar" string search, and the only real "zfar"-named dvar found,
+// "r_zfar") both came up empty or wrong ("r_zfar" is a fog-culling
+// distance, not the camera far-clip plane). Using clearly-flagged
+// placeholder values for now; these will need real reconciliation once
+// resource/depth-buffer tagging (the next real Streamline step) starts,
+// since the depth values Streamline actually receives have to be
+// consistent with whatever near/far this matrix encodes.
+constexpr float kEstimatedNearPlaneX64 = 4.0f;   // UNCONFIRMED, not RE'd
+constexpr float kEstimatedFarPlaneX64 = 4000.0f; // UNCONFIRMED, not RE'd
+
+sl::float4x4 BuildStandardProjectionMatrixX64()
+{
+    float fovDegrees = GetDvarFloatX64_Exported("cg_fov");
+    if (fovDegrees <= 0.0f || fovDegrees >= 180.0f) fovDegrees = 65.0f; // real cg_fov
+        // default per this project's own already-confirmed reads elsewhere;
+        // safe fallback only, never expected to actually trigger live.
+
+    int renderWidth = 1920, renderHeight = 1080;
+    GetRealScreenSize(GetLastKnownRenderDevice(), renderWidth, renderHeight);
+    if (renderWidth <= 0) renderWidth = 1920;
+    if (renderHeight <= 0) renderHeight = 1080;
+    float aspect = static_cast<float>(renderWidth) / static_cast<float>(renderHeight);
+
+    float halfFovXRad = (fovDegrees * 3.14159265358979323846f / 180.0f) * 0.5f;
+    float xScale = 1.0f / tanf(halfFovXRad);
+    float yScale = xScale * aspect;
+
+    constexpr float zn = kEstimatedNearPlaneX64;
+    constexpr float zf = kEstimatedFarPlaneX64;
+    float m22 = zf / (zf - zn);
+    float m32 = -zn * zf / (zf - zn);
+
+    sl::float4x4 m{};
+    m[0] = sl::float4(xScale, 0.0f, 0.0f, 0.0f);
+    m[1] = sl::float4(0.0f, yScale, 0.0f, 0.0f);
+    m[2] = sl::float4(0.0f, 0.0f, m22, 1.0f);
+    m[3] = sl::float4(0.0f, 0.0f, m32, 0.0f);
+    return m;
+}
 
 } // namespace
 
@@ -53,6 +122,20 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
     const float right[3], const float up[3])
 {
     ++g_streamlineCameraTickCountX64;
+
+    // Real, live-verification diagnostic for the new standard projection
+    // matrix -- heartbeat cadence only (first 5, then every 20000th), same
+    // as the rest of this feature's own logging. Zero behavior change (not
+    // yet fed into slSetConstants -- see this file's own top comment).
+    if (g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0) {
+        sl::float4x4 proj = BuildStandardProjectionMatrixX64();
+        char pbuf[300];
+        sprintf_s(pbuf, "[x64-streamline-projmat] tick=%lld xScale=%.5f yScale=%.5f "
+            "(zn=%.1f zf=%.1f UNCONFIRMED)",
+            g_streamlineCameraTickCountX64, proj[0].x, proj[1].y,
+            kEstimatedNearPlaneX64, kEstimatedFarPlaneX64);
+        LogFromController(pbuf);
+    }
 
     // Real camera-to-world matrix, built EXACTLY the way
     // sl_matrix_helpers.h's own recalculateCameraMatrices() does (right/up/
