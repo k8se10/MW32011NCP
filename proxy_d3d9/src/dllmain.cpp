@@ -99,6 +99,16 @@ HMODULE g_realD3D9 = nullptr;
 // exact investigation.
 bool g_dxvkActive = false;
 
+// 2026-09-24 -- real, cheap, live-testable diagnostic for renderer_architecture_map.md
+// section 4/6's own still-open question: "whether the render backend runs on its own
+// thread on PC". Captured here at the very top of DLL_PROCESS_ATTACH -- for an
+// implicitly-linked DLL (d3d9.dll IS in iw5sp.exe/iw5mp.exe's own import table), this
+// runs on the process's real main/primary thread during process startup, before any
+// worker thread this project has already mapped (the render/scene-setup pool, Bink,
+// the window-message pump, etc.) has spawned -- a real, reliable ground-truth reference
+// to compare Hook_EndScene/Hook_Reset/Hook_CreateDevice's own calling thread against.
+DWORD g_mainThreadId = 0;
+
 FILE* g_log = nullptr;
 
 // Live-reported 2026-08-08 (performance pass targeting worst-case circa-2008
@@ -558,6 +568,18 @@ bool IsDxvkActive()
     return g_dxvkActive;
 }
 
+// Real status accessor for g_mainThreadId (see its own comment above) -- same
+// "internal-linkage global, real external-linkage accessor function" pattern as
+// IsDxvkActive() immediately above, not a raw extern (g_mainThreadId sits inside
+// this file's own anonymous namespace, so a plain `extern DWORD g_mainThreadId;`
+// in another translation unit would never link -- the exact linkage bug class
+// CLAUDE.md's own "checking is far cheaper than digging" section already documents
+// a prior real instance of).
+DWORD GetMainThreadId()
+{
+    return g_mainThreadId;
+}
+
 // [Video] ForceD3D9On12 (issue #92, 2026-08-26) -- local, minimal declarations for
 // the real Direct3DCreate9On12 export, kept out of a d3d9.h include for the same
 // reason the naked forwarding stubs below avoid it (see this file's own top
@@ -673,6 +695,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
 {
     switch (reason) {
     case DLL_PROCESS_ATTACH: {
+        g_mainThreadId = GetCurrentThreadId(); // see g_mainThreadId's own comment above
         DisableThreadLibraryCalls(hModule);
         LogInit();
         LoadModConfig(); // task #14 -- must run before InstallAnalogInputHooks reads g_modConfig

@@ -616,6 +616,37 @@ not for the renderer-mapping effort as a whole.
 - **Whether the render backend runs on its own thread on PC** (section 4's
   open question #2) — genuinely unknown, a real, checkable fact this
   project has never verified either way for this specific x64 binary.
+  **A real, live, cheap test shipped 2026-09-24, not yet run**: rather than
+  another blind static pass, `g_mainThreadId` (captured in `DllMain`'s
+  `DLL_PROCESS_ATTACH`, the real process main thread for an implicitly-
+  linked DLL) is now compared against `GetCurrentThreadId()` inside
+  `Hook_EndScene` every time it changes, logged as
+  `[render-thread-diag] EndScene calling thread changed -> N (main thread =
+  M, SAME/DIFFERENT)`. Direct motivation: the user's own real synthesis
+  this session ("something changed on x64 from x86 draw pipeline which
+  fundamentally broke the perf of the engine... not our work but the
+  game") ties together every finding in `known_issues_x64.md` issue #4
+  (pause-menu lag with simulation halted, the SP heli-sequence dip, MP's
+  constant lag even in a private match) under one real, testable
+  mechanism -- if `EndScene` genuinely fires on a dedicated backend
+  thread, a regression there (lost parallelism, added synchronization,
+  whatever it turns out to be) would explain all three without needing a
+  content- or scripting-density explanation for any of them. If `EndScene`
+  turns out to always run on `g_mainThreadId`, that's real, direct proof
+  D3D9 submission is single-threaded on this x64 build, and the real next
+  question becomes whether x86 had a genuine backend thread that x64 lost
+  (a real, separately-answerable question via the existing x86 Ghidra
+  project/binary snapshot this project already keeps). Build-verified
+  (x64 Release, 0 errors, `dumpbin`-confirmed genuine x64 output),
+  deployed live; a linkage bug (the new global landed inside this file's
+  own anonymous namespace, the same class of bug `CLAUDE.md`'s "checking
+  is far cheaper than digging" section already documents once) was caught
+  at the LINK stage and fixed via a real external-linkage accessor
+  function (`GetMainThreadId()`, matching the already-proven
+  `IsDxvkActive()` pattern in the same file) before this shipped. Not yet
+  live-tested -- real next step is a play session covering at least one of
+  the three symptom-family moments (pause, the heli sequence, or an MP
+  match) with `proxy_d3d9.log` checked for this line afterward.
 - **The already-known pieces this doc should eventually cross-reference,
   not re-derive**: `InternalRenderScalePercent`'s own hook chain
   (`Hook_RenderResCompute` → `FUN_1401bd1d0`, `analog_input_hooks_x64.cpp`),

@@ -68,6 +68,7 @@
 #pragma comment(lib, "shlwapi.lib")
 
 extern void LogFromController(const char* msg);
+extern DWORD GetMainThreadId(); // dllmain.cpp -- see g_mainThreadId's own comment for the real-thread-ID diagnostic this feeds
 // Phase E (motion blur) -- real per-frame view-angle deltas, defined in
 // analog_input_hooks.cpp (see that file's own comment on these two globals,
 // right above InjectControllerLookAngles).
@@ -7533,6 +7534,30 @@ void DrawBuildWatermark(void* device)
 
 HRESULT WINAPI Hook_EndScene(void* device)
 {
+    // 2026-09-24 -- real render-thread diagnostic, renderer_architecture_map.md
+    // section 4/6's own still-open question ("whether the render backend runs on
+    // its own thread on PC"). Logs only on a real CHANGE of calling thread ID (not
+    // every frame) so this stays cheap and low-volume while still catching the
+    // one fact that matters: does EndScene ever fire from a thread other than
+    // g_mainThreadId? If it never changes from g_mainThreadId, that's real,
+    // direct, live evidence D3D9 submission itself is single-threaded on this x64
+    // build -- if it DOES vary, that's real evidence of a genuine backend thread,
+    // and the specific alternating thread ID(s) become a real, concrete next lead
+    // (cross-reference against the already-mapped worker-thread slots in section 7).
+    {
+        static DWORD s_lastLoggedEndSceneThreadId = 0xFFFFFFFF; // sentinel, differs from any real TID
+        DWORD currentThreadId = GetCurrentThreadId();
+        if (currentThreadId != s_lastLoggedEndSceneThreadId) {
+            s_lastLoggedEndSceneThreadId = currentThreadId;
+            DWORD mainThreadId = GetMainThreadId();
+            char buf[128];
+            sprintf_s(buf, "[render-thread-diag] EndScene calling thread changed -> %lu (main thread = %lu, %s)",
+                       currentThreadId, mainThreadId,
+                       currentThreadId == mainThreadId ? "SAME as main" : "DIFFERENT from main");
+            LogFromController(buf);
+        }
+    }
+
     // 2026-08-08 fix (issue #70, round 4): the ONLY real D3D9 device pointer this
     // project ever sees, refreshed every frame -- exposed via GetLastKnownRenderDevice()
     // so hook-context code with no device of its own (analog_input_hooks.cpp) can call
