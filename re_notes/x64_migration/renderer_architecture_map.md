@@ -643,10 +643,47 @@ not for the renderer-mapping effort as a whole.
   is far cheaper than digging" section already documents once) was caught
   at the LINK stage and fixed via a real external-linkage accessor
   function (`GetMainThreadId()`, matching the already-proven
-  `IsDxvkActive()` pattern in the same file) before this shipped. Not yet
-  live-tested -- real next step is a play session covering at least one of
-  the three symptom-family moments (pause, the heli sequence, or an MP
-  match) with `proxy_d3d9.log` checked for this line afterward.
+  `IsDxvkActive()` pattern in the same file) before this shipped.
+
+  **LIVE-TESTED, real and significant result, 2026-09-24.** `EndScene`
+  genuinely does NOT run on the main thread for the vast majority of a
+  session -- it settles onto a real, distinct, persistent second thread
+  (TID `17452` this session, vs. main thread `19460`) within the first few
+  frames after the hook first fires (the very first 1-2 `EndScene` calls
+  land on the main thread before this settles, startup transient, not
+  meaningful). **This is real, direct, live confirmation that D3D9
+  submission on this x64 build IS backed by a genuine dedicated thread**,
+  closing section 4's open question #2 in the affirmative.
+
+  **Real, stronger finding on top of that**: across the whole session,
+  `EndScene`'s calling thread flipped back to the main thread exactly
+  twice after the startup settle (frame #2982, frame #4532) -- and BOTH
+  times, the very next logged frame spiked to 100-165ms (vs. a normal
+  ~16-35ms), before flipping back to the dedicated thread and normal
+  framerate resuming. Two independent occurrences of the identical
+  pattern is real, not noise. **One candidate correlate was checked and
+  RULED OUT**: the `[x64-readyup]` glyph-gate diagnostic's `overlayOn=1`
+  flag appears at both switch points, but a full history check shows it's
+  ambient state (true almost immediately after startup once a controller
+  connects, stays true the rest of the session) -- not a real transition,
+  not the cause. **A real, not-yet-confirmed candidate found instead**:
+  both switches are immediately preceded by a burst of
+  `[x64-renderview-select-diag] view index changed` lines cycling rapidly
+  through several distinct indices (this session: `1→2→6→7→8→6→8→1→2→1`)
+  right before the thread flip and the frame spike -- a real, non-ambient
+  signal (`x64-renderview-select-diag` doesn't fire on a fixed interval,
+  only on genuine index changes per its own design, see issue #4's own
+  entry on this diagnostic) worth chasing as the real trigger next, rather
+  than another guess. Real, working hypothesis: whatever native event
+  causes a burst of render-view reselection (plausibly a menu-adjacent or
+  scene-transition event, not yet identified specifically) also forces
+  that frame's `EndScene` back onto the main thread instead of the normal
+  dedicated backend thread -- and THAT handoff itself is the expensive
+  part, not the view reselection alone. Real next step: correlate the next
+  live capture against what the player was actually doing at those exact
+  frame numbers (this session's own capture wasn't annotated with player
+  action), and/or trace `x64-renderview-select-diag`'s own call site to
+  find what native condition drives a multi-index burst like this.
 - **The already-known pieces this doc should eventually cross-reference,
   not re-derive**: `InternalRenderScalePercent`'s own hook chain
   (`Hook_RenderResCompute` → `FUN_1401bd1d0`, `analog_input_hooks_x64.cpp`),
