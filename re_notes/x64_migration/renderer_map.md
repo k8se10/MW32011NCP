@@ -103,11 +103,25 @@ dimensions and split-screen state; the real consumer of the values
 allocator — see §3) before ending in:
 
 🟢 **`FUN_1401d7480`** — per-player frame setup. Real internal structure:
-camera/view/FOV math (`FUN_1401d8f70`/`FUN_1401d9a10`/…), then the six
-sequential stage-notify calls (§4), then ends in the already-fully-mapped
-HUD tick (`FUN_140039f40`, see `ui_draw_pipeline_map.md`). Also reached
-indirectly via a data reference, consistent with sitting in the same
-function-pointer dispatch table as `FUN_1401d83a0`.
+a "view/camera/FOV-adjacent" chain (`FUN_1401d8f70`/`FUN_1401d9a10`/…),
+then the six sequential stage-notify calls (§4), then ends in the
+already-fully-mapped HUD tick (`FUN_140039f40`, see
+`ui_draw_pipeline_map.md`). Also reached indirectly via a data reference,
+consistent with sitting in the same function-pointer dispatch table as
+`FUN_1401d83a0`.
+
+🔴 **Correction, 2026-09-24**: this chain is NOT uniformly camera/FOV work
+as first characterized. `FUN_1401d8f70` is confirmed (full decompile) to
+be a shadow-map quality-tier/render-target selection function instead —
+likely the real answer to `known_issues.md` issue #107's own unlocated
+"shadow-map resolution" search — and `FUN_1401d9a10`'s own chain
+(`→FUN_1401d9130→FUN_1401da230`) is confirmed to be fog/DOF/vignette
+parameter marshaling. **The real projection-matrix-build function (the
+DLSS jitter-injection hook point) is still unfound** — neither of these
+two siblings is it. Real next candidates: the remaining untraced siblings
+(`FUN_1401d8910`/`FUN_1401d3660`/`FUN_1401d9b40`/`FUN_1401d7940`/
+`FUN_1401d5c10`), or a `SetVertexShaderConstantF` call-site scan (vtable
+`+0x2F0`, slot 94) once a target constant-register index is known.
 
 🔴 **Not yet traced**: the outer per-frame orchestrator that actually
 holds this function-pointer table and calls `FUN_1401d83a0` in the first
@@ -243,7 +257,13 @@ this one array starting from case `0x03`'s own processing.
 into one shared function (`FUN_1401c7660`) that turns out to be a real
 spatial-cell/position-slot **registration** system (position caching, LOD
 dedup, a reverb-zone proximity probe, cell-table registration) — not a
-draw-dispatch path as originally assumed. `FUN_1401c7aa0` (full 6-float
+draw-dispatch path as originally assumed. **Real, mild additional support
+found, 2026-09-24**: `cell scene ent` (case `0x03`) gives `FUN_1401c7aa0`'s
+category measurably more elaborate culling treatment than its siblings
+(two frustum-plane-test loops vs. one, plus a branch to one of two
+downstream handlers) — but both downstream handlers were decompiled and
+confirmed generic (no bone/animation-specific content), so this is real
+supporting evidence, not confirmation. `FUN_1401c7aa0` (full 6-float
 transform, largest record) is still the best-supported candidate for
 "dynamic models" on parameter-shape grounds, but that's now a weaker,
 unconfirmed claim. `FUN_1401a7450` is NOT an entity category at all — it's
