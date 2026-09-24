@@ -324,17 +324,22 @@ float HaltonSequence(int index, int base)
     return r;
 }
 
-// MW32011NCP, 2026-09-24: real, HONEST, NOT-YET-CALIBRATED placeholder scale
-// -- the probe's own 0.25 amplitude already produced a dramatic full-screen
-// slide, meaning the real value-to-pixel conversion factor for +0x1500/
-// +0x1504 is small and genuinely unknown as of this entry. A correct
-// implementation needs this calibrated (e.g. write a known value, measure
-// the real on-screen pixel displacement via a frame capture, solve for the
-// real per-pixel scale) before this constant means anything precise -- kept
-// deliberately conservative (small) in the meantime so ProjectionJitterEnabled,
-// if ever turned on before calibration happens, doesn't reproduce the
-// probe's own dramatic full-screen-slide effect.
-constexpr float kJitterUncalibratedScale = 0.001f;
+// MW32011NCP, 2026-09-24: REVISED -- real, DERIVED calibration instead of a
+// guessed placeholder constant. The live-confirmed behavior (a uniform,
+// depth-INDEPENDENT full-screen slide, not a per-depth-varying parallax
+// shift) is the real signature of a plain CLIP-SPACE (NDC) translation, not
+// some unknown custom unit -- confirmed by the matrix math itself: with Row2
+// entirely zero (independently confirmed dead by the probe) and Row3
+// packing [nearTerm, farTerm, 1.0f, 1.0f], the output clip.w for any vertex
+// reduces to `1 * Row3[3]` = a constant 1.0 (no Row0[3]/Row1[3]/Row2[3]
+// contribution at rest) -- meaning after the perspective divide,
+// ndc.x = clip.x = x*Xscale + Row3[0] directly, with NO further scaling.
+// Row3[0]/[1] are therefore already in real NDC units ([-1,1] across the
+// full screen), not some separate, unknown engine-specific scale -- the
+// standard jitter formula (section 2.3/item 12, already fully researched
+// for both DLSS and FSR 3.1) applies directly: a Halton(2,3) sample in
+// [0,1], recentered to [-0.5,0.5], divided by the real render resolution in
+// pixels, doubled for NDC's [-1,1] range instead of [0,1].
 constexpr int kJitterPhaseCount = 8; // FSR3.1/DLSS real formula: 8*(display/render)^2 -- render==display (no upscale wired yet), so this reduces to the base case.
 long long g_jitterFrameIndex = 0;
 // MW32011NCP, 2026-09-24: REVISED -- an automatic timed cycle (with an
@@ -1169,19 +1174,26 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
 
     // Real jitter injection -- REAL IMPLEMENTATION, 2026-09-24, now that the
     // probe above found and live-confirmed the real target. See
-    // kJitterUncalibratedScale/HaltonSequence's own comments above for the
-    // full rationale and the honest, not-yet-calibrated-scale caveat.
-    // Applied to EVERY call (shadow + main-scene pass both) -- the
-    // return-address-based pass discriminator (g_projectionMainScenePassRetAddr)
-    // has never been confirmed to actually fire correctly (see
-    // vulkan_dlss_pipeline_research.md item 2's own honest note), so
-    // excluding the shadow pass specifically is a real, flagged, not-yet-
-    // solved refinement, not silently assumed safe.
+    // HaltonSequence's own big comment above for the derived-not-guessed
+    // NDC-unit calibration rationale. Applied to EVERY call (shadow +
+    // main-scene pass both) -- the return-address-based pass discriminator
+    // (g_projectionMainScenePassRetAddr) has never been confirmed to
+    // actually fire correctly (see vulkan_dlss_pipeline_research.md item
+    // 2's own honest note), so excluding the shadow pass specifically is a
+    // real, flagged, not-yet-solved refinement, not silently assumed safe.
     if (g_modConfig.projectionJitterEnabled) {
+        int renderWidth = 1920, renderHeight = 1080;
+        GetRealScreenSize(GetLastKnownRenderDevice(), renderWidth, renderHeight);
+        if (renderWidth <= 0) renderWidth = 1920;
+        if (renderHeight <= 0) renderHeight = 1080;
+
         ++g_jitterFrameIndex;
         int phase = static_cast<int>(g_jitterFrameIndex % kJitterPhaseCount);
-        float jitterX = (HaltonSequence(phase + 1, 2) - 0.5f) * kJitterUncalibratedScale;
-        float jitterY = (HaltonSequence(phase + 1, 3) - 0.5f) * kJitterUncalibratedScale;
+        // Real Halton(2,3) sample in [0,1), recentered to [-0.5,0.5], scaled
+        // to a real sub-pixel NDC offset: 2.0 (NDC spans [-1,1], twice the
+        // [0,1] a single pixel step represents) / renderWidth-or-height.
+        float jitterX = (HaltonSequence(phase + 1, 2) - 0.5f) * (2.0f / static_cast<float>(renderWidth));
+        float jitterY = (HaltonSequence(phase + 1, 3) - 0.5f) * (2.0f / static_cast<float>(renderHeight));
         *reinterpret_cast<float*>(base + 0x1500) += jitterX;
         *reinterpret_cast<float*>(base + 0x1504) += jitterY;
         *reinterpret_cast<float*>(base + 0x1540) += jitterX;
@@ -1190,11 +1202,16 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
         static bool s_jitterLogged = false;
         if (!s_jitterLogged) {
             s_jitterLogged = true;
-            LogFromController("[x64-jitter] Real jitter injection enabled -- writing a Halton(2,3) offset into "
-                "+0x1500/+0x1504 (both duplicate copies) every frame. Scale is NOT yet calibrated to real pixels "
-                "(kJitterUncalibratedScale, analog_input_hooks_x64.cpp) -- this is pure groundwork for a future "
-                "DLSS/Streamline or FSR 3.1 temporal pass, expect a faint uncorrected shimmer with no benefit "
-                "until one exists.");
+            // Real worst-case checked directly (wc -c on the literal text):
+            // 333 bytes before substitution -- buf[300] would have overflowed.
+            // Widened with real margin per this session's own standing lesson.
+            char buf[500];
+            sprintf_s(buf, "[x64-jitter] Real jitter injection enabled -- writing a real, resolution-derived "
+                "Halton(2,3) sub-pixel offset into +0x1500/+0x1504 (both duplicate copies) every frame "
+                "(render=%dx%d). This is pure groundwork for a future DLSS/Streamline or FSR 3.1 temporal pass "
+                "-- expect a faint, uncorrected shimmer with no benefit until one exists.",
+                renderWidth, renderHeight);
+            LogFromController(buf);
         }
     }
 }
