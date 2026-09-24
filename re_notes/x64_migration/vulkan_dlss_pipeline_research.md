@@ -694,6 +694,68 @@ two open pieces item 4 above left unresolved.**
    no longer needs any bone-palette replication per point 2's correction.
    **Not yet implemented, not yet live-tested — real RE findings only, this
    round.**
+5. **Points (i) and (iii) above CLOSED the same round, real decompile of
+   `FUN_1401cd3e0`/`FUN_1401ccb30`/`FUN_1401ce3d0`/`FUN_1401d5840`.**
+   - **The real post-skin vertex output buffer is NOT stack-local — it's a
+     fixed, addressable global scratch region, directly diffable.**
+     `FUN_1401cd3e0`'s own bVar20==0/param_3!=0 branch is a genuine,
+     concrete per-vertex skin-blend loop: reads a bone matrix
+     (`pfVar22`/`pfVar16`, indexed off the caller-supplied bone-matrix
+     buffer), transforms each vertex position through it, and WRITES the
+     result to `param_5` (`*param_5 = ...; param_5[1] = ...; param_5[2] =
+     ...`, stride 8 floats/vertex, alongside a passthrough per-vertex ID
+     copy from `param_3` to `param_4`). Traced `param_5`'s real value back
+     to the caller (`FUN_1401cc320`, `skin model`): `lVar14 = iVar2 +
+     DAT_1415f3188` — a fixed global base (`DAT_1415f3188`) plus the SAME
+     per-surface index (`iVar2`) this whole command stream already keys
+     everything else by. **This closes the one open question from point 2
+     above**: skinned draws CAN be captured the exact same "diff a
+     retained copy of a real buffer" way as rigid DObj transforms — no
+     shader-replicated skinning math needed anywhere in this project's own
+     code, confirmed rather than assumed.
+   - **`FUN_1401ccb30`** (the SSE-skinning-path sibling, gated by the same
+     `bVar4` flag `FUN_1401cc320` already branches on) writes a
+     structurally similar per-vertex output, but through byte-packing/
+     `CONCAT12`-style math (`param_4[6]`/`param_4[7]` built from quantized
+     per-component bytes) — consistent with a compressed/quantized
+     normal-or-tangent output format alongside the raw position writes
+     (`param_4[0..3]`), a real, minor extra complexity for the SSE path
+     specifically, not a blocker (positions themselves are still plain
+     floats).
+   - **`FUN_1401d5840` fully decompiled and compared against
+     `FUN_1401d62c0`**: a real, understood difference, not an ambiguity.
+     `FUN_1401d5840` branches on `(param_4 & 0x30)`: zero routes to the SAME
+     main DObj pool (`DAT_141c22fac`, cap 0x200/512) `FUN_1401d62c0` always
+     uses; nonzero routes to a SEPARATE small reserved pool
+     (`DAT_141c22fb0`, cap 8, offset `+0x200` — i.e. slots 512-519) —
+     matching `FUN_1401d62c0`'s own only-found direct caller being the
+     weapon-viewmodel update function exactly, and explaining why a second,
+     distinct registration entry point exists at all (a small, dedicated
+     slot range for first-person/viewmodel-class DObjs, kept structurally
+     separate from the main world-entity pool but sharing the identical
+     `float[3]` position + orientation-basis field layout either way). A
+     final `(param_4 & 0x34) == 0` branch calls a real non-returning
+     assert/fault function (`FUN_1401c48e0`) — an invalid-call-shape guard,
+     not a real code path. **Real, concrete consequence**: hooking BOTH
+     functions, keyed the same way, is a complete solution — no third
+     variant exists, and both write the identical real field layout the
+     render stage (`add scene ent`) already reads.
+   - **Still open, small and real, not a blocker**: the exact
+     orientation-basis math (`FUN_140040520`/`FUN_140040500`/
+     `FUN_1402bd380`) has been named/called but not yet decompiled in full
+     — needed before implementation to know precisely what basis
+     convention (quaternion vs. Euler vs. an already-built 3x3, and its
+     handedness/row-vs-column convention) `param_2` actually resolves to.
+   - **Implementation itself has not started this round** — this is the
+     RE-complete state: every real unknown this feature's Stage 2 plan
+     opened with (per-entity identity, skinned-draw handling, the real
+     capture hook) is now closed by direct decompile evidence, not
+     inference. Real next session should decompile
+     `FUN_140040520`/`500`/`FUN_1402bd380` first (small, fast), then move
+     to actual code: hook `FUN_1401d62c0`/`FUN_1401d5840`, build the
+     per-slot capture/retain cache, and hook `FUN_1401cd3e0`/`ccb30`/`ce3d0`
+     (or read `DAT_1415f3188` directly post-write) for the skinned-output
+     diff path.
 
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
