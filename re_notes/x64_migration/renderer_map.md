@@ -415,11 +415,17 @@ during the exact frames the live capture caught.
 ## 8. Open questions, ranked by how directly they bear on the regression theory
 
 1. **Does x86's real `EndScene` call site sit on the main thread or a
-   dedicated one?** Now the single most load-bearing open question — a
-   confirmed answer here either validates or kills the "thread handoff is
-   the real regression, not lost parallelism" theory (§7). Needs tracing
-   x86's own real `EndScene`/`Present`-adjacent call chain, likely from
-   the already-known device pointer (`DAT_021cd928`) forward.
+   dedicated one?** Still the single most load-bearing open question — a
+   confirmed answer either validates or kills the "thread handoff is the
+   real regression, not lost parallelism" theory (§7). **Real attempt
+   made, genuinely unresolved**: four real `EndScene` wrapper functions
+   found (`FUN_0052b8cd`/`FUN_004e0bba`/`FUN_004b6544`/`FUN_004e44c5` —
+   the last two shaped like a real "normal frame" finalize path and a
+   wait-loop respectively), but all are reached via function-pointer
+   indirection with zero direct callers findable via static byte-scanning
+   — the same `-noanalysis` blind spot this project has hit before. Needs
+   a scoped real Ghidra analysis pass or live tracing, not more blind
+   scanning.
 2. **What triggers the `FUN_1401dfd80` view-index burst that precedes
    both observed spike/thread-handoff events, and is it genuinely rare or
    an unremarkable multi-pass sequence?** Needs a real Ghidra analysis
