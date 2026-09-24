@@ -1,30 +1,48 @@
-// MW32011NCP, 2026-09-24: real resource-tagging groundwork -- the next
-// unstarted Streamline/DLSS step after the camera-to-world matrix and
-// projection matrix (both live-confirmed this session). Stage 1
-// (camera-only motion vectors, vulkan_dlss_pipeline_research.md section
-// 2.5) needs, at minimum, a real depth buffer tagged via slSetTagForFrame
-// (kBufferTypeDepth). This file resolves the real backing Vulkan image for
-// the game's own active depth-stencil surface, via DXVK's own real
-// ID3D9VkInteropTexture interop interface (dxvk_interop_x64.h) -- the same
-// interop mechanism already proven working for slSetVulkanInfo's own device/
-// queue handles.
+// MW32011NCP, 2026-09-24: real resource-tagging groundwork for DLSS. This
+// file resolves the real backing Vulkan images for the game's own D3D9
+// surfaces (depth-stencil, and now the primary color render target), via
+// DXVK's own real ID3D9VkInteropTexture interop interface
+// (dxvk_interop_x64.h) -- the same interop mechanism already proven working
+// for slSetVulkanInfo's own device/queue handles.
 //
-// ROUND 1 (same day) polled GetDepthStencilSurface from Hook_EndScene --
-// real, live D3DERR_NOTFOUND every time (wrong hook point, see below).
-// ROUND 2 (same day, LIVE-CONFIRMED): hooked SetDepthStencilSurface
-// directly instead -- real depth-stencil Vulkan images resolved correctly
-// (format=VK_FORMAT_D24_UNORM_S8_UINT, usage includes DEPTH_STENCIL_
-// ATTACHMENT, extent matching the real render-scale resolution).
-// ROUND 3 (this pass): sl::Resource's own doc comment is explicit --
-// "Resource view, description etc. are MANDATORY only when using Vulkan" --
-// GetVulkanImageInfo alone gives a raw VkImage, not a VkImageView. A real
-// VkImageView has to be created directly via the Vulkan API, using the
-// real VkDevice already cached from slSetVulkanInfo's own registration
-// (streamline_integration_x64.cpp). No Vulkan import library is linked in
-// this project -- every Vulkan function used here is resolved dynamically
-// via GetProcAddress on the real loader DLL already loaded in-process by
-// DXVK, the same "resolve at runtime, never assume a static link" approach
-// this whole codebase already uses for the game's own native functions.
+// DEPTH (kBufferTypeDepth) -- LIVE-CONFIRMED working end to end:
+//   ROUND 1 polled GetDepthStencilSurface from Hook_EndScene -- real, live
+//   D3DERR_NOTFOUND every time (wrong hook point: EndScene fires after the
+//   depth-stencil surface is typically unbound for 2D/UI passes).
+//   ROUND 2: hooked SetDepthStencilSurface directly instead -- real
+//   depth-stencil Vulkan images resolved correctly (VK_FORMAT_D24_UNORM_
+//   S8_UINT, DEPTH_STENCIL_ATTACHMENT usage, extent matching the real
+//   render-scale resolution).
+//   ROUND 3: sl::Resource's own doc comment is explicit -- "Resource view,
+//   description etc. are MANDATORY only when using Vulkan" -- a real
+//   VkImageView has to be created directly via the Vulkan API (no import
+//   library linked in this project; every Vulkan function used here is
+//   resolved dynamically via GetProcAddress on the real loader DLL already
+//   loaded in-process by DXVK).
+//   ROUND 4: slSetTagForFrame() itself failed every call with
+//   eErrorInvalidIntegration until sl::PreferenceFlags::
+//   eUseFrameBasedResourceTagging was added to slInit()'s own Preferences
+//   (streamline_integration_x64.cpp) -- required per the SDK's own doc
+//   comment on the deprecated slSetTag(). LIVE-CONFIRMED succeeding after
+//   that fix.
+//   ROUND 5: slGetFeatureRequirements(DLSS)'s own real requiredTags list
+//   (logged for the first time) confirmed the full real requirement set:
+//   kBufferTypeDepth(0), kBufferTypeMotionVectors(1),
+//   kBufferTypeScalingInputColor(3), kBufferTypeScalingOutputColor(4) --
+//   the authoritative source, not a guess from the public docs' general
+//   description.
+//
+// COLOR INPUT (kBufferTypeScalingInputColor) -- this pass: the same proven
+// pattern, hooking SetRenderTarget(0, ...) instead of SetDepthStencilSurface,
+// COLOR aspect instead of DEPTH.
+//
+// STILL NOT DONE: kBufferTypeMotionVectors (Stage 1 camera-only needs SOME
+// real tagged buffer even though cameraMotionIncluded=eFalse -- the required
+// list proves a tag is mandatory, not optional to omit) and
+// kBufferTypeScalingOutputColor (DLSS writes into this -- the game has no
+// existing resource for it; a real texture has to be created at the
+// upscaled target resolution, tying into this project's own capture/
+// composite pipeline design, not yet done).
 
 #include <windows.h>
 #include <cstdio>
@@ -47,10 +65,21 @@ namespace {
 // vtable indices already use.
 constexpr int kSetDepthStencilSurfaceVtableIndex = 39;
 
+// IDirect3DDevice9::SetRenderTarget -- standard COM vtable slot 37 (one
+// before SetDepthStencilSurface's own confirmed slot 39, i.e. 38 is
+// GetRenderTarget -- matches this project's own already-live
+// kGetRenderTargetVtableIndex=38 in overlay_hud.cpp exactly). Real
+// signature: HRESULT SetRenderTarget(DWORD RenderTargetIndex, IDirect3DSurface9*).
+constexpr int kSetRenderTargetVtableIndex = 37;
+
 using SetDepthStencilSurfaceFn = HRESULT(STDMETHODCALLTYPE*)(void*, void*);
 SetDepthStencilSurfaceFn g_origSetDepthStencilSurface = nullptr;
 
+using SetRenderTargetFn = HRESULT(STDMETHODCALLTYPE*)(void*, DWORD, void*);
+SetRenderTargetFn g_origSetRenderTarget = nullptr;
+
 long long g_resolveAttemptCount = 0;
+long long g_resolveColorAttemptCount = 0;
 
 // Real Vulkan functions, resolved dynamically -- see this file's own top
 // comment for why (no Vulkan import library linked in this project).
@@ -61,13 +90,16 @@ PFN_vkDestroyImageView g_vkDestroyImageView = nullptr;
 bool g_vulkanFunctionsResolved = false;
 bool g_vulkanFunctionsResolveFailed = false;
 
-// Real per-image view cache -- SetDepthStencilSurface fires far more often
-// than the underlying image actually changes (live-confirmed: the same 1-2
-// real VkImage handles repeat across many consecutive binds), so only
-// create/destroy a real VkImageView when the image genuinely changes.
+// Real per-image view caches -- SetDepthStencilSurface/SetRenderTarget fire
+// far more often than the underlying image actually changes (live-confirmed
+// for depth: the same 1-2 real VkImage handles repeat across many
+// consecutive binds), so only create/destroy a real VkImageView when the
+// image genuinely changes. Separate caches for depth vs. color since
+// they're two independent resources.
 VkImage g_cachedDepthImage = VK_NULL_HANDLE;
 VkImageView g_cachedDepthView = VK_NULL_HANDLE;
-VkFormat g_cachedDepthFormat = VK_FORMAT_UNDEFINED;
+VkImage g_cachedColorImage = VK_NULL_HANDLE;
+VkImageView g_cachedColorView = VK_NULL_HANDLE;
 
 bool ResolveVulkanFunctionsIfNeeded()
 {
@@ -127,20 +159,24 @@ bool ResolveVulkanFunctionsIfNeeded()
     return true;
 }
 
-// Depth-only view (VK_IMAGE_ASPECT_DEPTH_BIT), not depth+stencil -- Streamline's
-// kBufferTypeDepth wants the depth component specifically.
-VkImageView GetOrCreateDepthViewX64(VkImage image, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers)
+// Generic per-image view cache/create -- shared by both depth (DEPTH_BIT)
+// and color (COLOR_BIT) resolution below. cachedImage/cachedView are the
+// caller's own cache slots (passed by reference so depth and color stay
+// fully independent); logPrefix/label are just for readable log lines.
+VkImageView GetOrCreateViewX64(VkImage image, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers,
+    VkImageAspectFlags aspect, VkImage& cachedImage, VkImageView& cachedView,
+    const char* logPrefix, const char* label)
 {
-    if (image == g_cachedDepthImage && g_cachedDepthView != VK_NULL_HANDLE) {
-        return g_cachedDepthView;
+    if (image == cachedImage && cachedView != VK_NULL_HANDLE) {
+        return cachedView;
     }
 
     VkDevice device = GetDxvkVkDeviceX64();
     if (device == VK_NULL_HANDLE) return VK_NULL_HANDLE;
 
-    if (g_cachedDepthView != VK_NULL_HANDLE) {
-        g_vkDestroyImageView(device, g_cachedDepthView, nullptr);
-        g_cachedDepthView = VK_NULL_HANDLE;
+    if (cachedView != VK_NULL_HANDLE) {
+        g_vkDestroyImageView(device, cachedView, nullptr);
+        cachedView = VK_NULL_HANDLE;
     }
 
     VkImageViewCreateInfo viewInfo{};
@@ -148,7 +184,7 @@ VkImageView GetOrCreateDepthViewX64(VkImage image, VkFormat format, uint32_t mip
     viewInfo.image = image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = format;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.aspectMask = aspect;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = mipLevels;
     viewInfo.subresourceRange.baseArrayLayer = 0;
@@ -157,19 +193,18 @@ VkImageView GetOrCreateDepthViewX64(VkImage image, VkFormat format, uint32_t mip
     VkImageView view = VK_NULL_HANDLE;
     VkResult vr = g_vkCreateImageView(device, &viewInfo, nullptr, &view);
     if (vr != VK_SUCCESS) {
-        char buf[200];
-        sprintf_s(buf, "[x64-streamline-depth] vkCreateImageView FAILED (VkResult=%d) for image "
-            "0x%llx.", static_cast<int>(vr), reinterpret_cast<unsigned long long>(image));
+        char buf[220];
+        sprintf_s(buf, "%s vkCreateImageView FAILED (VkResult=%d) for %s image 0x%llx.",
+            logPrefix, static_cast<int>(vr), label, reinterpret_cast<unsigned long long>(image));
         LogFromController(buf);
         return VK_NULL_HANDLE;
     }
 
-    g_cachedDepthImage = image;
-    g_cachedDepthView = view;
-    g_cachedDepthFormat = format;
-    char buf[200];
-    sprintf_s(buf, "[x64-streamline-depth] Created a real depth-only VkImageView (0x%llx) for "
-        "image 0x%llx (format=%d).", reinterpret_cast<unsigned long long>(view),
+    cachedImage = image;
+    cachedView = view;
+    char buf[250];
+    sprintf_s(buf, "%s Created a real %s VkImageView (0x%llx) for image 0x%llx (format=%d).",
+        logPrefix, label, reinterpret_cast<unsigned long long>(view),
         reinterpret_cast<unsigned long long>(image), static_cast<int>(format));
     LogFromController(buf);
     return view;
@@ -223,7 +258,9 @@ void TagDepthResourceForFrame(void* depthSurface)
 
     if (!ResolveVulkanFunctionsIfNeeded()) return;
 
-    VkImageView view = GetOrCreateDepthViewX64(image, info.format, info.mipLevels, info.arrayLayers);
+    VkImageView view = GetOrCreateViewX64(image, info.format, info.mipLevels, info.arrayLayers,
+        VK_IMAGE_ASPECT_DEPTH_BIT, g_cachedDepthImage, g_cachedDepthView,
+        "[x64-streamline-depth]", "depth-only");
     if (view == VK_NULL_HANDLE) return;
 
     // Real sl::Resource -- native=VkImage, view=the real depth-only VkImageView
@@ -248,10 +285,91 @@ void TagDepthResourceForFrame(void* depthSurface)
     StreamlineSetTagForFrameX64(&depthTag, 1);
 }
 
+// Real primary color render target -- kBufferTypeScalingInputColor (the
+// real, low-res-relative-to-output color buffer DLSS reads and upscales
+// from). Same interop chain as depth, COLOR aspect instead of DEPTH,
+// SetRenderTarget(0, ...) instead of SetDepthStencilSurface.
+void TagColorResourceForFrame(void* renderTarget)
+{
+    ++g_resolveColorAttemptCount;
+    bool heartbeat = g_resolveColorAttemptCount <= 5 || (g_resolveColorAttemptCount % 5000) == 0;
+
+    IUnknown* renderTargetUnknown = reinterpret_cast<IUnknown*>(renderTarget);
+    ID3D9VkInteropTextureX64* interopTexture = nullptr;
+    HRESULT hr = renderTargetUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
+        reinterpret_cast<void**>(&interopTexture));
+    if (FAILED(hr) || !interopTexture) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-color] QueryInterface for ID3D9VkInteropTexture FAILED "
+                "(hr=0x%08lX).", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    VkImage image = VK_NULL_HANDLE;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
+    interopTexture->Release();
+
+    if (FAILED(hr) || image == VK_NULL_HANDLE) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-color] GetVulkanImageInfo FAILED (hr=0x%08lX) -- no "
+                "real Vulkan image behind this render target.", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    if (heartbeat) {
+        char buf[350];
+        sprintf_s(buf, "[x64-streamline-color] attempt=%lld image=0x%llx layout=%d format=%d "
+            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u samples=%d usage=0x%X",
+            g_resolveColorAttemptCount, reinterpret_cast<unsigned long long>(image), static_cast<int>(layout),
+            static_cast<int>(info.format), info.extent.width, info.extent.height, info.extent.depth,
+            info.mipLevels, info.arrayLayers, static_cast<int>(info.samples), info.usage);
+        LogFromController(buf);
+    }
+
+    if (!ResolveVulkanFunctionsIfNeeded()) return;
+
+    VkImageView view = GetOrCreateViewX64(image, info.format, info.mipLevels, info.arrayLayers,
+        VK_IMAGE_ASPECT_COLOR_BIT, g_cachedColorImage, g_cachedColorView,
+        "[x64-streamline-color]", "color");
+    if (view == VK_NULL_HANDLE) return;
+
+    sl::Resource colorResource(sl::ResourceType::eTex2d, reinterpret_cast<void*>(image),
+        /*mem*/ nullptr, reinterpret_cast<void*>(view), static_cast<uint32_t>(layout));
+    colorResource.width = info.extent.width;
+    colorResource.height = info.extent.height;
+    colorResource.nativeFormat = static_cast<uint32_t>(info.format);
+    colorResource.mipLevels = info.mipLevels;
+    colorResource.arrayLayers = info.arrayLayers;
+    colorResource.usage = info.usage;
+
+    sl::ResourceTag colorTag(&colorResource, sl::kBufferTypeScalingInputColor,
+        sl::ResourceLifecycle::eValidUntilPresent);
+    StreamlineSetTagForFrameX64(&colorTag, 1);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurfaceX64(void* device, void* pNewZStencil)
 {
     if (pNewZStencil) TagDepthResourceForFrame(pNewZStencil);
     return g_origSetDepthStencilSurface(device, pNewZStencil);
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetRenderTargetX64(void* device, DWORD renderTargetIndex, void* pRenderTarget)
+{
+    // Only render target 0 (the primary color buffer) is relevant for DLSS
+    // scaling input -- other indices are MRT slots (normals, velocity
+    // buffers the game's own renderer might use internally, etc.), not the
+    // final composited scene color.
+    if (renderTargetIndex == 0 && pRenderTarget) TagColorResourceForFrame(pRenderTarget);
+    return g_origSetRenderTarget(device, renderTargetIndex, pRenderTarget);
 }
 
 } // namespace
@@ -286,4 +404,28 @@ void InstallDepthStencilHookX64(void* realDevice)
     }
     LogFromController("[x64-streamline-depth] SetDepthStencilSurface hook installed -- "
         "watching for the real depth-stencil surface the game itself binds.");
+
+    // Real color-input resolution (kBufferTypeScalingInputColor), same
+    // pattern, same call site -- installed alongside the depth hook rather
+    // than requiring a separate call from overlay_hud.cpp.
+    void* realSetRenderTarget = deviceVtbl[kSetRenderTargetVtableIndex];
+    s = MH_CreateHook(realSetRenderTarget, reinterpret_cast<void*>(&Hook_SetRenderTargetX64),
+        reinterpret_cast<void**>(&g_origSetRenderTarget));
+    if (s != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-streamline-color] FATAL: MH_CreateHook failed for "
+            "SetRenderTarget (status=%d)", static_cast<int>(s));
+        LogFromController(buf);
+        return;
+    }
+    s = MH_EnableHook(realSetRenderTarget);
+    if (s != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-streamline-color] FATAL: MH_EnableHook failed for "
+            "SetRenderTarget (status=%d)", static_cast<int>(s));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[x64-streamline-color] SetRenderTarget hook installed -- "
+        "watching for the real primary color render target the game itself binds.");
 }
