@@ -740,22 +740,53 @@ two open pieces item 4 above left unresolved.**
      functions, keyed the same way, is a complete solution — no third
      variant exists, and both write the identical real field layout the
      render stage (`add scene ent`) already reads.
-   - **Still open, small and real, not a blocker**: the exact
-     orientation-basis math (`FUN_140040520`/`FUN_140040500`/
-     `FUN_1402bd380`) has been named/called but not yet decompiled in full
-     — needed before implementation to know precisely what basis
-     convention (quaternion vs. Euler vs. an already-built 3x3, and its
-     handedness/row-vs-column convention) `param_2` actually resolves to.
-   - **Implementation itself has not started this round** — this is the
-     RE-complete state: every real unknown this feature's Stage 2 plan
-     opened with (per-entity identity, skinned-draw handling, the real
-     capture hook) is now closed by direct decompile evidence, not
-     inference. Real next session should decompile
-     `FUN_140040520`/`500`/`FUN_1402bd380` first (small, fast), then move
-     to actual code: hook `FUN_1401d62c0`/`FUN_1401d5840`, build the
-     per-slot capture/retain cache, and hook `FUN_1401cd3e0`/`ccb30`/`ce3d0`
-     (or read `DAT_1415f3188` directly post-write) for the skinned-output
-     diff path.
+   - **Orientation-basis math CLOSED, same round, and the whole capture
+     design simplifies as a direct result.** `FUN_140040520` is a plain
+     3-float verbatim copy (`param_1+0x18/0x1c/0x20` → output), no math at
+     all. `FUN_140040500` reads a SEPARATE 3-float field
+     (`param_1+0x24/0x28/0x2c` — real Euler angles, pre-scaled by a real
+     constant, `DAT_1403e4138`, before `sin`/`cos`, consistent with this
+     project's own already-documented compressed/short-angle-to-radian
+     convention elsewhere, e.g. Predator Missile's `360.0/65536.0`), which
+     `FUN_1402bd380` then expands via real `sin`/`cos` calls
+     (`FUN_14039cfa0`=cos, `FUN_14039ca20`=sin) into a genuine, standard
+     Euler-to-3x3-rotation-matrix construction (9 floats, 3 row vectors),
+     written out via `FUN_1402b7b00` directly into the SAME DObj-record
+     rotation-row fields (`DAT_141c22fd4`/`fd8`/`fdc` etc, offset `+0xC`
+     from the record's own position base) that `add scene ent`'s own
+     category-3 block was independently already seen reading as `fVar1/2/3`
+     — the same field, confirmed from a third independent angle now.
+     **Real, concrete design simplification this unlocks**: this project's
+     own capture code does NOT need to re-derive a rotation matrix from
+     Euler angles at all, or hook `FUN_1401d62c0`/`FUN_1401d5840`'s own
+     input arguments — the game itself already computes and stores a
+     complete, ready-to-use `float3` position + `float3x3` rotation-row set
+     per DObj slot, refreshed every single frame, sitting in plain,
+     addressable global memory (`DAT_141c22fb8`-based position array,
+     `DAT_141c22fd4`-based rotation-row array, both indexed identically by
+     `slot * 0x90`). **The real, final, simplest design**: read these two
+     fields directly, once per frame, for every slot the active-flag array
+     (`DAT_141c35438`) marks active — no function hooking of the
+     registration calls needed at all, just a per-frame read-and-retain
+     pass keyed by slot index, gated by the same active-flag transition
+     already established as the "just spawned, no valid history" signal.
+   - **RE for this feature is now genuinely complete — every real unknown
+     the Stage 2 plan opened with is closed by direct decompile evidence,
+     not inference.** Real next step is pure implementation, no more RE
+     required first: (a) a per-frame read pass over the DObj slot range
+     (position `DAT_141c22fb8+slot*0x90`, rotation `DAT_141c22fd4+slot*0x90`-
+     relative, active flag `DAT_141c35438[slot]`), retaining a previous-frame
+     copy per slot in this project's own code; (b) for skinned draws
+     specifically, an equivalent read-and-retain pass over the real
+     `DAT_1415f3188`-based post-skin output positions, keyed by the same
+     per-surface index (`iVar2`) already used throughout; (c) the small
+     hand-authored velocity output (vertex/pixel shader pair, or even a
+     pure CPU-side clip-space diff given both current and previous data are
+     now plain readable memory, not something that strictly requires a
+     GPU pass at all) that turns a current/previous position+rotation pair
+     into the real per-object motion-vector contribution `sl::Constants`
+     expects. Not yet implemented, not yet live-tested this round — this
+     round is the completed research, ready to hand to implementation.
 
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
