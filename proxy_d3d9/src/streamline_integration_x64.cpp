@@ -221,6 +221,24 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
         LogFromController(buf);
     }
 
+    // 2026-09-24: real required-buffer-tag list -- rather than guess which
+    // buffers (color/motion-vectors/etc.) DLSS actually requires beyond the
+    // depth tag already wired, read it directly from the SDK's own real
+    // requirements report (numRequiredTags/requiredTags, sl_core_types.h).
+    // This is the authoritative source, not an assumption from the public
+    // docs' own general description of what DLSS "usually" needs.
+    if (reqs.numRequiredTags > 0 && reqs.requiredTags) {
+        char buf[400];
+        int off = sprintf_s(buf, "[streamline] DLSS required buffer tags (%u): ", reqs.numRequiredTags);
+        for (uint32_t i = 0; i < reqs.numRequiredTags && off < static_cast<int>(sizeof(buf)) - 12; ++i) {
+            off += sprintf_s(buf + off, sizeof(buf) - off, "%u ", reqs.requiredTags[i]);
+        }
+        LogFromController(buf);
+    } else {
+        LogFromController("[streamline] DLSS reports zero required buffer tags (or a null list) -- "
+            "real, worth double-checking rather than assuming depth-only is sufficient.");
+    }
+
     if (reqs.vkNumGraphicsQueuesRequired != 0 || reqs.vkNumComputeQueuesRequired != 0 ||
         reqs.vkNumOpticalFlowQueuesRequired != 0) {
         LogFromController("[streamline] DLSS reports it needs extra Vulkan queues, but DXVK creates "
