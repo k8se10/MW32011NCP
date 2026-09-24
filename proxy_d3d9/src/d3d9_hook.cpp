@@ -58,6 +58,12 @@
 
 extern void LogFromController(const char* msg);
 extern bool IsDxvkActive(); // dllmain.cpp -- see g_dxvkActive's own comment there
+#if defined(_M_X64) || defined(_WIN64)
+extern bool TryInitStreamlineX64(); // streamline_integration_x64.cpp, 2026-09-24 --
+    // deliberately called from here (after CreateDevice returns), NOT from DllMain --
+    // see that file's own header comment and dllmain.cpp's TryLoadVendoredDxvk() for
+    // the real loader-lock-hang history behind that choice.
+#endif
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
 extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp
 
@@ -963,6 +969,23 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
 
     HRESULT hr = g_origCreateDevice(This, Adapter, DeviceType, hFocusWindow, BehaviorFlags,
         pPresentationParameters, ppReturnedDeviceInterface);
+
+#if defined(_M_X64) || defined(_WIN64)
+    // MW32011NCP, 2026-09-24: real, safe point to init Streamline -- the real
+    // Vulkan device (via DXVK, if GraphicsApi=Vulkan) now exists, and we're
+    // long past DllMain's own loader-lock window (a real, live-reproduced
+    // hang confirmed calling this from DllMain deadlocks -- see
+    // TryLoadVendoredDxvk()'s own comment, dllmain.cpp). Gated to fire once
+    // -- CreateDevice can in principle be called more than once (Reset/
+    // device-loss recovery paths elsewhere in this project already handle
+    // that for other state), Streamline's own slInit() should not be
+    // re-invoked on every call.
+    static bool s_streamlineInitAttempted = false;
+    if (!s_streamlineInitAttempted) {
+        s_streamlineInitAttempted = true;
+        TryInitStreamlineX64();
+    }
+#endif
 
     char logBuf[128];
     sprintf_s(logBuf, "[d3d9-hook] CreateDevice called: DeviceType=%lu hwnd=%p hr=0x%08lX",

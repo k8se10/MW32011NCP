@@ -143,6 +143,12 @@
     <ClCompile Include="src\wait_coalescing_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-24: real NVIDIA Streamline SDK integration, first
+         slice (slInit only, no DLSS feature wired yet). See that file's
+         own header comment. -->
+    <ClCompile Include="src\streamline_integration_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <!-- x64-only, 2026-09-16; see iwd_read_cache_x64.cpp's own header
          comment for attribution. -->
     <ClCompile Include="src\iwd_read_cache_x64.cpp" Condition="'$(Platform)'=='x64'">

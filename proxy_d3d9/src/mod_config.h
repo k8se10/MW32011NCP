@@ -741,6 +741,19 @@ struct ModConfig
     // the identical SP-only gate.
     GraphicsApi graphicsApi = GraphicsApi::LegacyD3D9;
 
+    // [Video] StreamlineEnabled (2026-09-24) -- STRICTLY OPT-IN, OFF by
+    // default. Real groundwork, not a functional DLSS feature yet: when on
+    // (and GraphicsApi=Vulkan, SP-only, same gate as DXVK itself), loads the
+    // real, vendored sl.interposer.dll (NOT committed to git -- see
+    // .gitignore's own comment and proxy_d3d9/third_party/streamline/'s
+    // README) and calls the real slInit() with PreferenceFlags::eUseManualHooking
+    // -- confirms the SDK loads and initializes correctly. No actual DLSS
+    // feature (Super Resolution, DLAA, etc.) is wired yet -- see
+    // re_notes/x64_migration/vulkan_dlss_pipeline_research.md section 2 for
+    // the real remaining integration steps (slSetVulkanInfo against DXVK's
+    // own device, resource tagging, the jitter/motion-vector contract).
+    bool streamlineEnabled = false;
+
     // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,
     // 0/disabled by default. Real motivation, direct user framing: "basically the plan
     // is to allow better texture and internal render res as again above 1080p it looks

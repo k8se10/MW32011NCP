@@ -44,6 +44,21 @@ d3d9.dll
 # deployed game install directory (still never committed there).
 !proxy_d3d9/third_party/dxvk/x64/d3d9.dll
 
+# 2026-09-24: real, compiled, SIGNED NVIDIA Streamline/DLSS binaries
+# (sl.interposer.dll, sl.common.dll, sl.dlss.dll, nvngx_dlss.dll, and their
+# own .lib) -- deliberately vendored to disk for local development/testing
+# but NEVER committed. Two real reasons, not just size (nvngx_dlss.dll alone
+# is ~59MB): (1) these fall under NVIDIA's own DLSS SDK EULA, a separate,
+# more restrictive license than the MIT-licensed SDK headers this repo does
+# commit (proxy_d3d9/third_party/streamline/include/) -- including a real,
+# still-unresolved "notify NVIDIA before commercial release" clause (see
+# re_notes/x64_migration/vulkan_dlss_pipeline_research.md section 2.4); (2)
+# this project's own hard-learned lesson from the 2026-09-24 leaked-game-
+# binary incident above -- never commit a large, legally-sensitive binary to
+# a public repo before its distribution terms are actually confirmed clear.
+proxy_d3d9/third_party/streamline/bin/
+proxy_d3d9/third_party/streamline/lib/
+
 # Never commit a copy of any Microsoft system DLL, even accidentally staged for testing.
 d3d9_orig.dll
 

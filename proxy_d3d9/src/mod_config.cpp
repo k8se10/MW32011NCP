@@ -656,6 +656,12 @@ void WriteDefaultConfig(const char* path)
         "; that work lands. STRICTLY OPT-IN once implemented -- same pattern as every other\n"
         "; structurally-significant feature this project ships off by default.\n"
         "GraphicsApi=%s\n"
+        "; Real groundwork, not a functional DLSS feature yet (2026-09-24) -- loads the\n"
+        "; real, vendored sl.interposer.dll (not committed to git, see\n"
+        "; proxy_d3d9/third_party/streamline/) and calls slInit() to confirm the SDK\n"
+        "; loads correctly. Only takes effect with GraphicsApi=Vulkan, SP-only, same\n"
+        "; gate as DXVK itself. 0 = off (default), 1 = on.\n"
+        "StreamlineEnabled=%d\n"
         "; Issue #88: fixes a real engine behavior where the actual 3D scene renders\n"
         "; smaller than your real display, which looks visibly soft/dated (\"2005 bad\")\n"
         "; above 1080p. Set to 100 to render the scene at your real native resolution;\n"
@@ -1053,6 +1059,7 @@ void WriteDefaultConfig(const char* path)
         PhysicalInputName(g_modConfig.customButtonMap.scoreboard),
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         GraphicsApiName(g_modConfig.graphicsApi),
+        g_modConfig.streamlineEnabled ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
@@ -1370,6 +1377,7 @@ void LoadModConfig()
     ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
     ReadBool(path, "Gyro", "OnlyWhileAds", g_modConfig.gyroOnlyWhileAds);
     ReadGraphicsApi(path, g_modConfig.graphicsApi);
+    ReadBool(path, "Video", "StreamlineEnabled", g_modConfig.streamlineEnabled);
     {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;

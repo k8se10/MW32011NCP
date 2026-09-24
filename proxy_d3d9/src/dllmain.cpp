@@ -471,6 +471,18 @@ bool TryLoadVendoredDxvk()
         "-- every d3d9 export from here on routes through DXVK's own D3D9-to-Vulkan "
         "translation instead of the real system d3d9.dll.", dxvkPath);
     Log(buf);
+
+    // MW32011NCP, 2026-09-24: TryInitStreamlineX64() deliberately NOT called
+    // here -- a real, live-reproduced hang (the game never got past its own
+    // splash, no crash dump, log stopped dead after "attach") confirmed
+    // loading sl.interposer.dll from inside DllMain's own DLL_PROCESS_ATTACH
+    // deadlocks on the loader lock. This is the SAME real bug class this
+    // codebase already has a documented precedent for (see Hook_CreateDevice's
+    // own comment, d3d9_hook.cpp, "issue #76's loader-lock hang... from an
+    // unrelated overly-early engine call"). Streamline now initializes from
+    // Hook_CreateDevice instead, once the real device exists and DllMain's
+    // own loader-lock window has long since closed -- see that function's
+    // own call site for the real fix.
     return true;
 }
 
