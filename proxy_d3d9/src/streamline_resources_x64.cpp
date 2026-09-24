@@ -104,6 +104,17 @@ typedef HRESULT(WINAPI* ColorFillFn)(void* This, void* pSurface, const RECT* pRe
     // on why, MIDL/type collisions with DXVK's bundled headers), so its
     // D3DCOLOR typedef isn't available here; DWORD is ABI-identical.
 
+// IDirect3DSurface9::GetDesc, standard COM vtable slot 12 -- same real
+// constant and struct layout overlay_hud.cpp's own kSurfaceGetDescVtableIndex/
+// SurfaceDesc already use, redeclared here per this project's own "each file
+// owns its own copy of these fixed constants" convention. Used, 2026-09-24,
+// as a cheap PURE-D3D9 pre-filter before ever calling the real Vulkan interop
+// path below -- see TagColorResourceForFrame's own header comment for the
+// real "huge fps cost" bug this closes.
+constexpr int kSurfaceGetDescVtableIndexX64 = 12;
+struct SurfaceDescX64 { DWORD Format, Type, Usage, Pool, MultiSampleType, MultiSampleQuality, Width, Height; };
+typedef HRESULT(WINAPI* SurfaceGetDescFnX64)(void* This, SurfaceDescX64* pDesc);
+
 using SetDepthStencilSurfaceFn = HRESULT(STDMETHODCALLTYPE*)(void*, void*);
 SetDepthStencilSurfaceFn g_origSetDepthStencilSurface = nullptr;
 
@@ -164,6 +175,16 @@ bool g_vulkanFunctionsResolveFailed = false;
 // they're two independent resources.
 VkImage g_cachedDepthImage = VK_NULL_HANDLE;
 VkImageView g_cachedDepthView = VK_NULL_HANDLE;
+// Raw D3D9 surface pointer dedup, 2026-09-24 -- same "huge fps cost" bug
+// class as TagColorResourceForFrame's own fix (see that function's header
+// comment): GetVulkanImageInfo flushes pending Vulkan commands, and
+// SetDepthStencilSurface fires many times per real frame even though (per
+// this comment block's own existing note, above) it's usually the SAME 1-2
+// real images repeating. Unlike color, depth has no resolution-based
+// disambiguation target to pre-filter against -- this is a plain "skip the
+// flush entirely when it's literally the same D3D9 surface object as last
+// time" dedup instead.
+void* g_lastProcessedDepthSurfaceX64 = nullptr;
 VkImage g_cachedColorImage = VK_NULL_HANDLE;
 VkImageView g_cachedColorView = VK_NULL_HANDLE;
 
@@ -310,40 +331,68 @@ VkImageView GetOrCreateViewX64(VkImage image, VkFormat format, uint32_t mipLevel
     return view;
 }
 
+// Cached result of the last REAL (non-deduped) resolve -- reused when
+// TagDepthResourceForFrame sees the identical D3D9 surface pointer again,
+// to avoid a second real GetVulkanImageInfo flush for state that hasn't
+// actually changed. See g_lastProcessedDepthSurfaceX64's own comment.
+VkImage g_lastDepthImage = VK_NULL_HANDLE;
+VkImageLayout g_lastDepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+VkImageCreateInfo g_lastDepthInfo{};
+
 void TagDepthResourceForFrame(void* depthSurface)
 {
     ++g_resolveAttemptCount;
     bool heartbeat = g_resolveAttemptCount <= 5 || (g_resolveAttemptCount % 5000) == 0;
 
-    IUnknown* depthSurfaceUnknown = reinterpret_cast<IUnknown*>(depthSurface);
-    ID3D9VkInteropTextureX64* interopTexture = nullptr;
-    HRESULT hr = depthSurfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
-        reinterpret_cast<void**>(&interopTexture));
-    if (FAILED(hr) || !interopTexture) {
-        if (heartbeat) {
-            char buf[200];
-            sprintf_s(buf, "[x64-streamline-depth] QueryInterface for ID3D9VkInteropTexture FAILED "
-                "(hr=0x%08lX) -- this device isn't DXVK, or the interop interface changed.", hr);
-            LogFromController(buf);
-        }
-        return;
-    }
-
     VkImage image = VK_NULL_HANDLE;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkImageCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
-    interopTexture->Release();
 
-    if (FAILED(hr) || image == VK_NULL_HANDLE) {
-        if (heartbeat) {
-            char buf[200];
-            sprintf_s(buf, "[x64-streamline-depth] GetVulkanImageInfo FAILED (hr=0x%08lX) -- no "
-                "real Vulkan image behind this depth-stencil surface.", hr);
-            LogFromController(buf);
+    // REAL, LIVE, SEVERE BUG FIXED, 2026-09-24 -- same class as
+    // TagColorResourceForFrame's own fix (see that function's header
+    // comment): GetVulkanImageInfo flushes pending Vulkan commands, and
+    // SetDepthStencilSurface fires many times per real frame even though
+    // (per g_cachedDepthImage's own existing comment, above) it's usually
+    // the SAME 1-2 real images repeating. When the identical D3D9 surface
+    // pointer is seen again, reuse the cached result from the last REAL
+    // resolve instead of forcing another flush.
+    if (depthSurface == g_lastProcessedDepthSurfaceX64 && g_lastDepthImage != VK_NULL_HANDLE) {
+        image = g_lastDepthImage;
+        layout = g_lastDepthLayout;
+        info = g_lastDepthInfo;
+    } else {
+        IUnknown* depthSurfaceUnknown = reinterpret_cast<IUnknown*>(depthSurface);
+        ID3D9VkInteropTextureX64* interopTexture = nullptr;
+        HRESULT hr = depthSurfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
+            reinterpret_cast<void**>(&interopTexture));
+        if (FAILED(hr) || !interopTexture) {
+            if (heartbeat) {
+                char buf[200];
+                sprintf_s(buf, "[x64-streamline-depth] QueryInterface for ID3D9VkInteropTexture FAILED "
+                    "(hr=0x%08lX) -- this device isn't DXVK, or the interop interface changed.", hr);
+                LogFromController(buf);
+            }
+            return;
         }
-        return;
+
+        hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
+        interopTexture->Release();
+
+        if (FAILED(hr) || image == VK_NULL_HANDLE) {
+            if (heartbeat) {
+                char buf[200];
+                sprintf_s(buf, "[x64-streamline-depth] GetVulkanImageInfo FAILED (hr=0x%08lX) -- no "
+                    "real Vulkan image behind this depth-stencil surface.", hr);
+                LogFromController(buf);
+            }
+            return;
+        }
+
+        g_lastProcessedDepthSurfaceX64 = depthSurface;
+        g_lastDepthImage = image;
+        g_lastDepthLayout = layout;
+        g_lastDepthInfo = info;
     }
 
     if (heartbeat) {
@@ -393,6 +442,42 @@ void TagColorResourceForFrame(void* renderTarget)
 {
     ++g_resolveColorAttemptCount;
     bool heartbeat = g_resolveColorAttemptCount <= 5 || (g_resolveColorAttemptCount % 5000) == 0;
+
+    // REAL, LIVE, SEVERE BUG FIXED, 2026-09-24: this function used to call
+    // QueryInterface+GetVulkanImageInfo UNCONDITIONALLY, before the
+    // resolution-match filter below even ran -- and DXVK's own doc comment on
+    // GetVulkanImageInfo says it "flushes outstanding commands" to report the
+    // post-flush layout. SetRenderTarget(0, ...) fires many times per real
+    // frame (shadow maps, post-process, UI -- ~9+ times/frame per this
+    // project's own [x64-renderview-select-diag] live data), so this was
+    // forcing a real GPU command-buffer flush that many times EVERY frame,
+    // for render targets we almost always immediately discarded anyway --
+    // live-reported as a sustained ~120fps -> ~12fps regression, invisible to
+    // this project's own CPU-side hook timers (frame_benchmark.cpp's
+    // ourOwnTotalMs, and this file's own per-call QPC wrapper in
+    // overlay_hud.cpp) since the real cost is a forced GPU pipeline stall,
+    // not CPU-side hook-body work. Fixed by checking the resolution FIRST via
+    // a cheap, pure-D3D9 IDirect3DSurface9::GetDesc call (no Vulkan interop,
+    // no flush) -- the expensive QueryInterface/GetVulkanImageInfo path below
+    // now only ever runs for the one render target per frame that actually
+    // matches the real internal render-scale resolution.
+    void** rtVtblEarly = *reinterpret_cast<void***>(renderTarget);
+    auto getDescEarly = reinterpret_cast<SurfaceGetDescFnX64>(rtVtblEarly[kSurfaceGetDescVtableIndexX64]);
+    SurfaceDescX64 earlyDesc{};
+    uint32_t earlyExpectedWidth = 0, earlyExpectedHeight = 0;
+    bool haveEarlyExpected = ComputeExpectedInternalResolutionX64(earlyExpectedWidth, earlyExpectedHeight);
+    if (SUCCEEDED(getDescEarly(renderTarget, &earlyDesc)) && haveEarlyExpected &&
+        (earlyDesc.Width != earlyExpectedWidth || earlyDesc.Height != earlyExpectedHeight)) {
+        if (heartbeat) {
+            char buf[220];
+            sprintf_s(buf, "[x64-streamline-color] attempt=%lld pre-filter reject: "
+                "%ux%u != expected %ux%u (no Vulkan interop call made)",
+                g_resolveColorAttemptCount, earlyDesc.Width, earlyDesc.Height,
+                earlyExpectedWidth, earlyExpectedHeight);
+            LogFromController(buf);
+        }
+        return;
+    }
 
     IUnknown* renderTargetUnknown = reinterpret_cast<IUnknown*>(renderTarget);
     ID3D9VkInteropTextureX64* interopTexture = nullptr;

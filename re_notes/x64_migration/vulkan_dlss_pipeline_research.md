@@ -852,6 +852,56 @@ two open pieces item 4 above left unresolved.**
      `dumpbin /headers` confirms genuine x64 output, deployed. **Not yet
      re-tested live** — this is the fix for the reported regression, not
      yet independently reconfirmed fixed by a fresh playtest.
+   - **ROUND 5 FOLLOW-UP #2, same day: the REAL cause found — repeated,
+     unconditional Vulkan command-buffer flushes, not the DObj capture at
+     all.** The device-creation-time fix above did not resolve the report
+     ("still down to about 12fps from over 120"). Real log evidence this
+     time (`proxy_d3d9.log`, a full session, not a 5-frame abort): 338
+     `SLOW FRAME` entries, a sustained ~83-85ms/frame (~12fps) stretch late
+     in the session, `ourOwnTotalMs` (`frame_benchmark.cpp`'s own hardcoded
+     6-category sum) staying near-zero throughout — the SAME blind spot
+     this project already hit once before (2026-09-23, the
+     `vram-diag-timing` precedent in `overlay_hud.cpp`): that metric
+     predates every Streamline/DObj call and measures none of them, so "it's
+     near-zero" does not actually rule this project's own new code out. A
+     real `QueryPerformanceCounter` wrapper was added around the four
+     per-frame Streamline/DObj calls to get real data instead of trusting
+     it. Independently, direct log inspection found the actual mechanism
+     before that new instrumentation was even needed: `TagColorResourceForFrame`
+     (`streamline_resources_x64.cpp`) called `QueryInterface` +
+     `GetVulkanImageInfo` **unconditionally, on every single
+     `SetRenderTarget(0, ...)` call** — BEFORE its own resolution-match
+     filter (round 3d) even ran. DXVK's own doc comment on
+     `GetVulkanImageInfo` states it "flushes outstanding commands" to
+     report the post-flush layout; `SetRenderTarget(0, ...)` fires roughly
+     9+ times per real frame (`[x64-renderview-select-diag]`'s own live
+     count, ~2786 changes across the session), for shadow maps/post-process/
+     UI targets this project almost always immediately discards anyway.
+     Forcing a real GPU pipeline flush that many times per frame, every
+     frame, for resources never even used, is a real, severe, entirely
+     plausible explanation for a sustained 120fps→12fps regression — and
+     invisible to both `ourOwnTotalMs` and the new CPU-side QPC wrapper
+     alike, since the actual cost is a forced GPU synchronization stall,
+     not CPU-side hook-body time. **Fixed**: added a cheap, pure-D3D9
+     `IDirect3DSurface9::GetDesc` pre-filter (vtable slot 12, same real
+     constant/struct `overlay_hud.cpp`'s own `kSurfaceGetDescVtableIndex`
+     already uses) BEFORE the Vulkan interop path — the expensive,
+     flush-triggering call now only ever runs for the one render target per
+     frame that actually matches the real internal render-scale resolution.
+     `TagDepthResourceForFrame` had the identical unconditional-flush shape
+     with no filter at all (this file's own existing comment already
+     documented "SetDepthStencilSurface fires far more often than the
+     underlying image actually changes... usually the same 1-2 real
+     images") — fixed with a same-D3D9-pointer dedup instead (depth has no
+     resolution target to pre-filter against the way color does): a cached
+     copy of the last real `GetVulkanImageInfo` result is reused whenever
+     the identical D3D9 surface pointer repeats, skipping the flush
+     entirely rather than re-deriving already-known data. Build-verified (0
+     errors), `dumpbin /headers` confirms genuine x64 output, deployed.
+     **Not yet re-tested live** — this is the fix for the real, now
+     root-caused mechanism; the earlier device-creation-time signature-scan
+     fix was real and correct but not the actual cause of this specific
+     regression.
 
 ## 3. RenoDX's real per-game catalog — confirms the engine class is achievable, no direct MW3 precedent exists
 
