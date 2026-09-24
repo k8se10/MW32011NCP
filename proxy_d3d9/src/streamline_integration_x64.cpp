@@ -45,6 +45,7 @@ using PFun_slSetVulkanInfo_t = sl::Result(const sl::VulkanInfo&);
 using PFun_slGetNewFrameToken_t = sl::Result(sl::FrameToken*&, const uint32_t*);
 using PFun_slSetTagForFrame_t = sl::Result(const sl::FrameToken&, const sl::ViewportHandle&,
     const sl::ResourceTag*, uint32_t, sl::CommandBuffer*);
+using PFun_slSetConstants_t = sl::Result(const sl::Constants&, const sl::FrameToken&, const sl::ViewportHandle&);
 
 HMODULE g_streamlineModule = nullptr;
 PFun_slInit_t* g_slInit = nullptr;
@@ -53,6 +54,7 @@ PFun_slGetFeatureRequirements_t* g_slGetFeatureRequirements = nullptr;
 PFun_slSetVulkanInfo_t* g_slSetVulkanInfo = nullptr;
 PFun_slGetNewFrameToken_t* g_slGetNewFrameToken = nullptr;
 PFun_slSetTagForFrame_t* g_slSetTagForFrame = nullptr;
+PFun_slSetConstants_t* g_slSetConstants = nullptr;
 bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
 sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
@@ -102,16 +104,18 @@ bool TryLoadStreamlineInterposer()
         GetProcAddress(slModule, "slGetNewFrameToken"));
     g_slSetTagForFrame = reinterpret_cast<PFun_slSetTagForFrame_t*>(
         GetProcAddress(slModule, "slSetTagForFrame"));
+    g_slSetConstants = reinterpret_cast<PFun_slSetConstants_t*>(
+        GetProcAddress(slModule, "slSetConstants"));
     if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo
-        || !g_slGetNewFrameToken || !g_slSetTagForFrame) {
-        // Real worst-case measured (wc -c on the literal): 289 bytes; +MAX_PATH
-        // (260) for %s = 549 -- buf[700] leaves real margin (this project's own
+        || !g_slGetNewFrameToken || !g_slSetTagForFrame || !g_slSetConstants) {
+        // Real worst-case measured (wc -c on the literal): 306 bytes; +MAX_PATH
+        // (260) for %s = 566 -- buf[750] leaves real margin (this project's own
         // standing sprintf_s-overflow lesson).
-        char buf[700];
+        char buf[750];
         sprintf_s(buf, "[streamline] Vendored sl.interposer.dll loaded from '%s' but is missing "
             "slInit/slShutdown/slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/"
-            "slSetTagForFrame exports (corrupted/wrong-version file?) -- Streamline will not be "
-            "initialized this session.", slPath);
+            "slSetTagForFrame/slSetConstants exports (corrupted/wrong-version file?) -- Streamline "
+            "will not be initialized this session.", slPath);
         LogFromController(buf);
         FreeLibrary(slModule);
         g_slInit = nullptr;
@@ -120,13 +124,15 @@ bool TryLoadStreamlineInterposer()
         g_slSetVulkanInfo = nullptr;
         g_slGetNewFrameToken = nullptr;
         g_slSetTagForFrame = nullptr;
+        g_slSetConstants = nullptr;
         return false;
     }
 
     g_streamlineModule = slModule;
-    char buf[500];
+    char buf[550];
     sprintf_s(buf, "[streamline] Loaded vendored sl.interposer.dll from '%s' -- slInit/slShutdown/"
-        "slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/slSetTagForFrame resolved.", slPath);
+        "slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/slSetTagForFrame/"
+        "slSetConstants resolved.", slPath);
     LogFromController(buf);
     return true;
 }
@@ -454,6 +460,43 @@ bool StreamlineSetTagForFrameX64(const sl::ResourceTag* tags, uint32_t numTags)
         char buf[150];
         sprintf_s(buf, "[streamline] slSetTagForFrame() succeeded (tick=%lld, numTags=%u)",
             s_tagTickCount, numTags);
+        LogFromController(buf);
+    }
+    return true;
+}
+
+// 2026-09-24: real slSetConstants wrapper -- the next unstarted step after
+// resource tagging (all four required tags now wired,
+// streamline_resources_x64.cpp). Called from streamline_camera_x64.cpp with
+// a real, built sl::Constants (camera-to-world basis + the independently-
+// built standard projection matrix). Same real FrameToken/viewport-0
+// convention as StreamlineSetTagForFrameX64.
+bool StreamlineSetConstantsX64(const sl::Constants& constants)
+{
+    if (!g_streamlineVulkanInfoSet) return false;
+    if (!g_streamlineCurrentFrameToken) return false;
+
+    sl::ViewportHandle viewport(static_cast<uint32_t>(0));
+    sl::Result result = g_slSetConstants(constants, *g_streamlineCurrentFrameToken, viewport);
+
+    static long long s_constantsTickCount = 0;
+    ++s_constantsTickCount;
+    bool heartbeat = s_constantsTickCount <= 5 || (s_constantsTickCount % 5000) == 0;
+    if (result != sl::Result::eOk) {
+        static bool s_failureLogged = false;
+        if (!s_failureLogged || heartbeat) {
+            s_failureLogged = true;
+            char buf[150];
+            sprintf_s(buf, "[streamline] slSetConstants() FAILED (result=%d, tick=%lld)",
+                static_cast<int>(result), s_constantsTickCount);
+            LogFromController(buf);
+        }
+        return false;
+    }
+
+    if (heartbeat) {
+        char buf[100];
+        sprintf_s(buf, "[streamline] slSetConstants() succeeded (tick=%lld)", s_constantsTickCount);
         LogFromController(buf);
     }
     return true;

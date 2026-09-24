@@ -88,10 +88,21 @@ constexpr DWORD kD3DFMT_A8R8G8B8 = 21; // matches the real scene color's own
     // confirmed VkFormat 44 (VK_FORMAT_B8G8R8A8_UNORM) via DXVK's translation.
 constexpr DWORD kD3DFMT_G16R16F = 115; // standard D3D9 2-channel 16-bit float --
     // the real, standard format for a motion-vector buffer (X/Y offset per pixel).
+constexpr int kColorFillVtableIndex = 35; // IDirect3DDevice9::ColorFill -- same
+    // standard D3D9 vtable layout already confirmed live elsewhere in this
+    // codebase (overlay_hud.cpp's own kEndSceneVtableIndex=42/kClearVtableIndex=43,
+    // and this file's own kCreateTextureVtableIndex=23/kSetRenderTargetVtableIndex=37/
+    // kSetDepthStencilSurfaceVtableIndex=39 -- all consistent with one real,
+    // single vtable ordering, not independently guessed here).
 
 typedef HRESULT(WINAPI* CreateTextureFn)(void* This, UINT Width, UINT Height, UINT Levels,
     DWORD Usage, DWORD Format, DWORD Pool, void** ppTexture, HANDLE* pSharedHandle);
 typedef HRESULT(WINAPI* GetSurfaceLevelFn)(void* This, UINT Level, void** ppSurfaceLevel);
+typedef HRESULT(WINAPI* ColorFillFn)(void* This, void* pSurface, const RECT* pRect, DWORD color);
+    // DWORD, not D3DCOLOR (a plain DWORD typedef in the real SDK) -- this file
+    // deliberately never includes d3d9.h (see dxvk_interop_x64.h's own comment
+    // on why, MIDL/type collisions with DXVK's bundled headers), so its
+    // D3DCOLOR typedef isn't available here; DWORD is ABI-identical.
 
 using SetDepthStencilSurfaceFn = HRESULT(STDMETHODCALLTYPE*)(void*, void*);
 SetDepthStencilSurfaceFn g_origSetDepthStencilSurface = nullptr;
@@ -607,16 +618,16 @@ void TagOutputColorResourceForFrame()
 // but sized to ComputeExpectedInternalResolutionX64() (the color INPUT
 // resolution) rather than the native/output resolution.
 //
-// HONEST GAP, not yet closed: this texture's real initial content is
-// D3D9-undefined (CreateTexture with no initial data), not zeroed. This is
-// harmless for THIS round's deliverable (completing the real required-tag
-// list structurally) since nothing reads it yet -- slSetConstants
-// (Constants::cameraMotionIncluded=eFalse, the flag that tells Streamline
-// this buffer's own content doesn't matter for Stage 1) hasn't been wired
-// yet either. Flagged here so a future session doesn't assume this is
-// already correct once slSetConstants/slEvaluateFeature integration starts
-// -- a real zero-fill (or setting cameraMotionIncluded=eFalse correctly)
-// needs to land before this buffer's content can be trusted.
+// CLOSED, 2026-09-24: this texture's real initial content used to be
+// D3D9-undefined (CreateTexture with no initial data). Now that
+// slSetConstants is being wired (streamline_camera_x64.cpp) and will
+// actually set Constants::motionVectorsInvalidValue, undefined content is a
+// real correctness problem, not a harmless gap -- Streamline needs to be
+// able to tell "no per-object motion here" from "real motion", and it can
+// only do that if every never-written texel reliably holds one known
+// sentinel value. Fixed with a real ColorFill(surface, nullptr, 0) right
+// after (re)creation, below -- zeros every channel once, at (re)create time
+// only, not per-frame. motionVectorsInvalidValue is set to 0.0f to match.
 void TagMotionVectorsResourceForFrame()
 {
     static long long s_attemptCount = 0;
@@ -671,9 +682,13 @@ void TagMotionVectorsResourceForFrame()
 
         g_motionVectorsWidth = expectedWidth;
         g_motionVectorsHeight = expectedHeight;
-        char buf[200];
+
+        auto colorFill = reinterpret_cast<ColorFillFn>(deviceVtbl[kColorFillVtableIndex]);
+        HRESULT fillHr = colorFill(device, g_motionVectorsSurface, nullptr, 0);
+        char buf[220];
         sprintf_s(buf, "[x64-streamline-mvec] Created a real %ux%u G16R16F motion-vectors "
-            "texture+surface.", g_motionVectorsWidth, g_motionVectorsHeight);
+            "texture+surface, ColorFill zero-init hr=0x%08lX.", g_motionVectorsWidth,
+            g_motionVectorsHeight, fillHr);
         LogFromController(buf);
     }
 
@@ -773,6 +788,18 @@ void TagStreamlineOutputColorX64()
 void TagStreamlineMotionVectorsX64()
 {
     TagMotionVectorsResourceForFrame();
+}
+
+// Public wrapper around the anonymous-namespace ComputeExpectedInternalResolutionX64
+// above (internal linkage -- not directly callable from another translation
+// unit, per this project's own already-documented linkage lesson,
+// CLAUDE.md's "Checking is far cheaper than digging" note). Added 2026-09-24
+// so streamline_camera_x64.cpp can size Constants::mvecScale against the
+// same real resolution the motion-vectors buffer itself actually uses,
+// without duplicating the formula a second time.
+bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outHeight)
+{
+    return ComputeExpectedInternalResolutionX64(outWidth, outHeight);
 }
 
 // Called once, from InstallEndSceneHook (overlay_hud.cpp) -- same one-

@@ -40,10 +40,22 @@ extern void LogFromController(const char* msg); // dllmain.cpp
 extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp,
     // real, already-live-confirmed dvar reader (already used for "cg_fov" itself
     // in that same file's own ADS zoom-slowdown feature).
+extern bool StreamlineSetConstantsX64(const sl::Constants& constants); // streamline_integration_x64.cpp
+extern bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp
 
 namespace {
 
 sl::float4x4 g_prevCameraToWorldX64{};
+// Previous frame's own projection matrix -- needed for clipToPrevClip/
+// prevClipToClip (sl_matrix_helpers.h's own recalculateCameraMatrices()
+// reference math, replicated manually below rather than called directly,
+// since that function's OWN previous-frame storage is a static, unkeyed
+// pair explicitly marked "DO NOT USE THIS IN ANYTHING PROPER" -- this
+// project already tracks its own real previous-frame camera-to-world
+// matrix the same way (g_prevCameraToWorldX64 above), so tracking the
+// matching previous projection matrix here is the same pattern, not a new
+// one.
+sl::float4x4 g_prevCameraViewToClipX64{};
 bool g_haveStreamlinePrevFrameX64 = false;
 long long g_streamlineCameraTickCountX64 = 0;
 
@@ -82,7 +94,7 @@ long long g_streamlineCameraTickCountX64 = 0;
 constexpr float kEstimatedNearPlaneX64 = 4.0f;   // UNCONFIRMED, not RE'd
 constexpr float kEstimatedFarPlaneX64 = 4000.0f; // UNCONFIRMED, not RE'd
 
-sl::float4x4 BuildStandardProjectionMatrixX64()
+sl::float4x4 BuildStandardProjectionMatrixX64(float* outFovRadians = nullptr, float* outAspect = nullptr)
 {
     float fovDegrees = GetDvarFloatX64_Exported("cg_fov");
     if (fovDegrees <= 0.0f || fovDegrees >= 180.0f) fovDegrees = 65.0f; // real cg_fov
@@ -95,9 +107,17 @@ sl::float4x4 BuildStandardProjectionMatrixX64()
     if (renderHeight <= 0) renderHeight = 1080;
     float aspect = static_cast<float>(renderWidth) / static_cast<float>(renderHeight);
 
-    float halfFovXRad = (fovDegrees * 3.14159265358979323846f / 180.0f) * 0.5f;
+    float fovXRadians = fovDegrees * 3.14159265358979323846f / 180.0f;
+    float halfFovXRad = fovXRadians * 0.5f;
     float xScale = 1.0f / tanf(halfFovXRad);
     float yScale = xScale * aspect;
+
+    // sl::Constants::cameraFOV/cameraAspectRatio want the same real FOV/aspect
+    // this matrix is built from -- exposed via out-params so the one caller
+    // that fills Constants (UpdateStreamlineCameraMatricesX64) doesn't have to
+    // re-derive them from cg_fov/GetRealScreenSize a second time.
+    if (outFovRadians) *outFovRadians = fovXRadians;
+    if (outAspect) *outAspect = aspect;
 
     constexpr float zn = kEstimatedNearPlaneX64;
     constexpr float zf = kEstimatedFarPlaneX64;
@@ -122,13 +142,16 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
     const float right[3], const float up[3])
 {
     ++g_streamlineCameraTickCountX64;
+    bool heartbeat = g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0;
 
-    // Real, live-verification diagnostic for the new standard projection
-    // matrix -- heartbeat cadence only (first 5, then every 20000th), same
-    // as the rest of this feature's own logging. Zero behavior change (not
-    // yet fed into slSetConstants -- see this file's own top comment).
-    if (g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0) {
-        sl::float4x4 proj = BuildStandardProjectionMatrixX64();
+    // Real projection matrix, built every frame now (Constants::cameraViewToClip
+    // needs it, not just the diagnostic log below).
+    float fovRadians = 0.0f, aspect = 0.0f;
+    sl::float4x4 proj = BuildStandardProjectionMatrixX64(&fovRadians, &aspect);
+
+    // Real, live-verification diagnostic for the projection matrix -- heartbeat
+    // cadence only, same as the rest of this feature's own logging.
+    if (heartbeat) {
         char pbuf[300];
         sprintf_s(pbuf, "[x64-streamline-projmat] tick=%lld xScale=%.5f yScale=%.5f "
             "(zn=%.1f zf=%.1f UNCONFIRMED)",
@@ -164,6 +187,60 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
         sl::float4(pos[0],     pos[1],     pos[2],     1.0f),
     };
 
+    // sl::Constants fields shared by both the "have previous frame" and
+    // "first frame" branches below -- built once here.
+    sl::Constants constants{};
+    constants.cameraViewToClip = proj;
+    constants.cameraPos = sl::float3(pos[0], pos[1], pos[2]);
+    constants.cameraUp = upVec;
+    constants.cameraRight = rightVec;
+    constants.cameraFwd = fwdVec;
+    constants.cameraNear = kEstimatedNearPlaneX64;
+    constants.cameraFar = kEstimatedFarPlaneX64;
+    constants.cameraFOV = fovRadians;
+    constants.cameraAspectRatio = aspect;
+    // HONEST GAP, real and unresolved: no actual sub-pixel jitter is applied
+    // to real 3D geometry rendering anywhere in this pipeline yet -- the one
+    // "jitter" this project's own earlier RE round found and injected targets
+    // a confirmed 2D screen-space compositing matrix, unrelated to the real
+    // 3D scene (see this file's own BuildStandardProjectionMatrixX64 comment
+    // and the research doc). (0,0) here is the honest, correct value for
+    // "no jitter currently applied", not a placeholder standing in for a
+    // real value this project forgot to wire.
+    constants.jitterOffset = sl::float2(0.0f, 0.0f);
+    // Normalizes motion-vector texel values into Streamline's expected
+    // [-1,1] range -- standard 1/resolution scale, matching the motion-
+    // vectors buffer's own real resolution (ComputeExpectedInternalResolutionX64,
+    // streamline_resources_x64.cpp -- the same internal render-scale
+    // resolution the color INPUT tag uses, not the native/output one).
+    {
+        uint32_t mvW = 0, mvH = 0;
+        if (GetStreamlineInternalRenderResolutionX64(mvW, mvH) && mvW > 0 && mvH > 0) {
+            constants.mvecScale = sl::float2(1.0f / static_cast<float>(mvW),
+                1.0f / static_cast<float>(mvH));
+        } else {
+            constants.mvecScale = sl::float2(1.0f, 1.0f);
+        }
+    }
+    // Every texel of our own motion-vectors buffer is zero-filled at
+    // (re)create time now (streamline_resources_x64.cpp's ColorFill fix,
+    // 2026-09-24) -- 0.0f is therefore a real, reliable sentinel, not a
+    // guess.
+    constants.motionVectorsInvalidValue = 0.0f;
+    constants.depthInverted = sl::Boolean::eFalse; // matches this project's
+        // own non-reversed-Z projection matrix construction above (m22=zf/(zf-zn),
+        // standard forward depth, not reversed).
+    constants.cameraMotionIncluded = sl::Boolean::eFalse; // Stage 1: camera-only
+        // motion vectors, per this whole feature's own design (research doc
+        // section 2.5) -- Streamline computes/accounts for camera motion
+        // itself from the matrices above; our own (currently all-zero) MV
+        // buffer only ever needs to carry real per-object motion, which
+        // doesn't exist yet either (nothing writes non-zero values into it).
+    constants.motionVectors3D = sl::Boolean::eFalse;
+    constants.orthographicProjection = sl::Boolean::eFalse;
+    constants.motionVectorsDilated = sl::Boolean::eFalse;
+    constants.motionVectorsJittered = sl::Boolean::eFalse;
+
     if (g_haveStreamlinePrevFrameX64) {
         // The real, camera-space, precision-safe relative transform between
         // this frame and the previous one -- sl_matrix_helpers.h's own
@@ -174,6 +251,22 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
         // movement speed), not the raw world-space position delta.
         sl::float4x4 cameraToPrevCamera{};
         sl::calcCameraToPrevCamera(cameraToPrevCamera, cameraToWorld, g_prevCameraToWorldX64);
+
+        // clipToPrevClip/prevClipToClip -- manually replicating
+        // sl_matrix_helpers.h's own recalculateCameraMatrices() real math
+        // (clipToPrevCameraView = clipToCameraView * cameraViewToPrevCameraView;
+        // clipToPrevClip = clipToPrevCameraView * cameraViewToClipPrev), using
+        // THIS project's own real, per-session previous-frame tracking
+        // (g_prevCameraToWorldX64/g_prevCameraViewToClipX64) rather than that
+        // function's own static, unkeyed storage -- see this file's own top
+        // comment for why recalculateCameraMatrices() itself is never called
+        // directly.
+        sl::matrixFullInvert(constants.clipToCameraView, constants.cameraViewToClip);
+        sl::float4x4 clipToPrevCameraView{};
+        sl::matrixMul(clipToPrevCameraView, constants.clipToCameraView, cameraToPrevCamera);
+        sl::matrixMul(constants.clipToPrevClip, clipToPrevCameraView, g_prevCameraViewToClipX64);
+        sl::matrixFullInvert(constants.prevClipToClip, constants.clipToPrevClip);
+        constants.reset = sl::Boolean::eFalse;
 
         // 2026-09-24: this function is called on EVERY nonzero-position fire,
         // roughly 13 of which are bit-identical within one real frame (see
@@ -187,7 +280,6 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
         // camera still confirms the pipeline is alive.
         float tx = cameraToPrevCamera[3].x, ty = cameraToPrevCamera[3].y, tz = cameraToPrevCamera[3].z;
         bool realMotion = (fabsf(tx) > 0.0001f) || (fabsf(ty) > 0.0001f) || (fabsf(tz) > 0.0001f);
-        bool heartbeat = g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0;
 
         // Real-motion logging is rate-limited (this project's own standing
         // "never unthrottled per-frame" lesson, issue #87) -- a moving
@@ -207,12 +299,30 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
             LogFromController(buf);
         }
     } else {
+        // First frame -- no real previous-frame history exists yet.
+        // clipToPrevClip/prevClipToClip are left as their default-constructed
+        // (all-zero) matrices, and Constants::reset=eTrue tells Streamline
+        // exactly that: "previous frame has no connection to the current
+        // one" (sl_consts.h's own doc comment on this flag), so it won't try
+        // to use them.
+        sl::matrixFullInvert(constants.clipToCameraView, constants.cameraViewToClip);
+        constants.reset = sl::Boolean::eTrue;
+
         g_haveStreamlinePrevFrameX64 = true;
         LogFromController("[x64-streamline-camera] First frame -- camera-to-world tracking "
             "started, no previous frame to compare against yet.");
     }
 
+    bool ok = StreamlineSetConstantsX64(constants);
+    if (heartbeat) {
+        char cbuf[150];
+        sprintf_s(cbuf, "[x64-streamline-constants] tick=%lld slSetConstants call %s",
+            g_streamlineCameraTickCountX64, ok ? "issued" : "SKIPPED (not ready)");
+        LogFromController(cbuf);
+    }
+
     g_prevCameraToWorldX64 = cameraToWorld;
+    g_prevCameraViewToClipX64 = proj;
 }
 
 // Real reset hook for level loads/camera cuts -- calcCameraToPrevCamera
