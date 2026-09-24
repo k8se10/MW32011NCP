@@ -669,11 +669,15 @@ This project vendors and links the following third-party library:
 - **[NVIDIA Streamline](https://github.com/NVIDIAGameWorks/Streamline)**
   (`proxy_d3d9/third_party/streamline/`) — Copyright (c) 2023 NVIDIA
   Corporation, MIT license (see
-  `proxy_d3d9/third_party/streamline/license.txt`). Only the real, public
-  SDK headers are vendored here (not the source build system, sample code,
-  or platform binaries) — real, compiled, signed `sl.*.dll`/NGX runtime
-  binaries (a separate license, NVIDIA's own DLSS SDK EULA, not MIT) will be
-  vendored separately once real DLSS integration work begins; see
+  `proxy_d3d9/third_party/streamline/license.txt`). Only the public SDK
+  headers are committed here (not the source build system, sample code, or
+  platform binaries). NVIDIA's compiled, signed runtime binaries (`sl.*.dll`,
+  `nvngx_*.dll`) are not part of this project and are not covered by its
+  license: they are governed by NVIDIA's own RTX SDKs License, redistributed
+  unmodified in object-code form only, never committed to this repository,
+  and licensed for use only on NVIDIA GPUs — see `LICENSE`'s "Third-party
+  components" section. DLSS is an NVIDIA-GPU-only feature within the
+  vendor-neutral `Vulkan` mode. See
   `re_notes/x64_migration/vulkan_dlss_pipeline_research.md` section 2.4 for
   the full licensing research and section 2 for the integration plan.
 

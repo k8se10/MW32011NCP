@@ -75,6 +75,18 @@ license, unmodified in license terms:
   license, see `proxy_d3d9/third_party/dxvk/LICENSE.txt` for full terms.
   Vendored as prebuilt official release binaries, unmodified, powering the
   opt-in `[Video] GraphicsApi=Vulkan` mode.
+- NVIDIA Streamline SDK headers (`proxy_d3d9/third_party/streamline/`) —
+  Copyright (c) 2023 NVIDIA Corporation, MIT license, see
+  `proxy_d3d9/third_party/streamline/license.txt` for full terms.
+- NVIDIA proprietary runtime binaries — the signed Streamline modules
+  (`sl.*.dll`) and the DLSS/NGX runtimes (`nvngx_*.dll`) — are NOT covered by
+  this license and are not part of the Mod. When distributed with a release,
+  they are redistributed unmodified, in object-code form only, and are
+  governed solely by NVIDIA's own "NVIDIA RTX SDKs LICENSE" (the version
+  shipped with the SDK release they come from). Under that license they are
+  licensed for use only in systems with NVIDIA GPUs. Nothing in this license
+  grants, or purports to grant, any right to use, copy, modify, or
+  redistribute them; they are never committed to this repository.
 - Isotherm Sans (`assets/fonts/`), a modernized derivative of Manrope
   (Copyright 2018 The Manrope Project Authors) this project maintains as
   [`k8se10/isotherm-sans`](https://github.com/k8se10/isotherm-sans), embedded
