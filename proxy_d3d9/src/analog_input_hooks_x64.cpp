@@ -1146,14 +1146,22 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     }
 
     // MW32011NCP, 2026-09-24: real per-frame camera-to-world matrix tracking
-    // (streamline_camera_x64.cpp) -- called on every MAIN-SCENE-PASS fire
-    // (not the shadow pass, and not just the sparse diagnostic cadence
-    // below), since this needs genuine once-per-real-frame data for the
-    // previous-frame comparison to mean anything. Uses the same confirmed
-    // pos/fwd/right/up offsets the diagnostic log below reads -- see that
-    // block's own comment for the full RE trail.
-    if (isMainScenePass) {
-        const float* camPos = reinterpret_cast<const float*>(base + 0x1590);
+    // (streamline_camera_x64.cpp). REVISED same day, real live data: the
+    // isMainScenePass/_ReturnAddress() gate never matches live (see this
+    // function's own gate-diag history above) -- a real burst capture
+    // (60 consecutive in-level fires) showed the actual pattern instead:
+    // ~13 different callers per real frame all sharing BIT-IDENTICAL
+    // pos/fwd/right/up data (this shared render-state struct is filled ONCE
+    // per frame and read by many sub-passes), followed by 2 calls with
+    // pos/fwd read as EXACTLY ZERO (a different, non-camera pass -- almost
+    // certainly 2D/UI, not the 3D scene). Dropped the unreliable
+    // return-address gate entirely; the real, robust fix is simpler: skip
+    // exactly-zero position (never a legitimate world-space camera location
+    // in this game), and let the ~13 identical-data calls through --
+    // harmless, since calcCameraToPrevCamera on identical data just produces
+    // an identity-ish transform each time, not corruption.
+    const float* camPos = reinterpret_cast<const float*>(base + 0x1590);
+    if (camPos[0] != 0.0f || camPos[1] != 0.0f || camPos[2] != 0.0f) {
         const float* camFwd = reinterpret_cast<const float*>(base + 0x159c);
         const float* camRight = reinterpret_cast<const float*>(base + 0x15a8);
         const float* camUp = reinterpret_cast<const float*>(base + 0x15b4);
@@ -1260,34 +1268,35 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     // HaltonSequence's own big comment above for the derived-not-guessed
     // NDC-unit calibration rationale.
     //
-    // Main-scene-pass gating -- FIXED same day, root cause found: the
-    // return-address discriminator (g_projectionMainScenePassRetAddr) WAS
-    // being correctly resolved at startup (see the signature-scan block
-    // below, "[x64-jitter-probe] Main-scene-pass return address resolved");
-    // it was simply never actually CONSULTED here -- this block wrote to
-    // every call (shadow-map pass included) unconditionally, which is the
-    // real cause of the shadow shimmer this was flagged for, not a failed
-    // resolution. Gated now via _ReturnAddress(), which (called from inside
-    // this MinHook detour, before or after the real call-through -- the
-    // caller's own return address doesn't change mid-frame-of-this-function)
-    // reflects the actual call site in FUN_14018e720 that invoked this hook.
-    // Degrades safely if the address never resolved this session (signature
-    // miss): jitter stays off entirely rather than risk re-introducing the
-    // shadow-pass shimmer this fix exists to remove. (callerAddr/
-    // isMainScenePass are now computed once at the top of this function --
-    // see that block's own comment.)
-    if (g_modConfig.projectionJitterEnabled && !isMainScenePass && g_projectionMainScenePassRetAddr == 0) {
-        static bool s_gateMissingLogged = false;
-        if (!s_gateMissingLogged) {
-            s_gateMissingLogged = true;
-            LogFromController("[x64-jitter] ProjectionJitterEnabled=1, but the main-scene-pass "
-                "return address never resolved this session (signature miss) -- refusing to jitter "
-                "at all rather than risk shadow-pass shimmer. See the "
-                "[x64-jitter-probe] signature-scan log line above for the real cause.");
+    // Main-scene-pass gating -- REVISED same day, a real earlier "FIXED"
+    // claim here turned out to be wrong, corrected honestly rather than left
+    // standing: a live gate-diag capture (60 consecutive in-level fires,
+    // this function's own history above) proved isMainScenePass/
+    // _ReturnAddress() NEVER actually matches live -- the real per-frame
+    // call pattern is ~13 different callers all sharing one bit-identical
+    // render-state struct per frame (not a clean two-call shadow/main
+    // split), so this gate has been silently inert (jitter never firing at
+    // all, with no warning logged -- a real "always logged" convention
+    // violation, also fixed here) since it was written, not actually
+    // protecting anything. Switched to the same pragmatic fix camera
+    // tracking above uses: skip only the confirmed-bogus exactly-zero
+    // position calls (the real 2-call non-camera/UI pass), let every real
+    // camera call through. **This does NOT resolve the original shadow-pass
+    // shimmer concern** -- whether shadow-map generation reads this exact
+    // shared struct (and would therefore still pick up the jitter offset)
+    // is a genuinely open question this round didn't answer; flagged
+    // honestly rather than claimed fixed. ProjectionJitterEnabled stays
+    // off by default.
+    if (g_modConfig.projectionJitterEnabled && camPos[0] == 0.0f && camPos[1] == 0.0f && camPos[2] == 0.0f) {
+        static bool s_zeroPassSkippedLogged = false;
+        if (!s_zeroPassSkippedLogged) {
+            s_zeroPassSkippedLogged = true;
+            LogFromController("[x64-jitter] Skipping a zero-position (non-camera/UI) pass -- "
+                "jitter only applies to real camera fires. This message logs once.");
         }
     }
 
-    if (g_modConfig.projectionJitterEnabled && isMainScenePass) {
+    if (g_modConfig.projectionJitterEnabled && (camPos[0] != 0.0f || camPos[1] != 0.0f || camPos[2] != 0.0f)) {
         int renderWidth = 1920, renderHeight = 1080;
         GetRealScreenSize(GetLastKnownRenderDevice(), renderWidth, renderHeight);
         if (renderWidth <= 0) renderWidth = 1920;
