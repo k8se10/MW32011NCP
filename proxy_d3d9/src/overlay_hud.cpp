@@ -53,11 +53,17 @@ void StreamlineFrameTick(); // streamline_integration_x64.cpp, 2026-09-24 -- rea
     // exactly-once-per-real-frame hook point this project already uses for
     // every other per-frame diagnostic. No-ops (returns immediately) until
     // Streamline has actually registered a device via slSetVulkanInfo.
-void LogDepthStencilVulkanImageX64(); // streamline_resources_x64.cpp, 2026-09-24 --
-    // real resource-tagging groundwork: resolves and logs the real Vulkan image
-    // behind the game's active depth-stencil surface (DXVK's own
-    // ID3D9VkInteropTexture interop). Read-only, zero behavior change, its own
-    // sparse internal cadence (not gated here).
+void InstallDepthStencilHookX64(void* realDevice); // streamline_resources_x64.cpp,
+    // 2026-09-24 -- real resource-tagging groundwork: hooks SetDepthStencilSurface
+    // to capture and log the real Vulkan image behind whatever depth-stencil
+    // surface the game itself binds (DXVK's own ID3D9VkInteropTexture interop).
+    // Read-only, zero behavior change to the real call. Installed once from
+    // InstallEndSceneHook below, same "one device for this game's lifetime" guard
+    // every other x64 hook installer in this file uses. REVISED same day: an
+    // earlier version polled GetDepthStencilSurface from Hook_EndScene instead,
+    // which is AFTER the depth-stencil surface is typically unbound (real
+    // D3DERR_NOTFOUND every time, live-confirmed) -- hooking the real bind call
+    // is the fix.
 #endif
 #include "vanilla_settings_sync.h"
 #include "real_settings.h"
@@ -7622,7 +7628,6 @@ HRESULT WINAPI Hook_EndScene(void* device)
     DrawJitterProbeOverlayIfEnabled(device);
 #if defined(_M_X64) || defined(_WIN64)
     StreamlineFrameTick();
-    LogDepthStencilVulkanImageX64();
 #endif
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every
@@ -8063,6 +8068,12 @@ void InstallEndSceneHook(void* realDevice)
     EnsureBlurTexture(realDevice);
     EnsureBlurShader(realDevice);
     EnsureDebugMarkerTexture(realDevice);
+
+#if defined(_M_X64) || defined(_WIN64)
+    InstallDepthStencilHookX64(realDevice); // real resource-tagging groundwork,
+        // 2026-09-24 -- guarded internally (g_origSetDepthStencilSurface), safe
+        // to call every time this function runs.
+#endif
 
     if (g_origEndScene) return; // hooks already installed -- one device for this game's lifetime
     void** deviceVtbl = *reinterpret_cast<void***>(realDevice);
