@@ -32,7 +32,7 @@ namespace dxvk {
       const uint32_t arraySlices = m_texture.Desc()->ArraySize;
       const uint32_t mipLevels   = m_texture.Desc()->MipLevels;
 
-      m_subresources.resize(arraySlices * mipLevels);
+      m_subresources.resize(size_t(arraySlices) * size_t(mipLevels));
 
       for (uint32_t i = 0; i < arraySlices; i++) {
         for (uint32_t j = 0; j < mipLevels; j++) {

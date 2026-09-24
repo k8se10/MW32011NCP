@@ -342,7 +342,7 @@ namespace dxvk::hud {
   void HudRenderer::uploadFontResources(
     const Rc<DxvkCommandList>&ctx) {
     size_t bufferDataSize = sizeof(HudFontGpuData);
-    size_t textureDataSize = g_hudFont.width * g_hudFont.height;
+    size_t textureDataSize = size_t(g_hudFont.width) * size_t(g_hudFont.height);
 
     DxvkBufferCreateInfo bufferInfo;
     bufferInfo.size = bufferDataSize + textureDataSize;
