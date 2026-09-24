@@ -16775,6 +16775,22 @@ for an indirect-call dispatch table referencing `FUN_004d08f0`'s address
 (a function-pointer array, not a direct-call xref), or trace forward from
 `sm_sunEnable`/`sm_spotEnable`'s own consumers instead of `sm_enable`'s.
 
+**Real, unplanned bonus lead found on the x64 side, 2026-09-24** (chasing a
+completely different question -- the DLSS jitter-injection hook point):
+`FUN_1401d8f70` (x64) was decompiled and confirmed NOT to be the camera/
+projection-matrix function it was being investigated as -- its real shape
+is a shadow-map quality-tier/render-target selection function (small
+integer tier selectors, texel-size-reciprocal floats, indexes into the
+same render-target surface-pointer array the render-view activator reads
+from). This is very likely the real x64 function behind this issue's own
+still-unlocated "shadow-map resolution" search -- shadow map *creation*
+was found separately (the generic render-target table,
+`renderer_architecture_map.md` §5b), but resolution/quality-tier control
+specifically was searched for at length on x86 and never found here.
+Not yet followed up as its own investigation -- flagged for a future pass,
+full detail in `re_notes/x64_migration/vulkan_dlss_pipeline_research.md`
+item 10.
+
 ## 108. Campaign scripted sequences require a genuine button-PRESS event, not steady-state kbutton injection -- likely unifies issue #75 (elevator mantle) with a newly-confirmed QTE input gap (2026-08-29)
 
 **Status: Partially Resolved (x64 only) -- real root cause found for the Jump/chopper-elevator-jump half (issue #75), fix shipped, build-verified, NOT YET LIVE-TESTED; a lower-confidence, additive fix also shipped for the Interact/X half. See the 2026-09-14 round at the end of this entry for the full finding.** Direct
