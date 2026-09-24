@@ -86,6 +86,11 @@ namespace dxvk {
     /// Enables CUDA interop extensions if available
     bool enableNvCudaInterop = true;
 
+    /// MW32011DXVK: also allows the CUDA interop extensions on native
+    /// Windows Vulkan drivers, not only under winevulkan. Opt-in, off by
+    /// default -- see dxvk_device_info.cpp's own comment at the gate.
+    bool enableNvCudaInteropNative = false;
+
     /// Enable present timing features
     bool enablePresentTiming = true;
 

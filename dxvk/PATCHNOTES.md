@@ -11,13 +11,26 @@ investigation/reverse-engineering trail behind each entry.
 
 ## Unreleased
 
-No patches to upstream DXVK source yet — this fork currently ships
-byte-for-byte identical to upstream `v3.1.1`. The first candidate
-investigation (see `re_notes/known_issues.md` issue #1: a motion-blur
-post-process pass in the sibling `MW32011NCP` project produced no visible
-effect under this DXVK build) is resolved — the real bug was in
-`MW32011NCP`'s own game-logic code, not this fork's own DXVK source, so no
-patch landed here. A real, working native-Windows DXVK build toolchain
-(MSYS2/MinGW-w64/Meson/Ninja/glslang) was set up in the course of that
-investigation and stays in place as real groundwork for a future,
-genuinely IW5-specific DXVK quirk.
+**Summary:** First patch on top of upstream `v3.1.1`: an opt-in
+`dxvk.enableNvCudaInteropNative` option that lets a native-Windows host
+integrating DLSS get the `VK_NVX_*` extensions DLSS needs on DXVK's Vulkan
+device. Off by default, so behavior is unchanged unless it is set.
+
+### What's New
+1. **`dxvk.enableNvCudaInteropNative` (default `False`).** Upstream enables
+   `VK_NVX_binary_import`/`VK_NVX_image_view_handle` only under winevulkan,
+   so a native-Windows host running NVIDIA Streamline against DXVK's own
+   `VkDevice` can never get them — DXVK owns `vkCreateDevice`. Setting this
+   option to `True` allows them on native drivers too; the existing 32-bit,
+   safe-mode and `dxvk.enableNvCudaInterop` conditions still apply, and a
+   failed device creation still falls back to safe mode without them. Not
+   game-specific. Not yet built or live-tested. See
+   `re_notes/known_issues.md` issue #2.
+
+### Groundwork
+1. **Issue #1 resolved as not a DXVK bug.** A motion-blur post-process pass
+   in the sibling `MW32011NCP` project produced no visible effect under this
+   DXVK build; the real bug was in `MW32011NCP`'s own game-logic code, so no
+   patch landed for it. The native-Windows build toolchain
+   (MSYS2/MinGW-w64/Meson/Ninja/glslang) set up during that investigation
+   stays in place.

@@ -546,7 +546,23 @@ namespace dxvk {
     if (!instance.options().enableUnifiedImageLayout)
       m_featuresSupported.khrUnifiedImageLayouts.unifiedImageLayouts = VK_FALSE;
 
-    if (env::is32BitHostPlatform() || !env::isWineVulkan() || safeMode || !instance.options().enableNvCudaInterop) {
+    // MW32011DXVK divergence from upstream: upstream only ever enables the
+    // VK_NVX_* CUDA interop extensions under winevulkan (Proton/Wine, where
+    // dxvk-nvapi drives DLSS). A host that loads this build on native
+    // Windows and integrates DLSS itself (NVIDIA Streamline on DXVK's own
+    // VkDevice -- MW32011NCP's [Video] GraphicsApi=Vulkan mode) needs the
+    // same two extensions on the device, and cannot add them from outside:
+    // DXVK owns vkCreateDevice. dxvk.enableNvCudaInteropNative lets such a
+    // host opt in explicitly. Default off, so behavior is unchanged for
+    // every game unless it is set; not game-specific, so no executable
+    // detection gate applies. The 32-bit, safe-mode and enableNvCudaInterop
+    // conditions below still apply -- a device-creation failure with these
+    // enabled still falls back to safe mode, which drops them again.
+    // See re_notes/known_issues.md issue #2.
+    bool nvCudaInteropHostAllowed = env::isWineVulkan()
+      || instance.options().enableNvCudaInteropNative;
+
+    if (env::is32BitHostPlatform() || !nvCudaInteropHostAllowed || safeMode || !instance.options().enableNvCudaInterop) {
       // CUDA interop is unnecessary on 32-bit, no games use it. These extensions
       // can also cause device creation errors for unknown reasons.
       m_featuresSupported.nvxBinaryImport = VK_FALSE;

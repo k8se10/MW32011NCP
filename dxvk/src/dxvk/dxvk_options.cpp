@@ -14,6 +14,7 @@ namespace dxvk {
     enableImplicitResolves = config.getOption<bool>   ("dxvk.enableImplicitResolves", true);
     enableNvRawAccessChains = config.getOption<bool>  ("dxvk.enableNvRawAccessChains", true);
     enableNvCudaInterop   = config.getOption<bool>    ("dxvk.enableNvCudaInterop",    true);
+    enableNvCudaInteropNative = config.getOption<bool>("dxvk.enableNvCudaInteropNative", false);
     enablePresentTiming   = config.getOption<bool>    ("dxvk.enablePresentTiming",    true);
     trackPipelineLifetime = config.getOption<Tristate>("dxvk.trackPipelineLifetime",  Tristate::Auto);
     useRawSsbo            = config.getOption<Tristate>("dxvk.useRawSsbo",             Tristate::Auto);

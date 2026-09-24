@@ -11,6 +11,7 @@ investigation rounds after, `issue #N` cross-reference form.
 ## Index
 
 - [#1](#1-motion-blur-post-process-pass-produces-no-visible-effect) — Motion blur post-process pass produces no visible effect — **Resolved (not a DXVK bug)**
+- [#2](#2-dlss-required-vk_nvx-extensions-never-enabled-on-native-windows) — DLSS-required `VK_NVX_*` extensions never enabled on native Windows — **Partially Resolved**
 
 ---
 
@@ -160,3 +161,63 @@ investigation).
 - `MW32011NCP/re_notes/x64_migration/vulkan_dlss_pipeline_research.md` —
   the broader Vulkan/DLSS architecture research this DXVK integration
   serves.
+
+---
+
+## #2: DLSS-required `VK_NVX_*` extensions never enabled on native Windows
+
+**Status: Partially Resolved — opt-in patch written (`dxvk.enableNvCudaInteropNative`), not yet built or live-tested.**
+
+### Summary
+
+`MW32011NCP`'s `[Video] GraphicsApi=Vulkan` mode integrates NVIDIA
+Streamline (DLSS) directly against the `VkDevice` this DXVK build creates,
+registering it via `slSetVulkanInfo`. DLSS on Vulkan needs
+`VK_NVX_binary_import` and `VK_NVX_image_view_handle` enabled on that
+device — DXVK's own `dxvk.conf` documents them as the "VK_NVX_* extensions
+that are required for DLSS".
+
+Upstream `v3.1.1` disables both unconditionally unless running under
+winevulkan (`DxvkDeviceCapabilities::disableUnusedFeatures`,
+`src/dxvk/dxvk_device_info.cpp`: `!env::isWineVulkan()` in the same
+condition as the 32-bit/safe-mode/`enableNvCudaInterop` checks). Upstream
+only expects DLSS through dxvk-nvapi under Proton/Wine. On native Windows
+no config key or environment variable turns them back on, and a host
+cannot add device extensions from outside: DXVK calls `vkCreateDevice`
+itself, and this version has no device-import interop API (no
+`ImportDevice`/`QueryDeviceExtensions` in `src/d3d9/d3d9_interfaces.h`).
+
+### Patch (2026-09-24)
+
+New option `dxvk.enableNvCudaInteropNative` (`bool`, default `False`,
+`src/dxvk/dxvk_options.h`/`.cpp`, documented in `dxvk.conf`). The gate
+becomes "winevulkan OR this option", with every other existing condition
+unchanged. If device creation fails with the extensions enabled, DXVK's
+existing safe-mode retry (`DxvkAdapter::createDevice`) creates the device
+without them.
+
+- **Not game-specific**: off by default, so behavior is identical to
+  upstream for every game unless a host sets it (e.g. via `DXVK_CONFIG`).
+  No executable-detection gate is needed because nothing IW5-specific
+  changes. Candidate for proposing upstream.
+- **Not yet verified**: needs a build of this fork and a live run with the
+  option set, confirming the extensions appear on the device and
+  Streamline's `slGetFeatureRequirements(DLSS)` needs are met.
+
+### Remaining work under this issue
+
+- Build this fork and verify on native Windows with an NVIDIA GPU.
+- Streamline's mandatory Vulkan swapchain hooks: DXVK resolves
+  `vkGetInstanceProcAddr` from a plain `LoadLibraryA("vulkan-1.dll")`
+  (`src/vulkan/vulkan_loader.cpp`), so routing it through
+  `sl.interposer.dll` needs a second, separate opt-in patch — not started.
+- Any further Vulkan 1.2/1.3 features or queues Streamline reports as
+  required (logged by `MW32011NCP` at init) that DXVK does not already
+  enable.
+
+### Cross-references
+
+- `MW32011NCP/re_notes/x64_migration/vulkan_dlss_pipeline_research.md`
+  sections 2.7 and 4.4 — the Streamline integration this serves.
+- `MW32011NCP/proxy_d3d9/src/streamline_integration_x64.cpp` — the host
+  side (`slSetVulkanInfo`, DLSS requirements logging).
