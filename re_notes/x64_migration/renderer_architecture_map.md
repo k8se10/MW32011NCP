@@ -1105,6 +1105,76 @@ pause-menu tragedy, the heli-sequence dip, MP's constant lag) but not yet
 confirmed. **Real next step, not yet done**: find x86's own actual
 `EndScene` call site to settle whether it really was main-thread-only.
 
+### Fork 4 follow-up, same day -- direct attempt to find x86's real `EndScene` call site (coordinator, not a fork)
+
+Direct instruction: "find x86's real EndScene call site." Real, substantial
+progress, genuine partial result, not fully resolved.
+
+**Real tooling bug found and fixed first**: `ScanVtableOffsetCalls.java`
+(section 8's own new script) returned ZERO matches for the ALREADY-
+confirmed-via-decompile `BeginScene` call site (vtable `+0xA4`, inside
+`FUN_004c0950`) -- a real, caught-before-trusting false negative, not a
+true one. Ground-truth check via `DisassembleRange.java` on the real
+bytes at `0x004c097b` showed x86's actual MSVC codegen here is TWO
+instructions, not one: `MOV EDX,[ECX+0xA4]` (load the vtable slot into a
+register) then a bare `CALL EDX` -- not the single `CALL [reg+disp32]`
+instruction the x64 build's own codegen used (which is why the original
+scanner worked fine finding `CreateRenderTarget` on x64). Two new,
+reusable scripts fixed this: `ScanVtableOffsetLoads.java` (finds the raw
+`MOV reg,[reg2+disp32]` load, any registers) and
+`ScanVtableIdiomLoads.java` (the same, but additionally requires a plain
+`MOV reg,[reg2]` -- a fresh vtable-pointer dereference -- immediately
+before it, filtering out coincidental unrelated struct-field accesses at
+the same small offset). The idiom-filtered scan correctly re-found
+`0x004c097b` for `+0xA4` (7 real candidates, down from 55 raw hits) and
+found 5 real candidates for `+0xA8` (EndScene, down from 65 raw hits).
+
+**Real result**: of the 5 EndScene candidates, one (`FUN_00490792`) was a
+genuine false positive (`*(int*)(unaff_EDI+0xa8) / param_1` -- ordinary
+struct-field division, not a vtable call, a real limit of the idiom
+filter). **The other four are all genuine `EndScene`-calling wrapper
+functions**, not one coincidental hit:
+
+- `FUN_0052b8cd` -- the simplest, a bare `EndScene(param_1)` call and
+  nothing else.
+- `FUN_004e0bba` -- calls `EndScene(param_1)` then clears
+  `DAT_021d05ed = 0`. This is the SAME flag `FUN_00542cb0`... no, the
+  SAME flag `FUN_004c0950`'s own `BeginScene` wrapper sets to `1`
+  immediately before calling `BeginScene` (confirmed in that function's
+  own raw disassembly, section 7 above) -- real, direct evidence this is
+  a genuine "scene currently active" tracking flag, and `FUN_004e0bba`
+  is a real `EndScene` site that participates in that same tracking.
+- `FUN_004b6544` -- calls `EndScene(param_1)`, clears the same flag, THEN
+  (if the real device global `_DAT_021cd928` is set) does substantial
+  additional post-scene work: five more function calls
+  (`func_0x0049e210`/`0x00458c10` twice/`0x004866f0`/`0x00518430`/
+  `0x004c6060`) and updates two more globals. The heaviest of the four
+  wrappers -- plausibly the real, normal per-frame path (BeginScene →
+  draw → this finalize-and-EndScene wrapper), with the simpler wrappers
+  being rarer/special-case variants (device-lost recovery, an early-exit
+  path, etc.) -- not confirmed, a reasoned guess from shape alone.
+- `FUN_004e44c5` -- calls `EndScene(param_1)` then loops on a DIFFERENT
+  interface's vtable method (`*unaff_ESI + 0x1c`, not `param_1`'s own
+  vtable), sleeping 1ms between retries while it returns `1` -- shaped
+  like a real wait-for-something-else-to-finish pattern (possibly a
+  swap-chain-adjacent object), not yet identified further.
+
+**Real dead end, not yet resolved**: `FindDirectCallers.java` (a new
+E8-relative-call scanner, complementing the reference-manager-based
+tools) found **zero direct callers for all three of `FUN_004b6544`/
+`FUN_004e0bba`/`FUN_0052b8cd`** -- these wrapper functions are reached
+via function-pointer indirection, the same blind spot this project has
+hit repeatedly for dispatch-table-driven code under its `-noanalysis`
+convention. **The original question -- does x86's real `EndScene` fire on
+the main thread or a dedicated thread -- remains genuinely unresolved.**
+Real, concrete next step, not yet done: a scoped real Ghidra analysis
+pass (populating the reference manager properly) or live tracing once a
+debugger is viable again, rather than more blind static-scanning
+technique variants -- this specific sub-question has now had multiple
+distinct real technique attempts (idiom filtering, direct-call scanning)
+without landing a full answer, closer to this project's own §10.9
+threshold than further blind guessing would be productive.
+
 ### Fork 5 — entity-category identity (`gen drawsurfs`/`add scene ent` follow-up)
 
 **Confirmed, real answer**: case `0x03` (`cell scene ent`) and case
