@@ -52,3 +52,23 @@ struct ID3D9VkInteropDeviceX64 : public IUnknown {
     // intentionally not declared -- never call anything beyond slot 4
     // through this type without first declaring it here in DXVK's order.
 };
+
+// {D56344F5-8D35-46FD-806D-94C351B472C1} -- copied verbatim from DXVK's
+// __CRT_UUID_DECL(ID3D9VkInteropTexture, ...) in d3d9_interfaces.h. A real,
+// separate interface from ID3D9VkInteropDevice above -- QueryInterface this
+// one from a real IDirect3DSurface9/IDirect3DTexture9 (e.g. the active
+// depth-stencil surface) to get its backing Vulkan image, needed for
+// Streamline resource tagging (slSetTagForFrame), 2026-09-24.
+static const IID IID_ID3D9VkInteropTexture_X64 =
+    { 0xd56344f5, 0x8d35, 0x46fd, { 0x80, 0x6d, 0x94, 0xc3, 0x51, 0xb4, 0x72, 0xc1 } };
+
+struct ID3D9VkInteropTextureX64 : public IUnknown {
+    // Vtable slot 3 -- DXVK: "Retrieves both the image handle as well as the
+    // image's properties. Any of the given pointers may be nullptr." pLayout
+    // receives the layout the image will be in after flushing outstanding
+    // commands -- DXVK's own doc comment on this method.
+    virtual HRESULT STDMETHODCALLTYPE GetVulkanImageInfo(
+        VkImage*           pHandle,
+        VkImageLayout*      pLayout,
+        VkImageCreateInfo*  pInfo) = 0;
+};

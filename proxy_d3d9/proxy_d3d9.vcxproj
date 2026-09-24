@@ -187,6 +187,13 @@
     <ClCompile Include="src\streamline_camera_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-24: real resource-tagging groundwork. Resolves
+         and logs the real Vulkan image behind the game's depth-stencil
+         surface via DXVK's own interop interface. See that file's own
+         header comment. -->
+    <ClCompile Include="src\streamline_resources_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <!-- x64-only, 2026-09-16; see iwd_read_cache_x64.cpp's own header
          comment for attribution. -->
     <ClCompile Include="src\iwd_read_cache_x64.cpp" Condition="'$(Platform)'=='x64'">

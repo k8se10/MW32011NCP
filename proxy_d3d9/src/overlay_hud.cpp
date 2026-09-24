@@ -53,6 +53,11 @@ void StreamlineFrameTick(); // streamline_integration_x64.cpp, 2026-09-24 -- rea
     // exactly-once-per-real-frame hook point this project already uses for
     // every other per-frame diagnostic. No-ops (returns immediately) until
     // Streamline has actually registered a device via slSetVulkanInfo.
+void LogDepthStencilVulkanImageX64(); // streamline_resources_x64.cpp, 2026-09-24 --
+    // real resource-tagging groundwork: resolves and logs the real Vulkan image
+    // behind the game's active depth-stencil surface (DXVK's own
+    // ID3D9VkInteropTexture interop). Read-only, zero behavior change, its own
+    // sparse internal cadence (not gated here).
 #endif
 #include "vanilla_settings_sync.h"
 #include "real_settings.h"
@@ -7617,6 +7622,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     DrawJitterProbeOverlayIfEnabled(device);
 #if defined(_M_X64) || defined(_WIN64)
     StreamlineFrameTick();
+    LogDepthStencilVulkanImageX64();
 #endif
 
     // CreateTexture-storm caller-ID diagnostic (2026-09-23) -- safe to call every
