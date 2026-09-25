@@ -45,19 +45,18 @@ enum class GlyphStyle { Xbox360, XboxModern, PlayStation };
 // re_notes/x64_migration/vulkan_dlss_pipeline_research.md and
 // re_notes/known_issues_x64.md issue #2 for the full research trail). Real
 // selector between this project's existing, already-proven native D3D9
-// pipeline and a new, not-yet-implemented DXVK-in-process Vulkan
-// translation pipeline (needed underneath NVIDIA Streamline/DLSS, since
-// Streamline has no D3D9 support at all -- confirmed directly from
-// NVIDIA's own SDK). STRICTLY OPT-IN, same "off by default until
-// independently verified" pattern as every other structurally-significant
-// feature this project ships (AutoMantleEnabled, UseCustomOptionsScreen,
-// the MP VAC-risk acknowledgment). LegacyD3D9 is a pure label for "the
-// existing pipeline, unchanged" -- selecting it changes nothing; features
-// that need Vulkan underneath (DLSS) are simply unavailable in this mode,
-// honestly flagged as such rather than silently missing. This enum exists
-// ahead of the actual Vulkan/DXVK implementation landing -- see
-// InitGraphicsApiMode() in d3d9_hook.cpp for the current (stub) branch
-// point.
+// pipeline and a real, working DXVK-in-process Vulkan translation pipeline
+// (needed underneath NVIDIA Streamline/DLSS, since Streamline has no D3D9
+// support at all -- confirmed directly from NVIDIA's own SDK). **Vulkan is
+// now the default on iw5sp.exe (2026-09-26)**, following a real, accumulated
+// live-confirmation track record across multiple sessions -- see the
+// struct field's own comment (below, ModConfig::graphicsApi) for the full
+// rationale and the standing, unchanged SP-only/MP-VAC-risk gate. LegacyD3D9
+// remains a pure label for "the existing pipeline, unchanged" -- selecting
+// it changes nothing, and it's still what any binary Vulkan mode doesn't
+// apply to (currently `iw5mp.exe`) gets automatically regardless of this
+// setting. See InitGraphicsApiMode() in d3d9_hook.cpp for the real,
+// live-tested (not stub) branch point.
 enum class GraphicsApi { LegacyD3D9, Vulkan };
 
 // One entry per logical action; resolves to whichever physical XInput button/trigger
@@ -721,25 +720,38 @@ struct ModConfig
     bool useCustomOptionsScreen = false;
 
     // [Video] GraphicsApi (see the enum's own comment above for the full
-    // rationale) -- LegacyD3D9 (default) keeps this project's existing,
-    // already-proven native D3D9 hook pipeline completely unchanged. Vulkan
-    // is the DXVK-in-process translation pipeline this project will use to
-    // unlock real Streamline/DLSS integration -- real loading logic exists
-    // (dllmain.cpp's TryLoadVendoredDxvk()) but DXVK itself isn't bundled
-    // with this mod yet, so selecting Vulkan today falls back to
-    // LegacyD3D9 behavior, always logged so a player who sets this early
-    // gets an honest "not ready yet, falling back" rather than an
-    // unexplained non-effect. **SP-ONLY, direct instruction (2026-09-23)**:
-    // this value is a single global setting (not per-binary), but Vulkan
-    // mode only actually takes effect under iw5sp.exe regardless of what
-    // this is set to -- real precedent needed on Campaign/Survival first,
-    // since this is a genuine module-replacement technique this project's
-    // own VAC research (vulkan_dlss_pipeline_research.md S5) flags as a
-    // materially different risk category, and this is QoL, not essential,
-    // for Multiplayer. See IsGraphicsApiVulkanModeAllowed() (d3d9_hook.cpp)
-    // and TryLoadVendoredDxvk() (dllmain.cpp), both independently enforcing
-    // the identical SP-only gate.
-    GraphicsApi graphicsApi = GraphicsApi::LegacyD3D9;
+    // rationale) -- **DEFAULT FLIPPED TO Vulkan, 2026-09-26**, direct
+    // instruction, following a real, accumulated track record of live
+    // confirmation on iw5sp.exe across this session and earlier ones: DXVK
+    // launches and renders correctly, real GPU cost scales as expected
+    // (220fps@100% vs 70-80fps@300% at 2560x1440), motion blur fixed for
+    // both controller and keyboard/mouse under this backend specifically,
+    // and RTSS confirms it as the genuinely active backend across multiple
+    // real playtests. LegacyD3D9 remains this project's original, still-
+    // fully-supported native D3D9 hook pipeline -- selectable any time,
+    // never removed, and still what a player gets automatically under any
+    // binary Vulkan mode doesn't apply to (see below). DXVK itself is
+    // bundled with this mod (`TryLoadVendoredDxvk()`, dllmain.cpp) with a
+    // validated fallback to the real system `d3d9.dll` if the vendored
+    // build is ever missing/corrupted, so a bad DXVK file can never take
+    // the whole game down. **SP-ONLY, unchanged standing policy (originally
+    // 2026-09-23)**: this value is a single global setting (not per-binary),
+    // but Vulkan mode only actually takes effect under iw5sp.exe regardless
+    // of what this is set to -- `iw5mp.exe` always gets LegacyD3D9 behavior
+    // instead, forced and logged, REGARDLESS of this new default, until real
+    // MP-specific VAC-risk research is done. This is a genuine module-
+    // replacement technique this project's own VAC research
+    // (vulkan_dlss_pipeline_research.md S5) flags as a materially different
+    // risk category from this project's own core input-remapping technique,
+    // untested on the one binary (iw5mp.exe) where VAC is confirmed active
+    // at all -- Survival co-op and Solo Campaign both sit at near-zero/low
+    // real VAC risk per that same research, making SP the correct,
+    // deliberate place this default change applies. Flipping SP's own
+    // default does NOT reopen or relax that MP gate in any way. See
+    // IsGraphicsApiVulkanModeAllowed() (d3d9_hook.cpp) and
+    // TryLoadVendoredDxvk() (dllmain.cpp), both independently enforcing the
+    // identical SP-only gate, both unchanged by this default flip.
+    GraphicsApi graphicsApi = GraphicsApi::Vulkan;
 
     // [Video] StreamlineEnabled (2026-09-24) -- STRICTLY OPT-IN, OFF by
     // default. Real groundwork, not a functional DLSS feature yet: when on

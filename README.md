@@ -151,6 +151,17 @@ input at launch" bug family. Campaign has never been a release gate (same
 as on `-x86`, where it also shipped best-effort/partially untested) and
 ships as-is, verified as it's touched.
 
+#### Graphics API compatibility
+
+`[Video] GraphicsApi` selects between `LegacyD3D9` (this project's original, always-supported native D3D9 pipeline) and `Vulkan` (DXVK-in-process translation, **default since 2026-09-26**) — SP-only, `iw5mp.exe` always uses `LegacyD3D9` regardless of this setting (real MP-specific VAC-risk research is needed before that gate is ever reconsidered; this is unrelated to, and unaffected by, SP's own default change). Almost every `[Video]` feature is implemented at the plain D3D9 API level and works identically under either backend by construction, since DXVK implements that same surface — the table below lists the real exceptions. **If a feature isn't explicitly listed here, assume it works under both backends** (this is the default/common case, not something each one needs its own row to confirm).
+
+| Feature | `LegacyD3D9` | `Vulkan` | Note |
+|---|---|---|---|
+| `StreamlineEnabled` / NVIDIA DLSS | ❌ Not supported | ✅ | Genuinely Vulkan-only by design — NVIDIA's Streamline SDK has no D3D9 support at all (confirmed directly from NVIDIA's own SDK), needs DXVK's own Vulkan-interop interface underneath it |
+| `ForceAnisotropicFiltering` / `ForceHighQualityShadows` / `ForceHighQualityLighting` | ❌ Silent no-op | ❌ Silent no-op | **Not a backend difference** — these three are currently non-functional on x64 entirely, on either backend (see [known_issues_x64.md issue #6](re_notes/known_issues_x64.md)); the real x64 dvar-setter these rely on isn't wired up yet |
+| `SkipRedundantShadowActivation` (default on, 2026-09-26) | ⚠ Expected to work, not independently confirmed | ✅ Live-confirmed | A native engine-level fix (skips a redundant per-light render-view reactivation), independent of which D3D9 implementation is underneath it in principle — but every live test so far (30→40fps intensive mission, 17→27fps pause menu, 28-30→41fps Survival) was run under `Vulkan`; `LegacyD3D9` hasn't been separately tested yet |
+| `ProjectionJitterEnabled` | ⚠ Real no-op | ⚠ Real no-op (groundwork only) | Pure DLSS/temporal-accumulation groundwork — writes real jitter into the projection matrix under either backend, but nothing currently consumes it (no TAA/DLSS resolve pass exists yet), so it's a harmless, purposeless shimmer either way until that lands |
+
 #### ✅ Confirmed live
 
 | Feature | Note |
@@ -659,8 +670,10 @@ This project vendors and links the following third-party library:
 - **[DXVK](https://github.com/doitsujin/dxvk)** (`proxy_d3d9/third_party/dxvk/`,
   v3.1.1) — Copyright (c) 2017 Philip Rebohle and contributors, zlib/libpng
   license (see `proxy_d3d9/third_party/dxvk/LICENSE.txt`). A real, independently-
-  maintained D3D9-to-Vulkan translation layer, powering the opt-in, SP-only
-  `[Video] GraphicsApi=Vulkan` mode this project uses to unlock native NVIDIA
+  maintained D3D9-to-Vulkan translation layer, powering the default-on, SP-only
+  `[Video] GraphicsApi=Vulkan` mode (2026-09-26, following a real live-confirmed
+  track record — LegacyD3D9 remains fully supported and selectable) this
+  project uses to unlock native NVIDIA
   Streamline/DLSS integration — see `re_notes/x64_migration/vulkan_dlss_pipeline_research.md`
   for the full research and architecture behind this feature. Native-Windows use
   of DXVK is real but explicitly unofficial per the upstream project's own docs;
