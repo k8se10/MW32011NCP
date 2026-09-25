@@ -1067,6 +1067,69 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
         LogFromController(diagBuf);
     }
 
+    // NULL-render-target shadow-map capability diagnostic (2026-09-26,
+    // issue #4's real-transitions investigation -- re_notes/known_issues_x64.md).
+    // Read-only, no behavior change: replicates the exact hardware-capability
+    // probe x86's own FUN_00679260 performs (found via FindDataWriters.java
+    // against the real writer of DAT_021d35f4) to settle whether x86's own
+    // detection criteria would classify THIS machine's real GPU as "capable"
+    // of the fast NULL-render-target shadow-map path x86 uses to SKIP its
+    // per-light render-view-activator call entirely (see FUN_00698f10's own
+    // `if (DAT_021d35f4 == '\0')` gate, and its x64 counterpart FUN_140196ad0,
+    // which has no such gate at all -- the leading root-cause candidate for
+    // the live-captured 6/7-alternation transition storm). Real IDirect3D9
+    // vtable slots (same across x86/x64, only the byte-offset stride differs):
+    // slot 10 = CheckDeviceFormat, slot 12 = CheckDepthStencilMatch. Tries
+    // the same 4 (DepthStencilFormat, RenderTargetFormat) pairs x86's own
+    // FUN_00679260 does, in the same order, stopping at the first pair where
+    // BOTH the NULL-render-target check (CheckDepthStencilMatch) AND the
+    // depth-stencil-surface-usable check (CheckDeviceFormat) succeed --
+    // exactly x86's own real logic, just read-only here.
+    if (SUCCEEDED(hr)) {
+        constexpr int kCheckDeviceFormatVtableIndex = 10;
+        constexpr int kCheckDepthStencilMatchVtableIndex = 12;
+        constexpr UINT kD3DFMT_X8R8G8B8 = 22;
+        constexpr DWORD kD3DUSAGE_DEPTHSTENCIL = 2;
+        constexpr UINT kD3DRTYPE_SURFACE = 3;
+        constexpr UINT kD3DFMT_NULL = 0x4C4C554E; // MAKEFOURCC('N','U','L','L')
+        struct FormatPair { UINT depthStencilFmt; UINT renderTargetFmt; };
+        constexpr FormatPair kCandidates[4] = {
+            {75, kD3DFMT_NULL}, // D3DFMT_D24S8 + the real "NULL" render-target trick
+            {75, 23},           // D3DFMT_D24S8 + D3DFMT_D24X8
+            {75, 22},           // D3DFMT_D24S8 + D3DFMT_X8R8G8B8
+            {75, 21},           // D3DFMT_D24S8 + D3DFMT_R5G6B5
+        };
+        void** d3d9VtableForCap = *reinterpret_cast<void***>(This);
+        using CheckDepthStencilMatchFn = HRESULT(WINAPI*)(void*, UINT, DWORD, UINT, UINT, UINT);
+        using CheckDeviceFormatFn = HRESULT(WINAPI*)(void*, UINT, DWORD, UINT, DWORD, UINT, UINT);
+        auto checkDepthStencilMatch = reinterpret_cast<CheckDepthStencilMatchFn>(
+            d3d9VtableForCap[kCheckDepthStencilMatchVtableIndex]);
+        auto checkDeviceFormat = reinterpret_cast<CheckDeviceFormatFn>(
+            d3d9VtableForCap[kCheckDeviceFormatVtableIndex]);
+        bool capable = false;
+        int matchedIndex = -1;
+        for (int i = 0; i < 4; ++i) {
+            HRESULT r1 = checkDepthStencilMatch(This, Adapter, kD3DDEVTYPE_HAL, kD3DFMT_X8R8G8B8,
+                kCandidates[i].renderTargetFmt, kCandidates[i].depthStencilFmt);
+            if (SUCCEEDED(r1)) {
+                HRESULT r2 = checkDeviceFormat(This, Adapter, kD3DDEVTYPE_HAL, kD3DFMT_X8R8G8B8,
+                    kD3DUSAGE_DEPTHSTENCIL, kD3DRTYPE_SURFACE, kCandidates[i].depthStencilFmt);
+                if (SUCCEEDED(r2)) {
+                    capable = true;
+                    matchedIndex = i;
+                    break;
+                }
+            }
+        }
+        char capBuf[320]; // worst case measured at 230 chars -- generous margin per this
+            // project's own hard-learned per-commit sprintf_s buffer-safety discipline
+        sprintf_s(capBuf, "[null-rt-shadow-cap-diag] x86-style capability check: capable=%s matchedPair=%d "
+            "(x86 skips its per-light activator call entirely when capable -- x64's FUN_140196ad0 has no "
+            "equivalent gate at all, see known_issues_x64.md issue #4)",
+            capable ? "YES" : "no", matchedIndex);
+        LogFromController(capBuf);
+    }
+
     if (SUCCEEDED(hr) && DeviceType == kD3DDEVTYPE_HAL) {
         InstallWndProcHook(hFocusWindow);
         if (ppReturnedDeviceInterface && *ppReturnedDeviceInterface) {
