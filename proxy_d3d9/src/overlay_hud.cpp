@@ -114,6 +114,16 @@ extern DWORD GetMainThreadId(); // dllmain.cpp -- see g_mainThreadId's own comme
 #if defined(_M_X64) || defined(_WIN64)
 extern int GetAndResetRenderViewSequenceX64(int* outIndices, int maxCount); // analog_input_hooks_x64.cpp
 extern int GetAndResetRenderViewTransitionCountX64(); // analog_input_hooks_x64.cpp -- real pass-VALUE
+extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp -- real, signature-
+    // scanned dvar reader (see that function's own comment). Used here (2026-09-26) to log the real native
+    // `cl_paused` dvar alongside the render-view diagnostic -- this project has never had a reliable "the game
+    // is genuinely at its own in-game pause menu" signal (the existing `menuActive`/`IsMenuActiveX64_Exported`
+    // flags are a blanket "some menu/UI is active" bit that also fires for the main menu and loading screens,
+    // per this issue's own already-documented correction), which repeatedly forced guessing pause-vs-live state
+    // from unrelated diagnostics this session (see known_issues_x64.md issue #4's self-dump-investigation
+    // round). `cl_paused` was deliberately NOT read on x64 back on 2026-09-16 because `FindDvarX64Raw` was still
+    // an unconfirmed hardcoded address at the time -- it has since been converted to a real signature scan
+    // (2026-09-23's "Full hardcoded-address audit"), so this read is now safe.
     // transition count, 2026-09-26, added after finding FUN_1401dfd80's own
     // same-pass dedup early-out means raw fire count (below) is an upper
     // bound on real activation cost, not a direct measurement of it.
@@ -7742,9 +7752,10 @@ HRESULT WINAPI Hook_EndScene(void* device)
         int realTransitions = GetAndResetRenderViewTransitionCountX64();
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
-            char buf[220];
-            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d",
-                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions);
+            int clPaused = static_cast<int>(GetDvarFloatX64_Exported("cl_paused"));
+            char buf[260];
+            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d clPaused=%d",
+                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions, clPaused);
             LogFromController(buf);
 
             // Real sequence dump, ONLY on genuinely slow frames (not the
