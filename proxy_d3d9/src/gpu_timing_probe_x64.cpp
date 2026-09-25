@@ -57,6 +57,7 @@
 #include <vulkan/vulkan_core.h>
 
 extern void LogFromController(const char* msg); // dllmain.cpp
+extern VkInstance GetDxvkVkInstanceX64();        // streamline_integration_x64.cpp
 extern VkDevice GetDxvkVkDeviceX64();            // streamline_integration_x64.cpp
 extern VkQueue GetDxvkVkQueueX64();              // streamline_integration_x64.cpp
 extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp -- real
@@ -82,8 +83,9 @@ bool ResolveVulkanWaitIdleIfNeeded()
     if (g_resolveFailed) return false;
     g_resolveAttempted = true;
 
+    VkInstance instance = GetDxvkVkInstanceX64();
     VkDevice device = GetDxvkVkDeviceX64();
-    if (device == VK_NULL_HANDLE) return false; // not resolved yet this session -- not a failure, just early
+    if (instance == VK_NULL_HANDLE || device == VK_NULL_HANDLE) return false; // not resolved yet this session -- not a failure, just early
 
     HMODULE vulkanModule = GetModuleHandleA("vulkan-1.dll");
     if (!vulkanModule) vulkanModule = GetModuleHandleA("winevulkan.dll");
@@ -94,8 +96,15 @@ bool ResolveVulkanWaitIdleIfNeeded()
         return false;
     }
 
-    // vkGetInstanceProcAddr(NULL, "vkGetDeviceProcAddr") is the documented, correct way to get a
-    // device-independent dispatch entry point without needing the real VkInstance handle here too.
+    // REAL BUG, FOUND 2026-09-26 (live log showed "vkGetDeviceProcAddr resolve FAILED" --
+    // the tool silently never fired all session despite the config being on): the original
+    // code here called vkGetInstanceProcAddr(NULL, "vkGetDeviceProcAddr"), assuming a NULL
+    // instance is valid for that query. Per the real Vulkan spec, a NULL instance is ONLY
+    // valid for a small fixed set of global functions (vkEnumerateInstanceExtensionProperties/
+    // LayerProperties/Version, vkCreateInstance) -- vkGetDeviceProcAddr is NOT one of them,
+    // and DXVK's own ICD correctly returns nullptr for it rather than tolerating the misuse.
+    // Fixed by passing the REAL, already-resolved VkInstance (GetDxvkVkInstanceX64(),
+    // cached the same way GetDxvkVkDeviceX64()/GetDxvkVkQueueX64() already are) instead of NULL.
     auto getInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr_local2>(
         GetProcAddress(vulkanModule, "vkGetInstanceProcAddr"));
     if (!getInstanceProcAddr) {
@@ -105,7 +114,7 @@ bool ResolveVulkanWaitIdleIfNeeded()
         return false;
     }
     auto getDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr_local2>(
-        getInstanceProcAddr(nullptr, "vkGetDeviceProcAddr"));
+        getInstanceProcAddr(instance, "vkGetDeviceProcAddr"));
     if (!getDeviceProcAddr) {
         LogFromController("[gpu-sync-mark] vkGetDeviceProcAddr resolve FAILED -- "
             "GpuSyncTimingLogging will not work this session.");
