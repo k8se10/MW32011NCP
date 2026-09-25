@@ -684,6 +684,34 @@ not for the renderer-mapping effort as a whole.
   frame numbers (this session's own capture wasn't annotated with player
   action), and/or trace `x64-renderview-select-diag`'s own call site to
   find what native condition drives a multi-index burst like this.
+
+  **New diagnostic shipped, 2026-09-25, not yet live-tested — a direct
+  caller-identification approach instead of more static/correlation
+  guessing.** Direct instruction, following the user's own framing that the
+  real problem is the fallback mechanism itself, not the extra parallelism
+  x64 gained ("the problem isnt the extra parralellism its the fact now the
+  game is still falling back, half committed ass port"): rather than
+  continuing to infer the trigger from correlated log lines, capture the
+  REAL native caller directly. `Hook_EndScene` (`overlay_hud.cpp`) now
+  calls `CaptureStackBackTrace` (the same shallow, allocation-free,
+  symbol-free stack-walk technique already proven for the CreateTexture-storm
+  investigation, `asset_capture.cpp`) whenever the calling thread is
+  `g_mainThreadId` AND the dedicated backend thread has already been
+  observed at least once this session (excludes the known, harmless
+  startup transient where the first 1-2 `EndScene` calls land on main
+  before the backend thread settles). Logs up to 8 Ghidra-comparable return
+  addresses (`[render-thread-diag-stack]`) — the real call chain that led
+  to EndScene firing on the main thread instead of the normal dedicated
+  thread, pasteable directly into Ghidra with no manual arithmetic. A real
+  linkage bug was caught and fixed before this shipped: the obvious reuse
+  target, `analog_input_hooks_x64.cpp`'s own `ToGhidraAddressX64`, has
+  internal (anonymous-namespace) linkage in its own file — this project's
+  own already-documented linkage trap, caught via a real `LNK2019` (not
+  assumed callable), fixed with a small local duplicate in `overlay_hud.cpp`
+  rather than restructuring that large file. Build-verified (x64 Release, 0
+  errors), `dumpbin /headers` confirms genuine x64 output, deployed. **Not
+  yet live-tested** — the real next data point is whatever the next
+  fallback event's own logged call chain actually shows.
 - **The already-known pieces this doc should eventually cross-reference,
   not re-derive**: `InternalRenderScalePercent`'s own hook chain
   (`Hook_RenderResCompute` → `FUN_1401bd1d0`, `analog_input_hooks_x64.cpp`),

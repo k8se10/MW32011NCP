@@ -102,6 +102,22 @@ void InstallDepthStencilHookX64(void* realDevice); // streamline_resources_x64.c
 
 extern void LogFromController(const char* msg);
 extern DWORD GetMainThreadId(); // dllmain.cpp -- see g_mainThreadId's own comment for the real-thread-ID diagnostic this feeds
+#if defined(_M_X64) || defined(_WIN64)
+// Local copy of analog_input_hooks_x64.cpp's own ToGhidraAddressX64 -- that
+// one has internal (anonymous-namespace) linkage in its own file (this
+// project's own already-documented linkage trap, CLAUDE.md's "checking is
+// far cheaper than digging" note -- checked via a real LNK2019 here rather
+// than assumed callable), so this is a small, deliberate local duplicate
+// instead of restructuring that file. Same real math: module base (resolved
+// once, cached) plus the binary's own preferred image base, 0x140000000.
+static uintptr_t ToGhidraAddressLocalX64(void* runtimeAddr)
+{
+    static const uintptr_t s_moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    constexpr uintptr_t kPreferredImageBase = 0x140000000ULL;
+    if (s_moduleBase == 0 || runtimeAddr == nullptr) return 0;
+    return kPreferredImageBase + (reinterpret_cast<uintptr_t>(runtimeAddr) - s_moduleBase);
+}
+#endif
 // Phase E (motion blur) -- real per-frame view-angle deltas, defined in
 // analog_input_hooks.cpp (see that file's own comment on these two globals,
 // right above InjectControllerLookAngles).
@@ -7619,10 +7635,45 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // (cross-reference against the already-mapped worker-thread slots in section 7).
     {
         static DWORD s_lastLoggedEndSceneThreadId = 0xFFFFFFFF; // sentinel, differs from any real TID
+        static bool s_haveSeenBackendThread = false; // real dedicated-thread settle,
+            // NOT counting the known startup transient (first 1-2 calls on main
+            // thread before it settles, per this diagnostic's own earlier live data)
         DWORD currentThreadId = GetCurrentThreadId();
         if (currentThreadId != s_lastLoggedEndSceneThreadId) {
             s_lastLoggedEndSceneThreadId = currentThreadId;
             DWORD mainThreadId = GetMainThreadId();
+
+            // Real caller-identification diagnostic, 2026-09-25, direct instruction
+            // to chase the fallback mechanism itself ("its the fact now the game is
+            // still falling back, half committed ass port"). issue #4's own real
+            // next step (renderer_architecture_map.md section 6): find what native
+            // code path drives EndScene's rare main-thread fallback. Same shallow
+            // stack-walk technique already proven for the CreateTexture-storm
+            // investigation (asset_capture.cpp) -- CaptureStackBackTrace, no
+            // allocation, no symbol resolution, safe in a hot per-frame path. Only
+            // fires on the REAL fallback transition (main thread, after the
+            // dedicated backend thread has already been observed at least once --
+            // excludes the known, harmless startup transient).
+#if defined(_M_X64) || defined(_WIN64)
+            if (currentThreadId == mainThreadId && s_haveSeenBackendThread) {
+                constexpr int kFallbackMaxFrames = 8;
+                void* frames[kFallbackMaxFrames];
+                // FramesToSkip=1: skips CaptureStackBackTrace's own frame, landing
+                // frame[0] on Hook_EndScene's real MinHook-trampoline caller --
+                // i.e. the actual native code that invoked EndScene this time.
+                WORD frameCount = CaptureStackBackTrace(1, kFallbackMaxFrames, frames, nullptr);
+                char stackBuf[600];
+                int w = sprintf_s(stackBuf, "[render-thread-diag-stack] main-thread FALLBACK caller chain:");
+                for (WORD i = 0; i < frameCount && w > 0 && w < 560; ++i) {
+                    uintptr_t ghidraAddr = ToGhidraAddressLocalX64(frames[i]);
+                    w += sprintf_s(stackBuf + w, sizeof(stackBuf) - w, " 0x%llX",
+                        static_cast<unsigned long long>(ghidraAddr));
+                }
+                LogFromController(stackBuf);
+            }
+            if (currentThreadId != mainThreadId) s_haveSeenBackendThread = true;
+#endif
+
             char buf[128];
             sprintf_s(buf, "[render-thread-diag] EndScene calling thread changed -> %lu (main thread = %lu, %s)",
                        currentThreadId, mainThreadId,
