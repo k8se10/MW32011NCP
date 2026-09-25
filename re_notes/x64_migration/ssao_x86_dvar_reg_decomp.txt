@@ -1,0 +1,26 @@
+================================================================
+Function: FUN_00417430 @ 00417430
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_00417430(void)
+
+{
+  DAT_02802f44 = FUN_00549310("r_ssao",&PTR_s_0_Off_0093a640,1,3,
+                              "Screen Space Ambient Occlusion mode");
+  DAT_02802f38 = FUN_004f9cc0("r_ssaoStrength",_DAT_0083bfc4,0,_DAT_00867e18,0x44,
+                              "Strength of Screen Space Ambient Occlusion effect");
+  DAT_02802f48 = FUN_004f9cc0("r_ssaoPower",0x3f800000,0,_DAT_00865060,0x44,
+                              "Power curve applied to SSAO factor");
+  DAT_02802f34 = FUN_004f9cc0("r_ssaoBlurRadius",0x3f800000,0,_DAT_00865060,0,
+                              "Apply gaussian blur with this radius to calculated SSAO values");
+  DAT_02802f4c = FUN_004914d0("r_ssaoDownsample",1,0,
+                              "Perform SSAO calculation on downsampled depth buffer");
+  DAT_02802f3c = FUN_00549310("r_ssaoDebug",&PTR_s_Disabled_00856a25_3_0093a650,0,0,
+                              "Render calculated or applied Screen Space Ambient Occlusion values");
+  return;
+}
+
+
+

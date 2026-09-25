@@ -1,0 +1,20 @@
+================================================================
+Global: 02802f4c
+  REF #1: from 0041750a in FUN_00417430 @ 00417430 (fnSize=237)
+  REF #2: from 00552b30 in FUN_00552ac0 @ 00552ac0 (fnSize=143)
+Total refs: 2
+
+================================================================
+Global: 02802f44
+  REF #1: from 0041745f in FUN_00417430 @ 00417430 (fnSize=237)
+  REF #2: from 00683194 in FUN_00683060 @ 00683060 (fnSize=1179)
+  REF #3: from 00552ac0 in FUN_00552ac0 @ 00552ac0 (fnSize=143)
+  REF #4: from 00552b1d in FUN_00552ac0 @ 00552ac0 (fnSize=143)
+Total refs: 4
+
+================================================================
+Global: 02802f3c
+  REF #1: from 00417517 in FUN_00417430 @ 00417430 (fnSize=237)
+  REF #2: from 00552b3f in FUN_00552ac0 @ 00552ac0 (fnSize=143)
+Total refs: 2
+

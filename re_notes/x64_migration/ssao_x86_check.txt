@@ -1,0 +1,37 @@
+STRING @ 0083022c: "r_ssao"
+  REF #1: from 0041743e in FUN_00417430 @ 00417430
+
+STRING @ 00830e90: "R_RENDERTARGET_SSAO_BLURRED"
+  REF #1: from 00683258 in FUN_00683060 @ 00683060
+  REF #2: from 0093a38c in <none/data>
+
+STRING @ 00832ad8: "r_ssaoBlurRadius"
+  REF #1: from 004174d5 in FUN_00417430 @ 00417430
+
+STRING @ 00846684: "R_RENDERTARGET_SSAO"
+  REF #1: from 006831e0 in FUN_00683060 @ 00683060
+  REF #2: from 0093a388 in <none/data>
+
+STRING @ 0084ddf4: "r_ssaoStrength"
+  REF #1: from 00417473 in FUN_00417430 @ 00417430
+
+STRING @ 0084e4a8: "R_RENDERTARGET_SSAO_FLOAT_Z"
+  REF #1: from 006832d0 in FUN_00683060 @ 00683060
+  REF #2: from 0093a390 in <none/data>
+
+STRING @ 0084f2c8: "r_ssaoDownsample"
+  REF #1: from 004174e8 in FUN_00417430 @ 00417430
+
+STRING @ 00850ea8: "Render calculated or applied Screen Space Ambient Occlusion values"
+  REF #1: from 004174f7 in FUN_00417430 @ 00417430
+
+STRING @ 00851a9c: "r_ssaoPower"
+  REF #1: from 004174a4 in FUN_00417430 @ 00417430
+
+STRING @ 0085c8e2: "+2r_ssaoDebug"
+
+STRING @ 00862374: "Strength of Screen Space Ambient Occlusion effect"
+  REF #1: from 00417451 in FUN_00417430 @ 00417430
+
+STRING @ 00863bff: "EScreen Space Ambient Occlusion mode"
+
