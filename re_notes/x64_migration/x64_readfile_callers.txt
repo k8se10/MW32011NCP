@@ -1,0 +1,758 @@
+Target symbol: ReadFile @ EXTERNAL:0000007e
+Callers (5):
+  FUN_1402edf30 @ 1402edf30
+  FUN_1403bb340 @ 1403bb340
+  FUN_1403bad78 @ 1403bad78
+  FUN_1403baf50 @ 1403baf50
+  FUN_1403a900c @ 1403a900c
+
+================================================================
+Function: FUN_1402edf30 @ 1402edf30
+----------------------------------------------------------------
+
+undefined8 FUN_1402edf30(void)
+
+{
+  char *pcVar1;
+  code *pcVar2;
+  BOOL BVar3;
+  int iVar4;
+  DWORD DVar5;
+  HANDLE pvVar6;
+  undefined8 uVar7;
+  undefined8 uVar8;
+  undefined1 *puVar9;
+  longlong lVar10;
+  HANDLE hObject;
+  char *pcVar11;
+  char *pcVar12;
+  longlong lVar13;
+  bool bVar15;
+  DWORD local_res8 [2];
+  DWORD local_res10 [2];
+  DWORD local_res18 [2];
+  DWORD local_res20 [2];
+  DWORD local_3d8;
+  DWORD local_3d4;
+  char local_3d0 [8];
+  char local_3c8 [4];
+  char local_3c4 [2];
+  char local_3c2;
+  char local_3b8 [64];
+  char local_378;
+  char local_377 [258];
+  undefined1 local_275;
+  undefined4 local_268 [12];
+  undefined1 local_238 [536];
+  longlong lVar14;
+  
+  if (DAT_14279d288 == '\0') {
+    return 1;
+  }
+  local_res20[0] = GetCurrentProcessId();
+  pvVar6 = CreateFileA(&DAT_14279d288,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+  if (pvVar6 != (HANDLE)0xffffffffffffffff) {
+    BVar3 = ReadFile(pvVar6,&local_3d8,4,local_res10,(LPOVERLAPPED)0x0);
+    if ((BVar3 == 0) || (local_res10[0] != 4)) {
+      CloseHandle(pvVar6);
+    }
+    else {
+      CloseHandle(pvVar6);
+      if ((local_res20[0] != local_3d8) &&
+         (pvVar6 = OpenProcess(0x1fffff,0,local_3d8), pvVar6 != (HANDLE)0x0)) {
+        CloseHandle(pvVar6);
+        pvVar6 = (HANDLE)CreateToolhelp32Snapshot(8,local_3d8);
+        if (pvVar6 != (HANDLE)0xffffffffffffffff) {
+          local_268[0] = 0x238;
+          iVar4 = Module32First(pvVar6,local_268);
+          if (iVar4 != 0) {
+            GetModuleFileNameA((HMODULE)0x0,&local_378,0x104);
+            pcVar12 = &local_378;
+            local_275 = 0;
+            pcVar11 = &local_378;
+            while (local_378 != '\0') {
+              if ((local_378 == '\\') || (local_378 == ':')) {
+                pcVar12 = pcVar11 + 1;
+              }
+              pcVar1 = pcVar11 + 1;
+              pcVar11 = pcVar11 + 1;
+              local_378 = *pcVar1;
+            }
+            do {
+              iVar4 = FUN_1402ca760(local_238,pcVar12);
+              if (iVar4 == 0) goto LAB_1402ee3d9;
+              iVar4 = Module32Next(pvVar6,local_268);
+            } while (iVar4 != 0);
+          }
+          CloseHandle(pvVar6);
+        }
+      }
+      uVar7 = FUN_1402eddf0("WIN_IMPROPER_QUIT_TITLE");
+      uVar8 = FUN_1402eddf0("WIN_IMPROPER_QUIT_BODY");
+      iVar4 = FUN_1402efe40(uVar8,uVar7,0x33);
+      if (iVar4 == 6) {
+        FUN_14023ce70();
+      }
+      else if (iVar4 == 2) {
+        return 0;
+      }
+    }
+  }
+  FUN_140053d60(local_3b8,&DAT_14043dcfc,"iw5mp_ship.exe");
+  pcVar11 = local_3b8;
+  while (local_3b8[0] != '\0') {
+    if (local_3b8[0] == '.') {
+      *pcVar11 = '\0';
+    }
+    pcVar12 = pcVar11 + 1;
+    pcVar11 = pcVar11 + 1;
+    local_3b8[0] = *pcVar12;
+  }
+  pvVar6 = CreateFileA(local_3b8,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+  bVar15 = pvVar6 != (HANDLE)0xffffffffffffffff;
+  local_3d0[0] = s_iw5mp_ship_exe_1403f5310[0];
+  local_3d0[1] = s_iw5mp_ship_exe_1403f5310[1];
+  local_3d0[2] = s_iw5mp_ship_exe_1403f5310[2];
+  local_3d0[3] = s_iw5mp_ship_exe_1403f5310[3];
+  local_3d0[4] = s_iw5mp_ship_exe_1403f5310[4];
+  local_3d0[5] = s_iw5mp_ship_exe_1403f5310[5];
+  local_3d0[6] = s_iw5mp_ship_exe_1403f5310[6];
+  local_3d0[7] = s_iw5mp_ship_exe_1403f5310[7];
+  local_3c8[0] = s_iw5mp_ship_exe_1403f5310[8];
+  local_3c8[1] = s_iw5mp_ship_exe_1403f5310[9];
+  local_3c8[2] = s_iw5mp_ship_exe_1403f5310[10];
+  local_3c8[3] = s_iw5mp_ship_exe_1403f5310[0xb];
+  local_3c4[0] = s_iw5mp_ship_exe_1403f5310[0xc];
+  local_3c4[1] = s_iw5mp_ship_exe_1403f5310[0xd];
+  local_3c2 = s_iw5mp_ship_exe_1403f5310[0xe];
+  if (!bVar15) {
+    puVar9 = (undefined1 *)FUN_1403908e8(local_3b8,"_ship");
+    if (puVar9 != (undefined1 *)0x0) {
+      *puVar9 = 0;
+    }
+    pvVar6 = CreateFileA(local_3b8,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+    bVar15 = pvVar6 != (HANDLE)0xffffffffffffffff;
+    if ((bVar15) && (lVar10 = FUN_1403908e8(local_3d0,"_ship"), lVar10 != 0)) {
+      lVar13 = -1;
+      do {
+        lVar14 = lVar13;
+        lVar13 = lVar14 + 1;
+      } while (*(char *)(lVar10 + 5 + lVar13) != '\0');
+      FUN_14038ffd0(lVar10,lVar10 + 5,lVar14 + 2);
+    }
+  }
+  if (bVar15) {
+    local_res8[0] = 0;
+    local_res18[0] = 0;
+    BVar3 = ReadFile(pvVar6,local_res8,4,local_res18,(LPOVERLAPPED)0x0);
+    CloseHandle(pvVar6);
+    if (((BVar3 == 0) || (local_res18[0] == 0)) || (local_res8[0] == 0)) {
+      GetLastError();
+      return 0;
+    }
+    pvVar6 = OpenProcess(0x100401,0,local_res8[0]);
+    if ((pvVar6 != (HANDLE)0x0) &&
+       (hObject = (HANDLE)CreateToolhelp32Snapshot(8,local_res8[0]),
+       hObject != (HANDLE)0xffffffffffffffff)) {
+      local_268[0] = 0x238;
+      iVar4 = Module32First(hObject,local_268);
+      while (iVar4 != 0) {
+        iVar4 = FUN_1402ca760(local_238,local_3d0);
+        if (iVar4 == 0) {
+          CloseHandle(hObject);
+          uVar7 = FUN_1402eddf0("WIN_SHUTDOWN_MP_TITLE");
+          uVar8 = FUN_1402eddf0("WIN_SHUTDOWN_MP_BODY");
+          iVar4 = FUN_1402efe40(uVar8,uVar7,0x20033,7);
+          if (iVar4 != 6) {
+LAB_1402ee3d9:
+            CloseHandle(pvVar6);
+            return 0;
+          }
+          BVar3 = TerminateProcess(pvVar6,1);
+          if (BVar3 != 0) {
+            DVar5 = WaitForSingleObject(pvVar6,30000);
+            if ((DVar5 == 0x102) || (DVar5 == 0x80)) goto LAB_1402ee351;
+            if (DVar5 != 0xffffffff) {
+              local_3d4 = 0;
+              GetExitCodeProcess(pvVar6,&local_3d4);
+              DeleteFileA(local_3b8);
+              goto LAB_1402ee351;
+            }
+          }
+          GetLastError();
+          goto LAB_1402ee351;
+        }
+        iVar4 = Module32Next(hObject,local_268);
+      }
+      CloseHandle(hObject);
+    }
+LAB_1402ee351:
+    CloseHandle(pvVar6);
+  }
+  pvVar6 = CreateFileA(&DAT_14279d288,0x40000000,0,(LPSECURITY_ATTRIBUTES)0x0,2,2,(HANDLE)0x0);
+  if (pvVar6 == (HANDLE)0xffffffffffffffff) {
+    FUN_1402eecb0();
+    pcVar2 = (code *)swi(3);
+    uVar7 = (*pcVar2)();
+    return uVar7;
+  }
+  BVar3 = WriteFile(pvVar6,local_res20,4,local_res10,(LPOVERLAPPED)0x0);
+  if ((BVar3 != 0) && (local_res10[0] == 4)) {
+    CloseHandle(pvVar6);
+    return 1;
+  }
+  CloseHandle(pvVar6);
+  FUN_1402eecb0();
+  pcVar2 = (code *)swi(3);
+  uVar7 = (*pcVar2)();
+  return uVar7;
+}
+
+
+
+================================================================
+Function: FUN_1403bb340 @ 1403bb340
+----------------------------------------------------------------
+
+int FUN_1403bb340(uint param_1,short *param_2,uint param_3)
+
+{
+  short *psVar1;
+  byte *pbVar2;
+  byte bVar3;
+  char cVar4;
+  char cVar5;
+  uint uVar6;
+  int iVar7;
+  BOOL BVar8;
+  DWORD DVar9;
+  ulong *puVar10;
+  ulonglong uVar11;
+  short *psVar12;
+  undefined8 uVar13;
+  short *psVar14;
+  short sVar15;
+  ulonglong uVar16;
+  int iVar17;
+  longlong lVar18;
+  short *psVar19;
+  uint local_res20 [2];
+  DWORD local_68 [2];
+  HANDLE local_60;
+  ulonglong local_58;
+  ulonglong local_50;
+  short *local_48;
+  
+  if (param_1 == 0xfffffffe) {
+    puVar10 = __doserrno();
+    *puVar10 = 0;
+    puVar10 = __doserrno();
+    *puVar10 = 9;
+    return -1;
+  }
+  if ((-1 < (int)param_1) && (param_1 < DAT_144435540)) {
+    uVar11 = (ulonglong)(param_1 & 0x3f);
+    local_50 = 1;
+    local_58 = (ulonglong)(longlong)(int)param_1 >> 6;
+    lVar18 = (&DAT_144435140)[local_58];
+    bVar3 = *(byte *)(lVar18 + 0x38 + uVar11 * 0x48);
+    if ((bVar3 & 1) != 0) {
+      if (param_3 < 0x80000000) {
+        if ((param_3 == 0) || ((bVar3 & 2) != 0)) {
+          return 0;
+        }
+        if (param_2 != (short *)0x0) {
+          cVar4 = *(char *)(lVar18 + 0x39 + uVar11 * 0x48);
+          psVar12 = (short *)0x0;
+          local_60 = *(HANDLE *)(lVar18 + 0x28 + uVar11 * 0x48);
+          if (cVar4 == '\x01') {
+            if ((~(byte)param_3 & 1) == 0) goto LAB_1403bb436;
+            uVar6 = param_3 >> 1;
+            if (param_3 >> 1 < 4) {
+              uVar6 = 4;
+            }
+            uVar16 = (ulonglong)uVar6;
+            psVar12 = (short *)_malloc_base(uVar16);
+            FUN_1403b76f8(0);
+            FUN_1403b76f8(0);
+            if (psVar12 != (short *)0x0) {
+              uVar13 = FUN_1403bbb70(param_1,0,1);
+              *(undefined8 *)((&DAT_144435140)[local_58] + 0x30 + uVar11 * 0x48) = uVar13;
+              lVar18 = (&DAT_144435140)[local_58];
+              local_48 = psVar12;
+              goto LAB_1403bb4d9;
+            }
+            puVar10 = __doserrno();
+            *puVar10 = 0xc;
+            puVar10 = __doserrno();
+            *puVar10 = 8;
+          }
+          else if ((cVar4 == '\x02') && ((~(byte)param_3 & 1) == 0)) {
+LAB_1403bb436:
+            puVar10 = __doserrno();
+            *puVar10 = 0;
+            puVar10 = __doserrno();
+            *puVar10 = 0x16;
+            FUN_1403ae690();
+          }
+          else {
+            uVar16 = (ulonglong)param_3;
+            local_48 = param_2;
+LAB_1403bb4d9:
+            psVar19 = local_48;
+            iVar17 = 0;
+            if ((((*(byte *)(lVar18 + 0x38 + uVar11 * 0x48) & 0x48) != 0) &&
+                (cVar5 = *(char *)(lVar18 + 0x3a + uVar11 * 0x48), iVar17 = 0, cVar5 != '\n')) &&
+               (iVar7 = (int)uVar16, iVar7 != 0)) {
+              *(char *)local_48 = cVar5;
+              psVar19 = (short *)((longlong)local_48 + 1);
+              uVar16 = (ulonglong)(iVar7 - 1U);
+              iVar17 = 1;
+              *(undefined1 *)((&DAT_144435140)[local_58] + 0x3a + uVar11 * 0x48) = 10;
+              if (((cVar4 != '\0') &&
+                  (cVar5 = *(char *)((&DAT_144435140)[local_58] + 0x3b + uVar11 * 0x48),
+                  cVar5 != '\n')) && (iVar7 - 1U != 0)) {
+                *(char *)psVar19 = cVar5;
+                iVar17 = 2;
+                psVar19 = local_48 + 1;
+                uVar16 = (ulonglong)(iVar7 - 2U);
+                *(undefined1 *)((&DAT_144435140)[local_58] + 0x3b + uVar11 * 0x48) = 10;
+                if (((cVar4 == '\x01') &&
+                    (cVar5 = *(char *)((&DAT_144435140)[local_58] + 0x3c + uVar11 * 0x48),
+                    cVar5 != '\n')) && (iVar7 - 2U != 0)) {
+                  *(char *)psVar19 = cVar5;
+                  iVar17 = 3;
+                  psVar19 = (short *)((longlong)local_48 + 3);
+                  uVar16 = (ulonglong)(iVar7 - 3);
+                  *(undefined1 *)((&DAT_144435140)[local_58] + 0x3c + uVar11 * 0x48) = 10;
+                }
+              }
+            }
+            iVar7 = FUN_1403c5a70(param_1);
+            if (((iVar7 == 0) || (-1 < *(char *)((&DAT_144435140)[local_58] + 0x38 + uVar11 * 0x48))
+                ) || (BVar8 = GetConsoleMode(local_60,local_68), BVar8 == 0)) {
+              local_50 = local_50 & 0xffffffffffffff00;
+LAB_1403bb60c:
+              BVar8 = ReadFile(local_60,psVar19,(DWORD)uVar16,local_res20,(LPOVERLAPPED)0x0);
+              if ((BVar8 != 0) && (local_res20[0] <= param_3)) {
+LAB_1403bb648:
+                iVar17 = iVar17 + local_res20[0];
+                if (*(char *)((&DAT_144435140)[local_58] + 0x38 + uVar11 * 0x48) < '\0') {
+                  if (cVar4 == '\x02') {
+                    if ((char)local_50 == '\0') {
+                      iVar17 = FUN_1403bad78(param_1,local_48);
+                    }
+                    else {
+                      psVar1 = (short *)((longlong)local_48 +
+                                        ((longlong)iVar17 & 0xfffffffffffffffeU));
+                      psVar19 = local_48;
+                      for (psVar14 = local_48; psVar14 < psVar1;
+                          psVar14 = (short *)((longlong)psVar14 + lVar18)) {
+                        sVar15 = *psVar14;
+                        if (sVar15 == 0x1a) {
+                          pbVar2 = (byte *)((&DAT_144435140)[local_58] + 0x38 + uVar11 * 0x48);
+                          *pbVar2 = *pbVar2 | 2;
+                          break;
+                        }
+                        if (((sVar15 == 0xd) && (psVar14 + 1 < psVar1)) && (psVar14[1] == 10)) {
+                          sVar15 = 10;
+                          lVar18 = 4;
+                        }
+                        else {
+                          lVar18 = 2;
+                        }
+                        *psVar19 = sVar15;
+                        psVar19 = psVar19 + 1;
+                      }
+                      iVar17 = (int)((longlong)psVar19 - (longlong)local_48 >> 1) * 2;
+                    }
+                  }
+                  else {
+                    iVar17 = FUN_1403baf50(param_1,psVar19,(longlong)iVar17,param_2,param_3 >> 1);
+                  }
+                }
+                goto LAB_1403bb5ec;
+              }
+              DVar9 = GetLastError();
+              if (DVar9 != 5) {
+                if (DVar9 == 0x6d) {
+                  iVar17 = 0;
+                  goto LAB_1403bb5ec;
+                }
+                goto LAB_1403bb5e2;
+              }
+              puVar10 = __doserrno();
+              *puVar10 = 9;
+              puVar10 = __doserrno();
+              *puVar10 = 5;
+            }
+            else {
+              if (cVar4 != '\x02') goto LAB_1403bb60c;
+              BVar8 = ReadConsoleW(local_60,psVar19,(DWORD)(uVar16 >> 1),local_res20,
+                                   (PCONSOLE_READCONSOLE_CONTROL)0x0);
+              if (BVar8 != 0) {
+                local_res20[0] = local_res20[0] * 2;
+                goto LAB_1403bb648;
+              }
+              DVar9 = GetLastError();
+LAB_1403bb5e2:
+              FUN_1403a5c98(DVar9);
+            }
+          }
+          iVar17 = -1;
+LAB_1403bb5ec:
+          FUN_1403b76f8(psVar12);
+          return iVar17;
+        }
+      }
+      puVar10 = __doserrno();
+      *puVar10 = 0;
+      puVar10 = __doserrno();
+      *puVar10 = 0x16;
+      goto LAB_1403bb772;
+    }
+  }
+  puVar10 = __doserrno();
+  *puVar10 = 0;
+  puVar10 = __doserrno();
+  *puVar10 = 9;
+LAB_1403bb772:
+  FUN_1403ae690();
+  return -1;
+}
+
+
+
+================================================================
+Function: FUN_1403bad78 @ 1403bad78
+----------------------------------------------------------------
+
+int FUN_1403bad78(uint param_1,short *param_2,longlong param_3)
+
+{
+  short *psVar1;
+  byte *pbVar2;
+  byte bVar3;
+  short sVar4;
+  HANDLE hFile;
+  short sVar5;
+  BOOL BVar6;
+  ulonglong uVar7;
+  longlong lVar8;
+  short *psVar9;
+  short *psVar10;
+  short *psVar11;
+  longlong lVar12;
+  longlong lVar13;
+  short local_res8 [4];
+  short local_res10 [4];
+  DWORD local_res18 [4];
+  
+  uVar7 = (ulonglong)(param_1 & 0x3f);
+  lVar13 = (longlong)(int)param_1 >> 6;
+  lVar12 = 0;
+  lVar8 = (&DAT_144435140)[lVar13];
+  local_res10[0] = 4;
+  local_res10[1] = 0;
+  local_res10[2] = 0;
+  local_res10[3] = 0;
+  hFile = *(HANDLE *)(lVar8 + 0x28 + uVar7 * 0x48);
+  if ((param_3 == 0) || (*param_2 != 10)) {
+    pbVar2 = (byte *)(lVar8 + 0x38 + uVar7 * 0x48);
+    *pbVar2 = *pbVar2 & 0xfb;
+  }
+  else {
+    pbVar2 = (byte *)(lVar8 + 0x38 + uVar7 * 0x48);
+    *pbVar2 = *pbVar2 | 4;
+  }
+  psVar1 = param_2 + param_3;
+  psVar11 = param_2;
+  if (param_2 < psVar1) {
+    psVar9 = param_2;
+    do {
+      sVar5 = *psVar9;
+      if (sVar5 == 0x1a) {
+        bVar3 = *(byte *)((&DAT_144435140)[lVar13] + 0x38 + uVar7 * 0x48);
+        if ((bVar3 & 0x40) != 0) {
+          *psVar11 = 0x1a;
+          goto LAB_1403baf33;
+        }
+        *(byte *)((&DAT_144435140)[lVar13] + 0x38 + uVar7 * 0x48) = bVar3 | 2;
+        break;
+      }
+      psVar10 = psVar9 + 1;
+      if (sVar5 == 0xd) {
+        if (psVar1 <= psVar10) {
+          BVar6 = ReadFile(hFile,local_res8,2,local_res18,(LPOVERLAPPED)0x0);
+          if ((BVar6 == 0) || (local_res18[0] == 0)) {
+LAB_1403baf0c:
+            *psVar11 = 0xd;
+            goto LAB_1403baf33;
+          }
+          uVar7 = (ulonglong)(param_1 & 0x3f);
+          if ((*(byte *)((&DAT_144435140)[lVar13] + 0x38 + uVar7 * 0x48) & 0x48) == 0) {
+            if ((local_res8[0] != 10) || (psVar11 != param_2)) {
+              FUN_1403bbb70(param_1,0xfffffffffffffffe,1);
+              if (local_res8[0] != 10) goto LAB_1403baf0c;
+              break;
+            }
+          }
+          else if (local_res8[0] != 10) {
+            *psVar11 = 0xd;
+            local_res10[0] = local_res8[0];
+            do {
+              *(undefined1 *)((&DAT_144435140)[lVar13] + uVar7 * 0x48 + 0x3a + lVar12) =
+                   *(undefined1 *)((longlong)local_res18 + lVar12 + -8);
+              lVar12 = lVar12 + 1;
+            } while (lVar12 < 2);
+            *(undefined1 *)((&DAT_144435140)[lVar13] + 0x3c + uVar7 * 0x48) = 10;
+LAB_1403baf33:
+            psVar11 = psVar11 + 1;
+            break;
+          }
+          *psVar11 = 10;
+          goto LAB_1403baf33;
+        }
+        lVar8 = 2;
+        if (*psVar10 == 10) {
+          lVar8 = 4;
+        }
+        sVar4 = *psVar10;
+        psVar10 = (short *)((longlong)psVar9 + lVar8);
+        sVar5 = 10;
+        if (sVar4 != 10) {
+          sVar5 = 0xd;
+        }
+      }
+      *psVar11 = sVar5;
+      psVar11 = psVar11 + 1;
+      psVar9 = psVar10;
+    } while (psVar10 < psVar1);
+  }
+  return (int)((longlong)psVar11 - (longlong)param_2 >> 1) * 2;
+}
+
+
+
+================================================================
+Function: FUN_1403baf50 @ 1403baf50
+----------------------------------------------------------------
+
+int FUN_1403baf50(uint param_1,byte *param_2,longlong param_3,undefined8 param_4,undefined4 param_5)
+
+{
+  byte bVar1;
+  HANDLE hFile;
+  BOOL BVar2;
+  DWORD DVar3;
+  ulonglong uVar4;
+  byte *pbVar5;
+  ulong *puVar6;
+  longlong lVar7;
+  uint uVar8;
+  ulonglong uVar9;
+  int iVar10;
+  int iVar11;
+  byte *pbVar12;
+  byte *pbVar13;
+  longlong lVar14;
+  char local_res8 [8];
+  DWORD local_res10 [2];
+  
+  uVar4 = (ulonglong)(param_1 & 0x3f);
+  lVar14 = (longlong)(int)param_1 >> 6;
+  lVar7 = (&DAT_144435140)[lVar14];
+  hFile = *(HANDLE *)(lVar7 + 0x28 + uVar4 * 0x48);
+  if ((param_3 == 0) || (*param_2 != 10)) {
+    pbVar12 = (byte *)(lVar7 + 0x38 + uVar4 * 0x48);
+    *pbVar12 = *pbVar12 & 0xfb;
+  }
+  else {
+    pbVar12 = (byte *)(lVar7 + 0x38 + uVar4 * 0x48);
+    *pbVar12 = *pbVar12 | 4;
+  }
+  pbVar12 = param_2;
+  pbVar13 = param_2;
+  do {
+    if (param_2 + param_3 <= pbVar13) {
+LAB_1403bb0ce:
+      iVar10 = (int)pbVar12 - (int)param_2;
+      if (iVar10 == 0) {
+        return 0;
+      }
+      lVar7 = (&DAT_144435140)[lVar14];
+      if (*(char *)(lVar7 + 0x39 + uVar4 * 0x48) != '\0') {
+        pbVar12 = param_2 + iVar10;
+        if ((char)pbVar12[-1] < '\0') {
+          uVar9 = 1;
+          for (pbVar12 = pbVar12 + -1;
+              ((uVar8 = (uint)uVar9, (&DAT_1404d66d0)[*pbVar12] == '\0' && (uVar8 < 5)) &&
+              (param_2 <= pbVar12)); pbVar12 = pbVar12 + -1) {
+            uVar9 = (ulonglong)(uVar8 + 1);
+          }
+          if ((&DAT_1404d66d0)[*pbVar12] == '\0') {
+            puVar6 = __doserrno();
+            *puVar6 = 0x2a;
+            return -1;
+          }
+          if ((int)(char)(&DAT_1404d66d0)[*pbVar12] + 1U == uVar8) {
+            pbVar12 = pbVar12 + uVar9;
+          }
+          else if ((*(byte *)(lVar7 + 0x38 + uVar4 * 0x48) & 0x48) == 0) {
+            FUN_1403bbb70(param_1,(longlong)(int)-uVar8,1);
+          }
+          else {
+            pbVar13 = pbVar12 + 1;
+            *(byte *)(lVar7 + 0x3a + uVar4 * 0x48) = *pbVar12;
+            if (1 < uVar8) {
+              bVar1 = *pbVar13;
+              pbVar13 = pbVar12 + 2;
+              *(byte *)((&DAT_144435140)[lVar14] + 0x3b + uVar4 * 0x48) = bVar1;
+            }
+            if (uVar8 == 3) {
+              bVar1 = *pbVar13;
+              pbVar13 = pbVar13 + 1;
+              *(byte *)((&DAT_144435140)[lVar14] + 0x3c + uVar4 * 0x48) = bVar1;
+            }
+            pbVar12 = pbVar13 + -uVar9;
+          }
+        }
+        iVar11 = (int)pbVar12 - (int)param_2;
+        iVar10 = __acrt_MultiByteToWideChar(0xfde9,0,param_2,iVar11,param_4,param_5);
+        if (iVar10 == 0) {
+          DVar3 = GetLastError();
+          FUN_1403a5c98(DVar3);
+          return -1;
+        }
+        lVar7 = (&DAT_144435140)[lVar14];
+        pbVar12 = (byte *)(lVar7 + 0x3d + uVar4 * 0x48);
+        *pbVar12 = *pbVar12 & 0xfd;
+        pbVar12 = (byte *)(lVar7 + 0x3d + uVar4 * 0x48);
+        *pbVar12 = *pbVar12 | -(iVar10 != iVar11) & 2U;
+        return iVar10 * 2;
+      }
+      return iVar10;
+    }
+    bVar1 = *pbVar13;
+    if (bVar1 == 0x1a) {
+      bVar1 = *(byte *)((&DAT_144435140)[lVar14] + 0x38 + uVar4 * 0x48);
+      if ((bVar1 & 0x40) != 0) {
+        *pbVar12 = 0x1a;
+        goto LAB_1403bb0cb;
+      }
+      *(byte *)((&DAT_144435140)[lVar14] + 0x38 + uVar4 * 0x48) = bVar1 | 2;
+      goto LAB_1403bb0ce;
+    }
+    pbVar5 = pbVar13 + 1;
+    if (bVar1 == 0xd) {
+      if (param_2 + param_3 <= pbVar5) {
+        BVar2 = ReadFile(hFile,local_res8,1,local_res10,(LPOVERLAPPED)0x0);
+        if ((BVar2 == 0) || (local_res10[0] == 0)) {
+          *pbVar12 = 0xd;
+        }
+        else if ((*(byte *)((&DAT_144435140)[lVar14] + 0x38 + (ulonglong)(param_1 & 0x3f) * 0x48) &
+                 0x48) == 0) {
+          if ((local_res8[0] == '\n') && (pbVar12 == param_2)) goto LAB_1403bb05f;
+          FUN_1403bbb70(param_1,0xffffffffffffffff,1);
+          if (local_res8[0] == '\n') goto LAB_1403bb0ce;
+          *pbVar12 = 0xd;
+        }
+        else if (local_res8[0] == '\n') {
+LAB_1403bb05f:
+          *pbVar12 = 10;
+        }
+        else {
+          *pbVar12 = 0xd;
+          *(char *)((&DAT_144435140)[lVar14] + 0x3a + (ulonglong)(param_1 & 0x3f) * 0x48) =
+               local_res8[0];
+        }
+LAB_1403bb0cb:
+        pbVar12 = pbVar12 + 1;
+        goto LAB_1403bb0ce;
+      }
+      if (*pbVar5 == 10) {
+        *pbVar12 = 10;
+        lVar7 = 2;
+      }
+      else {
+        *pbVar12 = 0xd;
+        lVar7 = 1;
+      }
+      pbVar5 = pbVar13 + lVar7;
+    }
+    else {
+      *pbVar12 = bVar1;
+    }
+    pbVar12 = pbVar12 + 1;
+    pbVar13 = pbVar5;
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_1403a900c @ 1403a900c
+----------------------------------------------------------------
+
+/* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+byte * FUN_1403a900c(FILE *param_1,byte *param_2,undefined8 param_3)
+
+{
+  uint uVar1;
+  BOOL BVar2;
+  longlong lVar3;
+  longlong lVar4;
+  longlong lVar5;
+  ulonglong uVar6;
+  longlong lVar7;
+  undefined1 auStackY_1088 [32];
+  uint local_1058 [3];
+  byte abStack_1049 [4097];
+  ulonglong local_48;
+  undefined8 uStack_40;
+  
+  uStack_40 = 0x1403a9026;
+  local_48 = DAT_1404d62e8 ^ (ulonglong)auStackY_1088;
+  uVar1 = _fileno(param_1);
+  lVar7 = 0;
+  if (*(int *)&param_1->_base != 0) {
+    uVar6 = (ulonglong)(uVar1 & 0x3f);
+    lVar3 = ((longlong)param_1->_ptr - *(longlong *)&param_1->_cnt) / 2;
+    lVar4 = thunk_FUN_1403bb8f8(uVar1,*(undefined8 *)
+                                       ((&DAT_144435140)[(longlong)(int)uVar1 >> 6] + 0x30 +
+                                       uVar6 * 0x48),0,param_3);
+    if ((((lVar4 == *(longlong *)((&DAT_144435140)[(longlong)(int)uVar1 >> 6] + 0x30 + uVar6 * 0x48)
+          ) && (BVar2 = ReadFile(*(HANDLE *)
+                                  ((&DAT_144435140)[(longlong)(int)uVar1 >> 6] + 0x28 + uVar6 * 0x48
+                                  ),abStack_1049 + 1,0x1000,local_1058,(LPOVERLAPPED)0x0),
+               BVar2 != 0)) && (lVar5 = thunk_FUN_1403bb8f8(uVar1,param_2,0,param_3), -1 < lVar5))
+       && (uVar6 = (ulonglong)local_1058[0], lVar3 <= (longlong)uVar6)) {
+      param_2 = abStack_1049 + 1;
+      if (lVar3 != 0) {
+        do {
+          if (abStack_1049 + uVar6 + 1 <= param_2) break;
+          if (*param_2 == 0xd) {
+            if ((param_2 < abStack_1049 + uVar6) && (param_2[1] == 10)) {
+              param_2 = param_2 + 1;
+            }
+          }
+          else {
+            param_2 = param_2 + (char)(&DAT_1404d66d0)[*param_2];
+          }
+          lVar7 = lVar7 + 1;
+          param_2 = param_2 + 1;
+        } while (lVar7 != lVar3);
+      }
+      param_2 = param_2 + (lVar4 - (longlong)(abStack_1049 + 1));
+    }
+    else {
+      param_2 = (byte *)0xffffffffffffffff;
+    }
+  }
+  return param_2;
+}
+
+
+

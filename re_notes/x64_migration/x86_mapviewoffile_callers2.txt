@@ -1,0 +1,213 @@
+Target symbol: MapViewOfFile @ EXTERNAL:000000d1
+Callers (3):
+  FUN_004a1de0 @ 004a1de0
+  FUN_005476e0 @ 005476e0
+  FUN_0051c1c0 @ 0051c1c0
+
+================================================================
+Function: FUN_004a1de0 @ 004a1de0
+----------------------------------------------------------------
+
+undefined4 FUN_004a1de0(void)
+
+{
+  HANDLE hObject;
+  HANDLE hObject_00;
+  HANDLE hFileMappingObject;
+  code *pcVar1;
+  undefined1 local_50 [40];
+  HANDLE local_28;
+  HANDLE local_24;
+  HANDLE local_20;
+  LPVOID local_1c;
+  _SECURITY_ATTRIBUTES local_18;
+  undefined4 local_c;
+  LPCVOID local_8;
+  
+  InitializeSecurityDescriptor(local_50,1);
+  SetSecurityDescriptorDacl(local_50,1,(PACL)0x0,0);
+  local_18.lpSecurityDescriptor = local_50;
+  local_18.nLength = 0xc;
+  local_18.bInheritHandle = 0;
+  hObject = CreateSemaphoreA(&local_18,0,0x200,"STEAM_DIPC_CONSUME");
+  local_28 = hObject;
+  hObject_00 = CreateSemaphoreA(&local_18,1,0x200,"SREAM_DIPC_PRODUCE");
+  local_24 = hObject_00;
+  hFileMappingObject = CreateFileMappingA((HANDLE)0xffffffff,&local_18,4,0,0x1000,"STEAM_DRM_IPC");
+  local_20 = hFileMappingObject;
+  if ((hObject != (HANDLE)0x0) && (hObject_00 != (HANDLE)0x0)) {
+    pcVar1 = CloseHandle_exref;
+    if (hFileMappingObject == (HANDLE)0x0) goto LAB_004a1edd;
+    local_1c = MapViewOfFile(hFileMappingObject,0xf001f,0,0,0);
+    local_8 = local_1c;
+    if (local_1c != (LPVOID)0x0) {
+      local_c = FUN_00477050(&local_28,1);
+      UnmapViewOfFile(local_8);
+      CloseHandle(hFileMappingObject);
+      CloseHandle(hObject);
+      CloseHandle(hObject_00);
+      return local_c;
+    }
+  }
+  pcVar1 = CloseHandle_exref;
+  if (hFileMappingObject != (HANDLE)0x0) {
+    CloseHandle(hFileMappingObject);
+  }
+LAB_004a1edd:
+  if (hObject != (HANDLE)0x0) {
+    (*pcVar1)(hObject);
+  }
+  if (hObject_00 != (HANDLE)0x0) {
+    (*pcVar1)(hObject_00);
+  }
+  return 0;
+}
+
+
+
+================================================================
+Function: FUN_005476e0 @ 005476e0
+----------------------------------------------------------------
+
+DWORD FUN_005476e0(void)
+
+{
+  HANDLE hObject;
+  HANDLE pvVar1;
+  HANDLE hFileMappingObject;
+  LPVOID pvVar2;
+  LPCVOID lpBaseAddress;
+  code *pcVar3;
+  undefined1 local_4c [40];
+  HANDLE local_24;
+  HANDLE local_20;
+  HANDLE local_1c;
+  LPVOID local_18;
+  _SECURITY_ATTRIBUTES local_14;
+  DWORD local_8;
+  
+  InitializeSecurityDescriptor(local_4c,1);
+  SetSecurityDescriptorDacl(local_4c,1,(PACL)0x0,0);
+  local_14.lpSecurityDescriptor = local_4c;
+  local_14.nLength = 0xc;
+  local_14.bInheritHandle = 0;
+  hObject = CreateSemaphoreA(&local_14,0,0x200,"STEAM_DIPC_CONSUME");
+  local_24 = hObject;
+  pvVar1 = CreateSemaphoreA(&local_14,1,0x200,"SREAM_DIPC_PRODUCE");
+  local_20 = pvVar1;
+  hFileMappingObject = CreateFileMappingA((HANDLE)0xffffffff,&local_14,4,0,0x1000,"STEAM_DRM_IPC");
+  local_1c = hFileMappingObject;
+  if ((hObject == (HANDLE)0x0) || (pvVar1 == (HANDLE)0x0)) {
+LAB_005477e1:
+    pcVar3 = CloseHandle_exref;
+    if (hFileMappingObject != (HANDLE)0x0) {
+      CloseHandle(hFileMappingObject);
+    }
+  }
+  else {
+    pcVar3 = CloseHandle_exref;
+    if (hFileMappingObject != (HANDLE)0x0) {
+      pvVar2 = MapViewOfFile(hFileMappingObject,0xf001f,0,0,0);
+      if (pvVar2 != (LPVOID)0x0) {
+        local_18 = pvVar2;
+        pvVar1 = (HANDLE)FUN_00477050(&local_24,0);
+        lpBaseAddress = local_18;
+        if (pvVar1 != (HANDLE)0x0) {
+          SetEvent(pvVar1);
+          CloseHandle(pvVar1);
+          SetLastError(0);
+          lpBaseAddress = local_18;
+        }
+        goto LAB_005477be;
+      }
+      goto LAB_005477e1;
+    }
+  }
+  if (hObject != (HANDLE)0x0) {
+    (*pcVar3)(hObject);
+  }
+  if (pvVar1 != (HANDLE)0x0) {
+    (*pcVar3)(pvVar1);
+  }
+  hObject = (HANDLE)0x0;
+  hFileMappingObject = (HANDLE)0x0;
+  local_20 = (HANDLE)0x0;
+  lpBaseAddress = (LPCVOID)0x0;
+LAB_005477be:
+  local_8 = GetLastError();
+  if (lpBaseAddress != (LPCVOID)0x0) {
+    UnmapViewOfFile(lpBaseAddress);
+  }
+  if (hFileMappingObject != (HANDLE)0x0) {
+    CloseHandle(hFileMappingObject);
+  }
+  if (hObject != (HANDLE)0x0) {
+    CloseHandle(hObject);
+  }
+  if (local_20 != (HANDLE)0x0) {
+    CloseHandle(local_20);
+  }
+  return local_8;
+}
+
+
+
+================================================================
+Function: FUN_0051c1c0 @ 0051c1c0
+----------------------------------------------------------------
+
+undefined1 FUN_0051c1c0(undefined4 param_1,undefined4 param_2)
+
+{
+  HANDLE hHandle;
+  DWORD DVar1;
+  HANDLE pvVar2;
+  LPVOID lpBaseAddress;
+  CHAR local_4c [32];
+  CHAR local_2c [32];
+  HANDLE local_c;
+  undefined1 local_5;
+  
+  builtin_memcpy(local_2c,"Local\\SteamStart_SharedMemLock",0x1f);
+  builtin_memcpy(local_4c,"Local\\SteamStart_SharedMemFile",0x1f);
+  local_5 = 0;
+  hHandle = OpenEventA(0x100000,0,local_2c);
+  if (hHandle == (HANDLE)0x0) {
+    return 0;
+  }
+  DVar1 = WaitForSingleObject(hHandle,5000);
+  if (DVar1 == 0) {
+    pvVar2 = OpenFileMappingA(2,0,local_4c);
+    local_c = pvVar2;
+    if (pvVar2 != (HANDLE)0x0) {
+      lpBaseAddress = MapViewOfFile(pvVar2,2,0,0,0);
+      if (lpBaseAddress != (LPVOID)0x0) {
+        if ((*(int *)((int)lpBaseAddress + 0x90) == 2) && (*(int *)((int)lpBaseAddress + 0x94) == 0)
+           ) {
+          pvVar2 = CreateEventA((LPSECURITY_ATTRIBUTES)0x0,0,0,(LPCSTR)0x0);
+          DVar1 = GetCurrentProcessId();
+          *(DWORD *)((int)lpBaseAddress + 0x98) = DVar1;
+          *(undefined4 *)((int)lpBaseAddress + 0xa0) = 0;
+          *(undefined4 *)((int)lpBaseAddress + 0xac) = 0;
+          *(undefined4 *)((int)lpBaseAddress + 0xa4) = 0x12345678;
+          *(undefined4 *)((int)lpBaseAddress + 0xa8) = param_2;
+          *(HANDLE *)((int)lpBaseAddress + 0x9c) = pvVar2;
+          *(undefined4 *)((int)lpBaseAddress + 0x94) = param_1;
+          DVar1 = WaitForSingleObject(pvVar2,5000);
+          if (DVar1 == 0) {
+            local_5 = 1;
+          }
+          CloseHandle(pvVar2);
+          pvVar2 = local_c;
+        }
+        UnmapViewOfFile(lpBaseAddress);
+      }
+      CloseHandle(pvVar2);
+    }
+  }
+  CloseHandle(hHandle);
+  return local_5;
+}
+
+
+

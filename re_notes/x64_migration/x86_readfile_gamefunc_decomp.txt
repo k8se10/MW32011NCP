@@ -1,0 +1,61 @@
+================================================================
+Function: FUN_0052a8f0 @ 0052a8f0
+----------------------------------------------------------------
+
+undefined4 FUN_0052a8f0(void)
+
+{
+  code *pcVar1;
+  HANDLE pvVar2;
+  BOOL BVar3;
+  int iVar4;
+  undefined4 uVar5;
+  DWORD local_c;
+  DWORD local_8;
+  DWORD local_4;
+  
+  if (DAT_01cdf814 == '\0') {
+    return 1;
+  }
+  local_8 = GetCurrentProcessId();
+  FUN_006c0bf0();
+  pvVar2 = CreateFileA(&DAT_01cdf814,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+  if (pvVar2 != (HANDLE)0xffffffff) {
+    BVar3 = ReadFile(pvVar2,&local_4,4,&local_c,(LPOVERLAPPED)0x0);
+    if ((BVar3 == 0) || (local_c != 4)) {
+      CloseHandle(pvVar2);
+    }
+    else {
+      CloseHandle(pvVar2);
+      if ((local_8 != local_4) && (iVar4 = FUN_0062f000(), iVar4 != 0)) {
+        return 0;
+      }
+      uVar5 = FUN_0049d7e0("WIN_IMPROPER_QUIT_TITLE",0x33,7);
+      uVar5 = FUN_0049d7e0("WIN_IMPROPER_QUIT_BODY",uVar5);
+      iVar4 = FUN_004664d0(uVar5);
+      if (iVar4 == 6) {
+        FUN_00473e20();
+      }
+      else if ((iVar4 != 7) && (iVar4 == 2)) {
+        return 0;
+      }
+    }
+  }
+  pvVar2 = CreateFileA(&DAT_01cdf814,0x40000000,0,(LPSECURITY_ATTRIBUTES)0x0,2,2,(HANDLE)0x0);
+  if (pvVar2 == (HANDLE)0xffffffff) {
+    FUN_0062efc0();
+  }
+  BVar3 = WriteFile(pvVar2,&local_8,4,&local_c,(LPOVERLAPPED)0x0);
+  if ((BVar3 != 0) && (local_c == 4)) {
+    CloseHandle(pvVar2);
+    return 1;
+  }
+  CloseHandle(pvVar2);
+  FUN_0062efc0();
+  pcVar1 = (code *)swi(3);
+  uVar5 = (*pcVar1)();
+  return uVar5;
+}
+
+
+

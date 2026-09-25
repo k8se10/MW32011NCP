@@ -1,0 +1,2 @@
+Symbol: MapViewOfFile @ EXTERNAL:000000d1 isExternal=true space=EXTERNAL
+No non-external (real memory) address found for MapViewOfFile -- cannot scan for indirect callers this way.

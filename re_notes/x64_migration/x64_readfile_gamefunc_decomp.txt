@@ -1,0 +1,204 @@
+================================================================
+Function: FUN_1402edf30 @ 1402edf30
+----------------------------------------------------------------
+
+undefined8 FUN_1402edf30(void)
+
+{
+  char *pcVar1;
+  code *pcVar2;
+  BOOL BVar3;
+  int iVar4;
+  DWORD DVar5;
+  HANDLE pvVar6;
+  undefined8 uVar7;
+  undefined8 uVar8;
+  undefined1 *puVar9;
+  longlong lVar10;
+  HANDLE hObject;
+  char *pcVar11;
+  char *pcVar12;
+  longlong lVar13;
+  bool bVar15;
+  DWORD local_res8 [2];
+  DWORD local_res10 [2];
+  DWORD local_res18 [2];
+  DWORD local_res20 [2];
+  DWORD local_3d8;
+  DWORD local_3d4;
+  char local_3d0 [8];
+  char local_3c8 [4];
+  char local_3c4 [2];
+  char local_3c2;
+  char local_3b8 [64];
+  char local_378;
+  char local_377 [258];
+  undefined1 local_275;
+  undefined4 local_268 [12];
+  undefined1 local_238 [536];
+  longlong lVar14;
+  
+  if (DAT_14279d288 == '\0') {
+    return 1;
+  }
+  local_res20[0] = GetCurrentProcessId();
+  pvVar6 = CreateFileA(&DAT_14279d288,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+  if (pvVar6 != (HANDLE)0xffffffffffffffff) {
+    BVar3 = ReadFile(pvVar6,&local_3d8,4,local_res10,(LPOVERLAPPED)0x0);
+    if ((BVar3 == 0) || (local_res10[0] != 4)) {
+      CloseHandle(pvVar6);
+    }
+    else {
+      CloseHandle(pvVar6);
+      if ((local_res20[0] != local_3d8) &&
+         (pvVar6 = OpenProcess(0x1fffff,0,local_3d8), pvVar6 != (HANDLE)0x0)) {
+        CloseHandle(pvVar6);
+        pvVar6 = (HANDLE)CreateToolhelp32Snapshot(8,local_3d8);
+        if (pvVar6 != (HANDLE)0xffffffffffffffff) {
+          local_268[0] = 0x238;
+          iVar4 = Module32First(pvVar6,local_268);
+          if (iVar4 != 0) {
+            GetModuleFileNameA((HMODULE)0x0,&local_378,0x104);
+            pcVar12 = &local_378;
+            local_275 = 0;
+            pcVar11 = &local_378;
+            while (local_378 != '\0') {
+              if ((local_378 == '\\') || (local_378 == ':')) {
+                pcVar12 = pcVar11 + 1;
+              }
+              pcVar1 = pcVar11 + 1;
+              pcVar11 = pcVar11 + 1;
+              local_378 = *pcVar1;
+            }
+            do {
+              iVar4 = FUN_1402ca760(local_238,pcVar12);
+              if (iVar4 == 0) goto LAB_1402ee3d9;
+              iVar4 = Module32Next(pvVar6,local_268);
+            } while (iVar4 != 0);
+          }
+          CloseHandle(pvVar6);
+        }
+      }
+      uVar7 = FUN_1402eddf0("WIN_IMPROPER_QUIT_TITLE");
+      uVar8 = FUN_1402eddf0("WIN_IMPROPER_QUIT_BODY");
+      iVar4 = FUN_1402efe40(uVar8,uVar7,0x33);
+      if (iVar4 == 6) {
+        FUN_14023ce70();
+      }
+      else if (iVar4 == 2) {
+        return 0;
+      }
+    }
+  }
+  FUN_140053d60(local_3b8,&DAT_14043dcfc,"iw5mp_ship.exe");
+  pcVar11 = local_3b8;
+  while (local_3b8[0] != '\0') {
+    if (local_3b8[0] == '.') {
+      *pcVar11 = '\0';
+    }
+    pcVar12 = pcVar11 + 1;
+    pcVar11 = pcVar11 + 1;
+    local_3b8[0] = *pcVar12;
+  }
+  pvVar6 = CreateFileA(local_3b8,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+  bVar15 = pvVar6 != (HANDLE)0xffffffffffffffff;
+  local_3d0[0] = s_iw5mp_ship_exe_1403f5310[0];
+  local_3d0[1] = s_iw5mp_ship_exe_1403f5310[1];
+  local_3d0[2] = s_iw5mp_ship_exe_1403f5310[2];
+  local_3d0[3] = s_iw5mp_ship_exe_1403f5310[3];
+  local_3d0[4] = s_iw5mp_ship_exe_1403f5310[4];
+  local_3d0[5] = s_iw5mp_ship_exe_1403f5310[5];
+  local_3d0[6] = s_iw5mp_ship_exe_1403f5310[6];
+  local_3d0[7] = s_iw5mp_ship_exe_1403f5310[7];
+  local_3c8[0] = s_iw5mp_ship_exe_1403f5310[8];
+  local_3c8[1] = s_iw5mp_ship_exe_1403f5310[9];
+  local_3c8[2] = s_iw5mp_ship_exe_1403f5310[10];
+  local_3c8[3] = s_iw5mp_ship_exe_1403f5310[0xb];
+  local_3c4[0] = s_iw5mp_ship_exe_1403f5310[0xc];
+  local_3c4[1] = s_iw5mp_ship_exe_1403f5310[0xd];
+  local_3c2 = s_iw5mp_ship_exe_1403f5310[0xe];
+  if (!bVar15) {
+    puVar9 = (undefined1 *)FUN_1403908e8(local_3b8,"_ship");
+    if (puVar9 != (undefined1 *)0x0) {
+      *puVar9 = 0;
+    }
+    pvVar6 = CreateFileA(local_3b8,0x80000000,0,(LPSECURITY_ATTRIBUTES)0x0,3,2,(HANDLE)0x0);
+    bVar15 = pvVar6 != (HANDLE)0xffffffffffffffff;
+    if ((bVar15) && (lVar10 = FUN_1403908e8(local_3d0,"_ship"), lVar10 != 0)) {
+      lVar13 = -1;
+      do {
+        lVar14 = lVar13;
+        lVar13 = lVar14 + 1;
+      } while (*(char *)(lVar10 + 5 + lVar13) != '\0');
+      FUN_14038ffd0(lVar10,lVar10 + 5,lVar14 + 2);
+    }
+  }
+  if (bVar15) {
+    local_res8[0] = 0;
+    local_res18[0] = 0;
+    BVar3 = ReadFile(pvVar6,local_res8,4,local_res18,(LPOVERLAPPED)0x0);
+    CloseHandle(pvVar6);
+    if (((BVar3 == 0) || (local_res18[0] == 0)) || (local_res8[0] == 0)) {
+      GetLastError();
+      return 0;
+    }
+    pvVar6 = OpenProcess(0x100401,0,local_res8[0]);
+    if ((pvVar6 != (HANDLE)0x0) &&
+       (hObject = (HANDLE)CreateToolhelp32Snapshot(8,local_res8[0]),
+       hObject != (HANDLE)0xffffffffffffffff)) {
+      local_268[0] = 0x238;
+      iVar4 = Module32First(hObject,local_268);
+      while (iVar4 != 0) {
+        iVar4 = FUN_1402ca760(local_238,local_3d0);
+        if (iVar4 == 0) {
+          CloseHandle(hObject);
+          uVar7 = FUN_1402eddf0("WIN_SHUTDOWN_MP_TITLE");
+          uVar8 = FUN_1402eddf0("WIN_SHUTDOWN_MP_BODY");
+          iVar4 = FUN_1402efe40(uVar8,uVar7,0x20033,7);
+          if (iVar4 != 6) {
+LAB_1402ee3d9:
+            CloseHandle(pvVar6);
+            return 0;
+          }
+          BVar3 = TerminateProcess(pvVar6,1);
+          if (BVar3 != 0) {
+            DVar5 = WaitForSingleObject(pvVar6,30000);
+            if ((DVar5 == 0x102) || (DVar5 == 0x80)) goto LAB_1402ee351;
+            if (DVar5 != 0xffffffff) {
+              local_3d4 = 0;
+              GetExitCodeProcess(pvVar6,&local_3d4);
+              DeleteFileA(local_3b8);
+              goto LAB_1402ee351;
+            }
+          }
+          GetLastError();
+          goto LAB_1402ee351;
+        }
+        iVar4 = Module32Next(hObject,local_268);
+      }
+      CloseHandle(hObject);
+    }
+LAB_1402ee351:
+    CloseHandle(pvVar6);
+  }
+  pvVar6 = CreateFileA(&DAT_14279d288,0x40000000,0,(LPSECURITY_ATTRIBUTES)0x0,2,2,(HANDLE)0x0);
+  if (pvVar6 == (HANDLE)0xffffffffffffffff) {
+    FUN_1402eecb0();
+    pcVar2 = (code *)swi(3);
+    uVar7 = (*pcVar2)();
+    return uVar7;
+  }
+  BVar3 = WriteFile(pvVar6,local_res20,4,local_res10,(LPOVERLAPPED)0x0);
+  if ((BVar3 != 0) && (local_res10[0] == 4)) {
+    CloseHandle(pvVar6);
+    return 1;
+  }
+  CloseHandle(pvVar6);
+  FUN_1402eecb0();
+  pcVar2 = (code *)swi(3);
+  uVar7 = (*pcVar2)();
+  return uVar7;
+}
+
+
+

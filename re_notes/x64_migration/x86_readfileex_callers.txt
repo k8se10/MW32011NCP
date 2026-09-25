@@ -1,0 +1,44 @@
+Target symbol: ReadFileEx @ EXTERNAL:000000ff
+Callers (1):
+  FUN_00584b50 @ 00584b50
+
+================================================================
+Function: FUN_00584b50 @ 00584b50
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_00584b50(void)
+
+{
+  BOOL BVar1;
+  DWORD DVar2;
+  
+  FUN_00552c10();
+  DVar2 = DAT_00b73f18;
+  if (0x40000 < (int)DAT_00b73f18) {
+    DVar2 = 0x40000;
+  }
+  _DAT_00b73f28 = 0;
+  _DAT_00b73f2c = 0;
+  _DAT_00b73f34 = 0;
+  _DAT_00b73f38 = 0;
+  _DAT_00b73f30 = DAT_00b73f20;
+  FUN_004a2310();
+  BVar1 = ReadFileEx((HANDLE)*DAT_00b73f10,DAT_00b73f14,DVar2,(LPOVERLAPPED)&DAT_00b73f28,
+                     (LPOVERLAPPED_COMPLETION_ROUTINE)&LAB_00584b30);
+  if (BVar1 == 0) {
+    DVar2 = GetLastError();
+    if (DVar2 != 0x26) {
+      FUN_00490d90("Read error of file \'%s\'",DAT_00b73f10 + 1);
+      return;
+    }
+  }
+  else {
+    DAT_00b73f0c = 1;
+  }
+  return;
+}
+
+
+

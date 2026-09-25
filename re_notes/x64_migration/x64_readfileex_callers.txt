@@ -1,0 +1,216 @@
+Target symbol: ReadFileEx @ EXTERNAL:0000004e
+Callers (3):
+  FUN_14008f170 @ 14008f170
+  FUN_14008f220 @ 14008f220
+  FUN_14008ef80 @ 14008ef80
+
+================================================================
+Function: FUN_14008f170 @ 14008f170
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14008f170(void)
+
+{
+  BOOL BVar1;
+  DWORD DVar2;
+  
+  FUN_14024a910();
+  uRam000000014073d750 = 0;
+  DVar2 = 0x40000;
+  if ((int)DAT_14073d720 < 0x40001) {
+    DVar2 = DAT_14073d720;
+  }
+  _DAT_14073d738 = 0;
+  uRam000000014073d740 = 0;
+  _DAT_14073d748 = (ulonglong)DAT_14073d728;
+  FUN_14024a930();
+  BVar1 = ReadFileEx((HANDLE)*DAT_14073d710,DAT_14073d718,DVar2,(LPOVERLAPPED)&DAT_14073d738,
+                     (LPOVERLAPPED_COMPLETION_ROUTINE)&LAB_14008ee30);
+  if (BVar1 == 0) {
+    DVar2 = GetLastError();
+    if (DVar2 != 0x26) {
+                    /* WARNING: Subroutine does not return */
+      FUN_1402ee570("Read error of file \'%s\'",DAT_14073d710 + 1);
+    }
+  }
+  else {
+    DAT_14073d70c = 1;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14008f220 @ 14008f220
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14008f220(longlong param_1,int param_2)
+
+{
+  BOOL BVar1;
+  DWORD DVar2;
+  undefined8 *puVar3;
+  int iVar4;
+  longlong lVar5;
+  
+  DAT_14073d770 = param_1;
+  DAT_14073d778 = param_2;
+  do {
+    if (DAT_14073d768 != 0) {
+      iVar4 = DAT_14073d778;
+      if (DAT_14073d768 <= DAT_14073d778) {
+        iVar4 = DAT_14073d768;
+      }
+      lVar5 = (longlong)iVar4;
+      if (DAT_14073d770 != 0) {
+        FUN_14038ffd0(DAT_14073d770,DAT_14073d760,lVar5);
+        DAT_14073d770 = DAT_14073d770 + lVar5;
+      }
+      DAT_14073d760 = (undefined8 *)((longlong)DAT_14073d760 + lVar5);
+      DAT_14073d768 = DAT_14073d768 - iVar4;
+      DAT_14073d778 = DAT_14073d778 - iVar4;
+      if (DAT_14073d778 == 0) {
+        return;
+      }
+    }
+    if (DAT_14073d70c == 0) {
+                    /* WARNING: Subroutine does not return */
+      FUN_1402ee570("Disc read error.");
+    }
+    if (DAT_14073d70c == 1) {
+      SleepEx(0xffffffff,1);
+    }
+    DAT_14073d70c = 0;
+    if ((DAT_14073d758 != 0) && (DAT_14073d758 != 0x26)) {
+      DAT_14073d724 = 0;
+    }
+    DAT_14073d728 = DAT_14073d728 + DAT_14073d724;
+    if (DAT_14073d724 == 0x40000) {
+      DAT_14073d720 = DAT_14073d720 - 0x40000;
+    }
+    else {
+      DAT_14073d720 = 0;
+    }
+    _DAT_14073d730 = DAT_14073d718;
+    DAT_14073d760 = DAT_14073d718;
+    puVar3 = DAT_14073d718 + 0x8000;
+    DAT_14073d718 = (undefined8 *)&DAT_14073d800;
+    if (puVar3 != &DAT_1407bd800) {
+      DAT_14073d718 = puVar3;
+    }
+    DAT_14073d700 = DAT_14073d700 + DAT_14073d724;
+    DAT_14073d768 = DAT_14073d724;
+    if (DAT_14073d720 != 0) {
+      FUN_14024a910();
+      uRam000000014073d750 = 0;
+      DVar2 = 0x40000;
+      if ((int)DAT_14073d720 < 0x40001) {
+        DVar2 = DAT_14073d720;
+      }
+      _DAT_14073d738 = 0;
+      uRam000000014073d740 = 0;
+      _DAT_14073d748 = (ulonglong)DAT_14073d728;
+      FUN_14024a930();
+      BVar1 = ReadFileEx((HANDLE)*DAT_14073d710,DAT_14073d718,DVar2,(LPOVERLAPPED)&DAT_14073d738,
+                         (LPOVERLAPPED_COMPLETION_ROUTINE)&LAB_14008ee30);
+      if (BVar1 == 0) {
+        DVar2 = GetLastError();
+        if (DVar2 != 0x26) {
+                    /* WARNING: Subroutine does not return */
+          FUN_1402ee570("Read error of file \'%s\'",DAT_14073d710 + 1);
+        }
+      }
+      else {
+        DAT_14073d70c = 1;
+      }
+    }
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_14008ef80 @ 14008ef80
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14008ef80(undefined8 param_1,int param_2,undefined4 param_3)
+
+{
+  uint uVar1;
+  BOOL BVar2;
+  DWORD DVar3;
+  undefined8 *puVar4;
+  
+  DAT_14073d770 = param_1;
+  DAT_14073d778 = param_2;
+  while( true ) {
+    uVar1 = FUN_14008e730(&DAT_14073d760,2,param_3);
+    if (1 < uVar1) {
+                    /* WARNING: Subroutine does not return */
+      FUN_1402ee570("Disc read error.");
+    }
+    if (DAT_14073d778 == 0) break;
+    if (DAT_14073d70c == 0) {
+                    /* WARNING: Subroutine does not return */
+      FUN_1402ee570("Disc read error.");
+    }
+    if (DAT_14073d70c == 1) {
+      SleepEx(0xffffffff,1);
+    }
+    DAT_14073d70c = 0;
+    if ((DAT_14073d758 != 0) && (DAT_14073d758 != 0x26)) {
+      DAT_14073d724 = 0;
+    }
+    DAT_14073d728 = DAT_14073d728 + DAT_14073d724;
+    if (DAT_14073d724 == 0x40000) {
+      DAT_14073d720 = DAT_14073d720 - 0x40000;
+    }
+    else {
+      DAT_14073d720 = 0;
+    }
+    _DAT_14073d730 = DAT_14073d718;
+    DAT_14073d760 = DAT_14073d718;
+    puVar4 = DAT_14073d718 + 0x8000;
+    DAT_14073d718 = (undefined8 *)&DAT_14073d800;
+    if (puVar4 != &DAT_1407bd800) {
+      DAT_14073d718 = puVar4;
+    }
+    DAT_14073d700 = DAT_14073d700 + DAT_14073d724;
+    DAT_14073d768 = DAT_14073d724;
+    if (DAT_14073d720 != 0) {
+      FUN_14024a910();
+      uRam000000014073d750 = 0;
+      DVar3 = 0x40000;
+      if ((int)DAT_14073d720 < 0x40001) {
+        DVar3 = DAT_14073d720;
+      }
+      _DAT_14073d738 = 0;
+      uRam000000014073d740 = 0;
+      _DAT_14073d748 = (ulonglong)DAT_14073d728;
+      FUN_14024a930();
+      BVar2 = ReadFileEx((HANDLE)*DAT_14073d710,DAT_14073d718,DVar3,(LPOVERLAPPED)&DAT_14073d738,
+                         (LPOVERLAPPED_COMPLETION_ROUTINE)&LAB_14008ee30);
+      if (BVar2 == 0) {
+        DVar3 = GetLastError();
+        if (DVar3 != 0x26) {
+                    /* WARNING: Subroutine does not return */
+          FUN_1402ee570("Read error of file \'%s\'",DAT_14073d710 + 1);
+        }
+      }
+      else {
+        DAT_14073d70c = 1;
+      }
+    }
+  }
+  return;
+}
+
+
+
