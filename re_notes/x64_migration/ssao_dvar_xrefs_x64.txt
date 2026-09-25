@@ -1,0 +1,18 @@
+STRING @ 14040ea60: "Screen Space Ambient Occlusion mode"
+  REF #1: from 1401974fa in FUN_1401974f0 @ 1401974f0
+  REF #2: from 140197508 in FUN_1401974f0 @ 1401974f0
+
+STRING @ 14040ea90: "Strength of Screen Space Ambient Occlusion effect"
+  REF #1: from 14019753e in FUN_1401974f0 @ 1401974f0
+  REF #2: from 140197545 in FUN_1401974f0 @ 1401974f0
+
+STRING @ 14040eb50: "r_ssaoBlurRadius"
+  REF #1: from 140197599 in FUN_1401974f0 @ 1401974f0
+
+STRING @ 14040eba0: "r_ssaoDownsample"
+  REF #1: from 1401975dc in FUN_1401974f0 @ 1401974f0
+
+STRING @ 14040ebc0: "Render calculated or applied Screen Space Ambient Occlusion values"
+  REF #1: from 1401975f8 in FUN_1401974f0 @ 1401974f0
+  REF #2: from 140197605 in FUN_1401974f0 @ 1401974f0
+

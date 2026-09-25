@@ -1,0 +1,34 @@
+================================================================
+Function: FUN_1401974f0 @ 1401974f0
+----------------------------------------------------------------
+
+void FUN_1401974f0(void)
+
+{
+  undefined4 uVar3;
+  undefined8 uVar1;
+  ulonglong uVar2;
+  
+  uVar3 = 1;
+  DAT_1415e69c0 = FUN_1402c45d0("r_ssao",&DAT_1404c7d00,1,3,"Screen Space Ambient Occlusion mode");
+  uVar1 = CONCAT44(uVar3,0x44);
+  DAT_1415e69c8 =
+       FUN_1402c4650("r_ssaoStrength",DAT_1403ea794,0,DAT_1403e8e48,uVar1,
+                     "Strength of Screen Space Ambient Occlusion effect");
+  uVar2 = CONCAT44((int)((ulonglong)uVar1 >> 0x20),0x44);
+  DAT_1415e69d0 =
+       FUN_1402c4650("r_ssaoPower",DAT_1403e3e6c,0,DAT_1403e560c,uVar2,
+                     "Power curve applied to SSAO factor");
+  DAT_1415e69d8 =
+       FUN_1402c4650("r_ssaoBlurRadius",DAT_1403e3e6c,0,DAT_1403e560c,uVar2 & 0xffffffff00000000,
+                     "Apply gaussian blur with this radius to calculated SSAO values");
+  DAT_1415e69e0 =
+       FUN_1402c43f0("r_ssaoDownsample",1,0,"Perform SSAO calculation on downsampled depth buffer");
+  DAT_1415e69e8 =
+       FUN_1402c45d0("r_ssaoDebug",&PTR_s_Disabled_1404c7d20,0,0,
+                     "Render calculated or applied Screen Space Ambient Occlusion values");
+  return;
+}
+
+
+
