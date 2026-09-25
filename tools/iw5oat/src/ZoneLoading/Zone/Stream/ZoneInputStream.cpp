@@ -242,9 +242,10 @@ namespace
             m_block_offsets[block->m_index] = offset;
         }
 
-        ZoneStreamFillReadAccessor LoadWithFill(const size_t size) override
+        ZoneStreamFillReadAccessor LoadWithFill(const size_t size, const unsigned pointerByteCount) override
         {
             m_last_fill_size = size;
+            const auto fillPointerByteCount = pointerByteCount == 0 ? m_pointer_byte_count : pointerByteCount;
 
             // If no block has been pushed, load raw
             if (!m_block_stack.empty())
@@ -254,12 +255,12 @@ namespace
 
                 LoadDataFromBlock(*block, blockBufferForFill, size);
 
-                return ZoneStreamFillReadAccessor(blockBufferForFill, size, m_pointer_byte_count, 0);
+                return ZoneStreamFillReadAccessor(blockBufferForFill, size, fillPointerByteCount, 0);
             }
 
             m_fill_buffer.resize(size);
             LoadChecked(m_fill_buffer.data(), size, "fill buffer (no block pushed)");
-            return ZoneStreamFillReadAccessor(m_fill_buffer.data(), size, m_pointer_byte_count, 0);
+            return ZoneStreamFillReadAccessor(m_fill_buffer.data(), size, fillPointerByteCount, 0);
         }
 
         ZoneStreamFillReadAccessor AppendToFill(const size_t appendSize) override
@@ -530,6 +531,71 @@ namespace
                 return nullptr;
 
             return *reinterpret_cast<void**>(&block->m_buffer[blockOffset]);
+        }
+
+        // 2026-09-26: ported from upstream OpenAssetTools PR #1007 (LVEIceFire/
+        // OpenAssetTools), adapted to this fork's own real, fixed 32-bit offset decode
+        // (see the constructor's own comment on m_block_shift) instead of upstream's
+        // parameterized offsetPointerBitCount. Genuinely required by the regenerated
+        // loader code (confirmed via real C2039 link errors across ~30+ generated
+        // *_load_db.cpp files) -- not dead code. Real semantics: defers alias resolution
+        // when the real target hasn't been written yet (a genuine forward reference),
+        // queuing it to be filled in once NotifyPointerResolved fires for that exact slot
+        // -- same "safe to defer" precedent already established for the sibling
+        // ConvertOffsetToPointerNative/ConvertOffsetToAliasNative functions above, just
+        // with real resolution instead of a permanent null.
+        bool ResolveOffsetToAliasNative(void** alias) override
+        {
+            assert(alias != nullptr);
+            assert(*alias != nullptr);
+
+            const auto offsetInt = static_cast<uintptr_t>(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(*alias)) - 1u);
+
+            const auto blockNum = static_cast<block_t>((offsetInt & m_block_mask) >> m_block_shift);
+            const auto blockOffset = static_cast<size_t>(offsetInt & m_offset_mask);
+
+            if (blockNum < 0 || blockNum >= static_cast<block_t>(m_blocks.size()))
+                throw InvalidOffsetBlockException(blockNum);
+
+            auto* block = m_blocks[blockNum];
+            if (block->m_buffer_size < blockOffset + sizeof(void*))
+                throw InvalidOffsetBlockOffsetException(block, blockOffset);
+
+            void** targetSlot;
+            const auto foundPointerLookup = m_pointer_redirect_lookup.find(offsetInt);
+            if (foundPointerLookup != m_pointer_redirect_lookup.end())
+                targetSlot = static_cast<void**>(foundPointerLookup->second);
+            else
+                targetSlot = reinterpret_cast<void**>(&block->m_buffer[blockOffset]);
+
+            // Genuine forward reference: this block hasn't progressed far enough yet to
+            // have written real data at the target slot. Defer instead of the sibling
+            // ConvertOffsetToAliasNative's own warn-and-null degradation, since we can
+            // actually resolve this correctly once the real write happens later.
+            if (m_block_offsets[blockNum] <= blockOffset + sizeof(void*))
+            {
+                m_pending_native_aliases[targetSlot].emplace_back(alias);
+                *alias = nullptr;
+                return false;
+            }
+
+            void* target = nullptr;
+            std::memcpy(&target, targetSlot, sizeof(target));
+            *alias = target;
+            NotifyPointerResolved(reinterpret_cast<void**>(&block->m_buffer[blockOffset]));
+            return true;
+        }
+
+        void NotifyPointerResolved(void** pointer) override
+        {
+            const auto pending = m_pending_native_aliases.find(pointer);
+            if (pending == m_pending_native_aliases.end())
+                return;
+
+            for (auto** pendingAlias : pending->second)
+                *pendingAlias = *pointer;
+
+            m_pending_native_aliases.erase(pending);
         }
 
         void AddPointerLookup(void* alias, const void* blockPtr) override
@@ -909,6 +975,7 @@ namespace
         // These lookups map a block offset to a pointer in case of a platform mismatch
         std::unordered_map<uintptr_t, void*> m_pointer_redirect_lookup;
         std::unordered_map<uintptr_t, void*> m_alias_redirect_lookup;
+        std::unordered_map<void**, std::vector<void**>> m_pending_native_aliases;
 
         bool m_has_progress_callback;
         std::unique_ptr<ProgressCallback> m_progress_callback;
@@ -923,7 +990,17 @@ std::unique_ptr<ZoneInputStream> ZoneInputStream::Create(const unsigned pointerB
                                                          const block_t insertBlock,
                                                          ILoadingStream& stream,
                                                          MemoryManager& memory,
-                                                         std::optional<std::unique_ptr<ProgressCallback>> progressCallback)
+                                                         std::optional<std::unique_ptr<ProgressCallback>> progressCallback,
+                                                         const unsigned offsetPointerBitCount)
 {
+    // 2026-09-26: offsetPointerBitCount (from upstream OpenAssetTools PR #1007's own
+    // parameterized mixed-width ABI support) is deliberately unused here -- this fork's own
+    // XBlockInputStream constructor already hardcodes the real, fixed 32-bit offset-encoding
+    // width directly (see its own constructor comment, SS5.16-SS5.18), since that's the zone
+    // format's actual fixed on-wire scheme for this fork's one real x64 target, not something
+    // that needs to vary per call site the way upstream's own broader multi-variant design
+    // anticipates. Accepted here only so this factory's signature matches the shared header
+    // (ZoneInputStream.h) after merging in upstream's other generator-side infrastructure.
+    (void)offsetPointerBitCount;
     return std::make_unique<XBlockInputStream>(pointerBitCount, blockBitCount, blocks, insertBlock, stream, memory, std::move(progressCallback));
 }

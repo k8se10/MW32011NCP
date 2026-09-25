@@ -52,7 +52,11 @@ namespace
                 if (!CalculateFields(repository, member->m_type_declaration.get()))
                     return false;
 
-                const auto memberAlignment = member->GetAlignment();
+                // 2026-09-26: tested in isolation (reverted to the pre-merge unclamped
+                // GetAlignment()) against the sp_dubai.ff regression -- identical failure,
+                // ruling this specific clamp out as the cause. Restored to upstream's real
+                // behavior since it wasn't the culprit.
+                const auto memberAlignment = member->GetForceAlignment() ? member->GetAlignment() : std::min(member->GetAlignment(), definition->m_pack);
                 definition->m_alignment = std::max(memberAlignment, definition->m_alignment);
             }
         }
@@ -256,6 +260,25 @@ bool CalculateSizeAndAlignPostProcessor::PostProcess(IDataRepository* repository
         con::error("You must set a word size!");
         return false;
     }
+
+    // Layout generation can be repeated with a different serialized word size for
+    // assets whose on-disk ABI differs from the rest of the zone.
+    for (auto* structDefinition : repository->GetAllStructs())
+    {
+        structDefinition->m_flags &= ~(DefinitionWithMembers::FLAG_FIELDS_CALCULATED | DefinitionWithMembers::FLAG_FIELDS_CALCULATING);
+        for (const auto& member : structDefinition->m_members)
+            member->m_type_declaration->m_flags &= ~TypeDeclaration::FLAG_FIELDS_CALCULATED;
+    }
+
+    for (auto* unionDefinition : repository->GetAllUnions())
+    {
+        unionDefinition->m_flags &= ~(DefinitionWithMembers::FLAG_FIELDS_CALCULATED | DefinitionWithMembers::FLAG_FIELDS_CALCULATING);
+        for (const auto& member : unionDefinition->m_members)
+            member->m_type_declaration->m_flags &= ~TypeDeclaration::FLAG_FIELDS_CALCULATED;
+    }
+
+    for (auto* typedefDefinition : repository->GetAllTypedefs())
+        typedefDefinition->m_type_declaration->m_flags &= ~TypeDeclaration::FLAG_FIELDS_CALCULATED;
 
     for (auto* structDefinition : repository->GetAllStructs())
     {

@@ -45,7 +45,8 @@ namespace
     public:
         PerAsset(std::ostream& stream, const OncePerAssetRenderingContext& context)
             : BaseTemplate(stream, context),
-              m_env(context)
+              m_env(context),
+              m_render_serialized_layout(false)
         {
         }
 
@@ -83,7 +84,6 @@ namespace
             m_intendation++;
 
             // Method Declarations
-            if (m_env.m_word_size_mismatch)
             {
                 for (const auto* type : m_env.m_used_types)
                 {
@@ -190,7 +190,6 @@ namespace
             LINE("")
             PrintMainLoadMethod();
 
-            if (m_env.m_word_size_mismatch)
             {
                 for (const auto* type : m_env.m_used_types)
                 {
@@ -242,6 +241,37 @@ namespace
         }
 
     private:
+        size_t FillPointerSize() const
+        {
+            return m_render_serialized_layout ? GetPointerSizeForWordSize(m_current_fill_info->m_serialized_word_size) : m_env.m_pointer_size;
+        }
+
+        size_t FillTypeSize(const MemberInformation& member) const
+        {
+            return m_render_serialized_layout ? member.m_serialized_type_size : member.m_member->m_type_declaration->m_type->GetSize();
+        }
+
+        size_t FillOffset(const MemberInformation& member, const DeclarationModifierComputations& modifier, const size_t nestedBaseOffset) const
+        {
+            size_t offset = (m_render_serialized_layout ? member.m_serialized_offset : member.m_member->m_offset) + nestedBaseOffset;
+            auto level = 0u;
+            for (const auto index : modifier.GetArrayIndices())
+            {
+                if (index > 0)
+                {
+                    size_t size = FillTypeSize(member);
+                    const auto& modifiers = member.m_member->m_type_declaration->m_declaration_modifiers;
+                    const auto end = modifiers.rbegin() + (modifiers.size() - (level + 1));
+                    for (auto it = modifiers.rbegin(); it != end; ++it)
+                        size = (*it)->GetType() == DeclarationModifierType::POINTER ? FillPointerSize()
+                                                                                    : size * dynamic_cast<ArrayDeclarationModifier*>(it->get())->m_size;
+                    offset += static_cast<size_t>(index) * size;
+                }
+                ++level;
+            }
+            return offset;
+        }
+
         enum class MemberLoadType : std::uint8_t
         {
             ARRAY_POINTER,
@@ -279,7 +309,7 @@ namespace
 
         void PrintHeaderPtrArrayLoadMethodDeclaration(const DataDefinition* def) const
         {
-            LINEF("void LoadPtrArray_{0}(bool atStreamStart, size_t count);", MakeSafeTypeName(def))
+            LINEF("void LoadPtrArray_{0}(bool atStreamStart, size_t count, size_t serializedPointerSize);", MakeSafeTypeName(def))
         }
 
         void PrintHeaderArrayLoadMethodDeclaration(const DataDefinition* def) const
@@ -381,11 +411,12 @@ namespace
                 LINEF("{0} = &{1}[0];", MakeTypeVarName(memberInfo.m_member->m_type_declaration->m_type), MakeMemberAccess(&structInfo, &memberInfo, modifier))
                 LINEF("FillStruct_{0}(fillAccessor.AtOffset({1}));",
                       MakeSafeTypeName(memberInfo.m_member->m_type_declaration->m_type),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                      FillOffset(memberInfo, modifier, nestedBaseOffset))
             }
             else
             {
-                LINEF("fillAccessor.Fill({0}[0], {1});", MakeMemberAccess(&structInfo, &memberInfo, modifier), memberInfo.m_member->m_offset)
+                LINEF(
+                    "fillAccessor.Fill({0}[0], {1});", MakeMemberAccess(&structInfo, &memberInfo, modifier), FillOffset(memberInfo, modifier, nestedBaseOffset))
             }
 
             LINEF("for (auto i = 1uz; i < dynamicArraySize; i++)", structInfo.m_definition->m_name, memberInfo.m_member->m_name)
@@ -396,15 +427,15 @@ namespace
                 LINEF("{0} = &{1}[i];", MakeTypeVarName(memberInfo.m_member->m_type_declaration->m_type), MakeMemberAccess(&structInfo, &memberInfo, modifier))
                 LINEF("FillStruct_{0}(fillAccessor.AtOffset({1} + i * {2}));",
                       MakeSafeTypeName(memberInfo.m_member->m_type_declaration->m_type),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset),
-                      memberInfo.m_member->m_type_declaration->GetSize())
+                      FillOffset(memberInfo, modifier, nestedBaseOffset),
+                      FillTypeSize(memberInfo))
             }
             else
             {
                 LINEF("fillAccessor.Fill({0}[i], {1} + i * {2});",
                       MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset),
-                      memberInfo.m_member->m_type_declaration->GetSize())
+                      FillOffset(memberInfo, modifier, nestedBaseOffset),
+                      FillTypeSize(memberInfo))
             }
             m_intendation--;
             LINE("}")
@@ -426,16 +457,16 @@ namespace
 
                 LINEF("fillAccessor.FillPtr({0}[i], {1} + {2} * i);",
                       MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset),
-                      m_env.m_pointer_size)
+                      FillOffset(memberInfo, modifier, nestedBaseOffset),
+                      FillPointerSize())
 
                 if (!StructureComputations(&structInfo).IsInTempBlock()
                     && (memberInfo.m_is_reusable || (memberInfo.m_type && StructureComputations(memberInfo.m_type).IsAsset())))
                 {
                     LINEF("m_stream.AddPointerLookup(&{0}[i], fillAccessor.BlockBuffer({1} + {2} * i));",
                           MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                          OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset),
-                          m_env.m_pointer_size)
+                          FillOffset(memberInfo, modifier, nestedBaseOffset),
+                          FillPointerSize())
                 }
 
                 m_intendation--;
@@ -443,9 +474,8 @@ namespace
             }
             else
             {
-                LINEF("fillAccessor.FillPtr({0}, {1});",
-                      MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                LINEF(
+                    "fillAccessor.FillPtr({0}, {1});", MakeMemberAccess(&structInfo, &memberInfo, modifier), FillOffset(memberInfo, modifier, nestedBaseOffset))
             }
         }
 
@@ -462,8 +492,8 @@ namespace
                 LINEF("{0} = &{1}[i];", MakeTypeVarName(memberInfo.m_member->m_type_declaration->m_type), MakeMemberAccess(&structInfo, &memberInfo, modifier))
                 LINEF("FillStruct_{0}(fillAccessor.AtOffset({1} + i * {2}));",
                       MakeSafeTypeName(memberInfo.m_member->m_type_declaration->m_type),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset),
-                      memberInfo.m_member->m_type_declaration->m_type->GetSize())
+                      FillOffset(memberInfo, modifier, nestedBaseOffset),
+                      FillTypeSize(memberInfo))
                 m_intendation--;
                 LINE("}")
             }
@@ -471,7 +501,7 @@ namespace
             {
                 LINEF("fillAccessor.FillArray({0}, {1});",
                       MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                      FillOffset(memberInfo, modifier, nestedBaseOffset))
             }
         }
 
@@ -491,18 +521,19 @@ namespace
                     LINEF("{0} = &{1};", MakeTypeVarName(memberInfo.m_member->m_type_declaration->m_type), MakeMemberAccess(&structInfo, &memberInfo, modifier))
                     LINEF("FillStruct_{0}(fillAccessor.AtOffset({1}));",
                           MakeSafeTypeName(memberInfo.m_member->m_type_declaration->m_type),
-                          OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                          FillOffset(memberInfo, modifier, nestedBaseOffset))
                 }
                 else
                 {
                     LINEF("fillAccessor.Fill({0}, {1});",
                           MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                          OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                          FillOffset(memberInfo, modifier, nestedBaseOffset))
                 }
             }
             else if (memberInfo.m_member->m_name.empty())
             {
-                const auto anonymousMemberOffset = memberInfo.m_member->m_offset + nestedBaseOffset;
+                const auto anonymousMemberOffset =
+                    (m_render_serialized_layout ? memberInfo.m_serialized_offset : memberInfo.m_member->m_offset) + nestedBaseOffset;
                 for (const auto& anonymousMember : memberInfo.m_type->m_ordered_members)
                 {
                     PrintFillStruct_Member(structInfo, *anonymousMember, DeclarationModifierComputations(anonymousMember.get()), anonymousMemberOffset);
@@ -537,16 +568,15 @@ namespace
             }
             else if (modifier.IsSinglePointer() || modifier.IsArrayPointer())
             {
-                LINEF("fillAccessor.FillPtr({0}, {1});",
-                      MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                      OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                LINEF(
+                    "fillAccessor.FillPtr({0}, {1});", MakeMemberAccess(&structInfo, &memberInfo, modifier), FillOffset(memberInfo, modifier, nestedBaseOffset))
 
                 if (!StructureComputations(&structInfo).IsInTempBlock()
                     && (memberInfo.m_is_reusable || (memberInfo.m_type && StructureComputations(memberInfo.m_type).IsAsset())))
                 {
                     LINEF("m_stream.AddPointerLookup(&{0}, fillAccessor.BlockBuffer({1}));",
                           MakeMemberAccess(&structInfo, &memberInfo, modifier),
-                          OffsetForMemberModifier(memberInfo, modifier, nestedBaseOffset))
+                          FillOffset(memberInfo, modifier, nestedBaseOffset))
                 }
             }
             else if (modifier.IsPointerArray())
@@ -704,7 +734,29 @@ namespace
             LINE("{")
             m_intendation++;
 
-            PrintFillStruct_Struct(*info);
+            m_current_fill_info = info;
+            if (info->m_serialized_word_size != WordSize::UNKNOWN)
+            {
+                LINEF("if (fillAccessor.PointerByteCount() == {0})", GetPointerSizeForWordSize(info->m_serialized_word_size))
+                LINE("{")
+                m_intendation++;
+                m_render_serialized_layout = true;
+                PrintFillStruct_Struct(*info);
+                m_render_serialized_layout = false;
+                m_intendation--;
+                LINE("}")
+                LINE("else")
+                LINE("{")
+                m_intendation++;
+                PrintFillStruct_Struct(*info);
+                m_intendation--;
+                LINE("}")
+            }
+            else
+            {
+                PrintFillStruct_Struct(*info);
+            }
+            m_current_fill_info = nullptr;
 
             m_intendation--;
             LINE("}")
@@ -894,14 +946,17 @@ namespace
                 assert(def == info->m_definition);
                 LINE("// Alloc first for alignment, then proceed to read as game does")
                 LINEF("m_stream.Alloc({0});", alignment)
-                LINEF("const auto allocSize = LoadDynamicFill_{0}(m_stream.LoadWithFill(0));", MakeSafeTypeName(def))
+                LINEF("const auto allocSize = LoadDynamicFill_{0}(m_stream.LoadWithFill(0, {1}));", MakeSafeTypeName(def), m_env.m_pointer_size)
                 LINEF("*{0} = static_cast<{1}*>(m_stream.AllocOutOfBlock(0, allocSize));", MakeTypePtrVarName(def), def->GetFullName())
             }
             else
             {
                 LINEF("*{0} = m_stream.{1}<{2}>({3});",
                       MakeTypePtrVarName(def),
-                      m_env.m_word_size_mismatch ? "AllocOutOfBlock" : "Alloc",
+                      (m_env.m_word_size_mismatch
+                       || (info && info->m_word_size != WordSize::UNKNOWN && GetPointerSizeForWordSize(info->m_word_size) != m_env.m_pointer_size))
+                          ? "AllocOutOfBlock"
+                          : "Alloc",
                       def->GetFullName(),
                       alignment)
             }
@@ -969,7 +1024,9 @@ namespace
 
         void PrintLoadPtrArrayMethod(const DataDefinition* def, const StructureInformation* info, const bool reusable)
         {
-            LINEF("void {0}::LoadPtrArray_{1}(const bool atStreamStart, const size_t count)", LoaderClassName(m_env.m_asset), MakeSafeTypeName(def))
+            LINEF("void {0}::LoadPtrArray_{1}(const bool atStreamStart, const size_t count, const size_t serializedPointerSize)",
+                  LoaderClassName(m_env.m_asset),
+                  MakeSafeTypeName(def))
             LINE("{")
             m_intendation++;
 
@@ -978,31 +1035,45 @@ namespace
 
             LINE("if (atStreamStart)")
 
-            if (m_env.m_word_size_mismatch)
+            LINE("{")
+            m_intendation++;
+            LINEF("if (serializedPointerSize != sizeof({0}*))", def->GetFullName())
+            LINE("{")
+            m_intendation++;
+            LINE("const auto ptrArrayFill = m_stream.LoadWithFill(serializedPointerSize * count, static_cast<unsigned>(serializedPointerSize));")
+            LINE("for (size_t index = 0; index < count; index++)")
+            LINE("{")
+            m_intendation++;
+            LINEF("ptrArrayFill.FillPtr({0}[index], serializedPointerSize * index);", MakeTypePtrVarName(def))
+
+            if (reusable || (info && StructureComputations(info).IsAsset()))
             {
-                LINE("{")
-                m_intendation++;
-                LINEF("const auto ptrArrayFill = m_stream.LoadWithFill({0} * count);", m_env.m_pointer_size)
-                LINE("for (size_t index = 0; index < count; index++)")
-                LINE("{")
-                m_intendation++;
-                LINEF("ptrArrayFill.FillPtr({0}[index], {1} * index);", MakeTypePtrVarName(def), m_env.m_pointer_size)
-
-                if (reusable || (info && StructureComputations(info).IsAsset()))
-                {
-                    LINEF("m_stream.AddPointerLookup(&{0}[index], ptrArrayFill.BlockBuffer({1} * index));", MakeTypePtrVarName(def), m_env.m_pointer_size)
-                }
-
-                m_intendation--;
-                LINE("}")
-                m_intendation--;
-                LINE("}")
+                LINEF("m_stream.AddPointerLookup(&{0}[index], ptrArrayFill.BlockBuffer(serializedPointerSize * index));", MakeTypePtrVarName(def))
             }
-            else
+
+            m_intendation--;
+            LINE("}")
+            m_intendation--;
+            LINE("}")
+            LINE("else")
+            m_intendation++;
+            LINEF("m_stream.Load<{0}*>({1}, count);", def->GetFullName(), MakeTypePtrVarName(def))
+            m_intendation--;
+            m_intendation--;
+            LINE("}")
+
+            if (reusable)
             {
+                LINE("")
+                LINEF("if (atStreamStart && serializedPointerSize == sizeof({0}*))", def->GetFullName())
+                LINE("{")
                 m_intendation++;
-                LINEF("m_stream.Load<{0}*>({1}, count);", def->GetFullName(), MakeTypePtrVarName(def))
+                LINE("for (size_t index = 0; index < count; index++)")
+                m_intendation++;
+                LINEF("m_stream.AddPointerLookup(&{0}[index], &{0}[index]);", MakeTypePtrVarName(def))
                 m_intendation--;
+                m_intendation--;
+                LINE("}")
             }
 
             LINE("")
@@ -1043,7 +1114,9 @@ namespace
                 LINE("{")
                 m_intendation++;
 
-                LINEF("const auto arrayFill = m_stream.LoadWithFill({0} * count);", def->GetSize())
+                const auto serializedSize = info->m_word_size == WordSize::UNKNOWN ? def->GetSize() : info->m_serialized_size;
+                const auto pointerSize = info->m_word_size == WordSize::UNKNOWN ? m_env.m_pointer_size : GetPointerSizeForWordSize(info->m_word_size);
+                LINEF("const auto arrayFill = m_stream.LoadWithFill({0} * count, {1});", serializedSize, pointerSize)
                 LINEF("auto* arrayStart = {0};", MakeTypeVarName(def))
                 LINEF("auto* var = {0};", MakeTypeVarName(def))
                 LINE("for (size_t index = 0; index < count; index++)")
@@ -1051,7 +1124,7 @@ namespace
                 m_intendation++;
 
                 LINEF("{0} = var;", MakeTypeVarName(info->m_definition))
-                LINEF("FillStruct_{0}(arrayFill.AtOffset(0 + {1} * index));", info->m_definition->m_name, def->GetSize())
+                LINEF("FillStruct_{0}(arrayFill.AtOffset(0 + {1} * index));", info->m_definition->m_name, serializedSize)
                 LINE("var++;")
 
                 m_intendation--;
@@ -1162,7 +1235,9 @@ namespace
             else if (member->m_type && !member->m_type->m_has_matching_cross_platform_structure)
             {
                 LINEF("const auto fillArraySize = static_cast<size_t>({0});", MakeEvaluation(modifier.GetArrayPointerCountEvaluation()))
-                LINEF("const auto fill = m_stream.LoadWithFill({0} * fillArraySize);", member->m_member->m_type_declaration->m_type->GetSize())
+                LINEF("const auto fill = m_stream.LoadWithFill({0} * fillArraySize, {1});",
+                      member->m_member->m_type_declaration->m_type->GetSize(),
+                      m_env.m_pointer_size)
                 LINE("for (auto i = 0uz; i < fillArraySize; i++)")
                 LINE("{")
                 m_intendation++;
@@ -1185,16 +1260,32 @@ namespace
 
         void LoadMember_PointerArray(const StructureInformation* info, const MemberInformation* member, const DeclarationModifierComputations& modifier) const
         {
+            auto pointerWordSize = member->m_pointer_array_word_size;
+            if (pointerWordSize == WordSize::UNKNOWN)
+            {
+                const auto* pointerType = member->m_member->m_type_declaration->m_type;
+                for (const auto* usedType : m_env.m_used_types)
+                {
+                    if (usedType->m_type == pointerType && usedType->m_info)
+                    {
+                        pointerWordSize = usedType->m_info->m_word_size;
+                        break;
+                    }
+                }
+            }
+            const auto pointerSize = pointerWordSize == WordSize::UNKNOWN ? m_env.m_pointer_size : GetPointerSizeForWordSize(pointerWordSize);
             LINEF("{0} = {1};", MakeTypePtrVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
             if (modifier.IsArray())
             {
-                LINEF("LoadPtrArray_{0}(false, {1});", MakeSafeTypeName(member->m_member->m_type_declaration->m_type), modifier.GetArraySize())
+                LINEF(
+                    "LoadPtrArray_{0}(false, {1}, {2});", MakeSafeTypeName(member->m_member->m_type_declaration->m_type), modifier.GetArraySize(), pointerSize)
             }
             else
             {
-                LINEF("LoadPtrArray_{0}(true, {1});",
+                LINEF("LoadPtrArray_{0}(true, {1}, {2});",
                       MakeSafeTypeName(member->m_member->m_type_declaration->m_type),
-                      MakeEvaluation(modifier.GetPointerArrayCountEvaluation()))
+                      MakeEvaluation(modifier.GetPointerArrayCountEvaluation()),
+                      pointerSize)
             }
         }
 
@@ -1335,9 +1426,10 @@ namespace
             else if (member->m_type && !member->m_type->m_has_matching_cross_platform_structure)
             {
                 LINEF("{0} = {1};", MakeTypeVarName(member->m_member->m_type_declaration->m_type), MakeMemberAccess(info, member, modifier))
-                LINEF("FillStruct_{0}(m_stream.LoadWithFill({1}));",
+                LINEF("FillStruct_{0}(m_stream.LoadWithFill({1}, {2}));",
                       MakeSafeTypeName(member->m_member->m_type_declaration->m_type),
-                      member->m_member->m_type_declaration->m_type->GetSize())
+                      member->m_member->m_type_declaration->m_type->GetSize(),
+                      m_env.m_pointer_size)
             }
             else
             {
@@ -1423,7 +1515,13 @@ namespace
 
         [[nodiscard]] bool ShouldAllocOutOfBlock(const MemberInformation& member, const MemberLoadType loadType) const
         {
-            return m_env.m_word_size_mismatch
+            if (loadType == MemberLoadType::POINTER_ARRAY && member.m_pointer_array_word_size != WordSize::UNKNOWN
+                && GetPointerSizeForWordSize(member.m_pointer_array_word_size) != m_env.m_pointer_size)
+                return true;
+
+            const auto hasAlternateTargetLayout = member.m_type && member.m_type->m_word_size != WordSize::UNKNOWN
+                                                  && GetPointerSizeForWordSize(member.m_type->m_word_size) != m_env.m_pointer_size;
+            return (m_env.m_word_size_mismatch || hasAlternateTargetLayout)
                    && ((member.m_type && !member.m_type->m_has_matching_cross_platform_structure) || loadType == MemberLoadType::POINTER_ARRAY);
         }
 
@@ -1463,7 +1561,9 @@ namespace
                     LINEF("m_stream.Alloc({0});", modifier.GetAlignment())
                 }
 
-                LINEF("const auto allocSize = LoadDynamicFill_{0}(m_stream.LoadWithFill(0));", MakeSafeTypeName(member->m_type->m_definition))
+                LINEF("const auto allocSize = LoadDynamicFill_{0}(m_stream.LoadWithFill(0, {1}));",
+                      MakeSafeTypeName(member->m_type->m_definition),
+                      m_env.m_pointer_size)
 
                 // We do not align again, because we already did previously
                 LINEF("{0} = static_cast<{1}{2}*>(m_stream.AllocOutOfBlock(0, allocSize));",
@@ -1503,11 +1603,13 @@ namespace
             }
 
             const MemberComputations computations(member);
+            const auto aliasWordSizeMismatch =
+                info->m_alias_word_size != WordSize::UNKNOWN && GetPointerSizeForWordSize(info->m_alias_word_size) != m_env.m_pointer_size;
             if (computations.IsInTempBlock())
             {
                 LINE("")
 
-                if (m_env.m_word_size_mismatch)
+                if (m_env.m_word_size_mismatch || aliasWordSizeMismatch)
                     LINE("uintptr_t toInsertLookupEntry = 0;")
                 else
                     LINEF("{0}** toInsert = nullptr;", member->m_member->m_type_declaration->m_type->GetFullName())
@@ -1515,7 +1617,7 @@ namespace
                 LINE("if (zonePtrType == ZonePointerType::INSERT)")
                 m_intendation++;
 
-                if (m_env.m_word_size_mismatch)
+                if (m_env.m_word_size_mismatch || aliasWordSizeMismatch)
                     LINE("toInsertLookupEntry = m_stream.InsertPointerAliasLookup();")
                 else
                     LINEF("toInsert = m_stream.InsertPointerNative<{0}>();", member->m_member->m_type_declaration->m_type->GetFullName())
@@ -1532,7 +1634,7 @@ namespace
                 LINE("if (zonePtrType == ZonePointerType::INSERT)")
                 m_intendation++;
 
-                if (m_env.m_word_size_mismatch)
+                if (m_env.m_word_size_mismatch || aliasWordSizeMismatch)
                     LINEF(
                         "m_stream.SetInsertedPointerAliasLookup(toInsertLookupEntry, {0}->{1});", MakeTypeVarName(info->m_definition), member->m_member->m_name)
                 else
@@ -1898,7 +2000,10 @@ namespace
                 {
                     if (dynamicMember == nullptr)
                     {
-                        LINEF("FillStruct_{0}(m_stream.LoadWithFill({1}));", MakeSafeTypeName(info->m_definition), info->m_definition->GetSize())
+                        const auto serializedSize = info->m_word_size == WordSize::UNKNOWN ? info->m_definition->GetSize() : info->m_serialized_size;
+                        const auto serializedPointerSize =
+                            info->m_word_size == WordSize::UNKNOWN ? m_env.m_pointer_size : GetPointerSizeForWordSize(info->m_word_size);
+                        LINEF("FillStruct_{0}(m_stream.LoadWithFill({1}, {2}));", MakeSafeTypeName(info->m_definition), serializedSize, serializedPointerSize)
                     }
                     else if (info->m_non_embedded_reference_exists)
                     {
@@ -1945,6 +2050,8 @@ namespace
         void PrintLoadPtrMethod(const StructureInformation* info)
         {
             const bool inTemp = info->m_block && info->m_block->m_type == FastFileBlockType::TEMP;
+            const auto aliasWordSizeMismatch =
+                info->m_alias_word_size != WordSize::UNKNOWN && GetPointerSizeForWordSize(info->m_alias_word_size) != m_env.m_pointer_size;
             LINEF("void {0}::LoadPtr_{1}(const bool atStreamStart)", LoaderClassName(m_env.m_asset), MakeSafeTypeName(info->m_definition))
             LINE("{")
             m_intendation++;
@@ -1997,7 +2104,7 @@ namespace
             {
                 LINE("")
 
-                if (m_env.m_word_size_mismatch)
+                if (m_env.m_word_size_mismatch || aliasWordSizeMismatch)
                     LINE("uintptr_t toInsertLookupEntry = 0;")
                 else
                     LINEF("{0}** toInsert = nullptr;", info->m_definition->GetFullName())
@@ -2005,7 +2112,7 @@ namespace
                 LINE("if (zonePtrType == ZonePointerType::INSERT)")
                 m_intendation++;
 
-                if (m_env.m_word_size_mismatch)
+                if (m_env.m_word_size_mismatch || aliasWordSizeMismatch)
                     LINE("toInsertLookupEntry = m_stream.InsertPointerAliasLookup();")
                 else
                     LINEF("toInsert = m_stream.InsertPointerNative<{0}>();", info->m_definition->GetFullName())
@@ -2040,6 +2147,8 @@ namespace
             {
                 LINE("")
                 LINEF("LoadAsset_{0}({1});", MakeSafeTypeName(info->m_definition), MakeTypePtrVarName(info->m_definition))
+                if (inTemp && info->m_has_matching_cross_platform_structure)
+                    LINEF("m_stream.NotifyPointerResolved({0});", MakeTypePtrVarName(info->m_definition))
             }
 
             if (inTemp)
@@ -2052,7 +2161,7 @@ namespace
                 LINE("if (zonePtrType == ZonePointerType::INSERT)")
                 m_intendation++;
 
-                if (m_env.m_word_size_mismatch)
+                if (m_env.m_word_size_mismatch || aliasWordSizeMismatch)
                     LINEF("m_stream.SetInsertedPointerAliasLookup(toInsertLookupEntry, *{0});", MakeTypePtrVarName(info->m_definition))
                 else
                     LINEF("*toInsert = *{0};", MakeTypePtrVarName(info->m_definition))
@@ -2070,7 +2179,7 @@ namespace
             {
                 if (info->m_has_matching_cross_platform_structure)
                 {
-                    LINEF("*{0} = m_stream.ConvertOffsetToAliasNative(*{0});", MakeTypePtrVarName(info->m_definition))
+                    LINEF("m_stream.ResolveOffsetToAliasNative({0});", MakeTypePtrVarName(info->m_definition))
                 }
                 else
                 {
@@ -2154,6 +2263,8 @@ namespace
         }
 
         const OncePerAssetRenderingContext& m_env;
+        bool m_render_serialized_layout;
+        const StructureInformation* m_current_fill_info = nullptr;
     };
 } // namespace
 

@@ -2,10 +2,16 @@
 // snd_alias_list_t
 // =========================================
 use snd_alias_list_t;
+#if defined(ARCH_x64)
+set allocalign snd_alias_list_t 4;
+#endif
 set block XFILE_BLOCK_TEMP;
 set string aliasName;
 set reusable head;
 set count head count;
+#if defined(ARCH_x64)
+set allocalign head 4;
+#endif
 
 // snd_alias_t
 use snd_alias_t;
@@ -15,13 +21,28 @@ set string secondaryAliasName;
 set string chainAliasName;
 set string mixerGroup;
 set reusable soundFile;
+#if defined(ARCH_x64)
+set allocalign soundFile 4;
+#endif
 set reusable speakerMap;
+#if defined(ARCH_x64)
+set allocalign speakerMap 4;
+#endif
 
 // SoundFile
 set condition SoundFile::u::loadSnd type == SAT_LOADED;
 
 // SpeakerMap
 set string SpeakerMap::name;
+
+// NOTE 2026-09-26: upstream's own diff adds a `set count MSSChannelMap::speakers
+// speakerCount;` directive here, assuming MSSChannelMap::speakers is a pointer+count
+// pair (upstream's own struct shape). This fork's own MSSChannelMap/MSSSpeakerLevels
+// (Common/Game/IW5/IW5_Assets.h, SS5.40) deliberately declares `speakers` as a fixed
+// MSSSpeakerLevels[2] array instead, already independently decompile-verified and
+// static_assert-checked (sizeof(MSSChannelMap)==24) -- a "set count" directive doesn't
+// apply to a fixed-size array at all (the real generator error confirmed this: "No
+// matching pointer modifier found"). Deliberately not ported.
 
 // StreamedSound
 use StreamedSound;

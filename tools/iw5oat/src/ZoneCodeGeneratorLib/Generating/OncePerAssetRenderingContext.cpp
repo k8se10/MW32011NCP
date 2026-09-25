@@ -108,7 +108,7 @@ void OncePerAssetRenderingContext::AddMembersToContext(const IDataRepository* re
         {
             usedType->m_pointer_array_reference_exists = true;
 
-            if (member->m_is_reusable)
+            if (member->m_is_reusable || member->m_pointer_array_elements_are_reusable)
                 usedType->m_pointer_array_reference_is_reusable = true;
         }
 
@@ -187,8 +187,11 @@ bool OncePerAssetRenderingContext::UsedTypeHasActions(const RenderingUsedType* u
 
 std::unique_ptr<OncePerAssetRenderingContext> OncePerAssetRenderingContext::BuildContext(const IDataRepository* repository, StructureInformation* asset)
 {
-    auto context = std::make_unique<OncePerAssetRenderingContext>(
-        OncePerAssetRenderingContext(repository->GetGameName(), repository->GetWordSize(), repository->GetAllFastFileBlocks()));
+    // The rendering context describes the zone ABI. Individual structures can
+    // carry a different serialized ABI and are handled by generated fill code.
+    const auto wordSize = repository->GetWordSize();
+    auto context =
+        std::make_unique<OncePerAssetRenderingContext>(OncePerAssetRenderingContext(repository->GetGameName(), wordSize, repository->GetAllFastFileBlocks()));
 
     context->MakeAsset(repository, asset);
     context->CreateUsedTypeCollections();

@@ -10,10 +10,14 @@
 #include "Parsing/Commands/Sequence/SequenceCondition.h"
 #include "Parsing/Commands/Sequence/SequenceCount.h"
 #include "Parsing/Commands/Sequence/SequenceGame.h"
+#include "Parsing/Commands/Sequence/SequencePointerArrayWordSize.h"
 #include "Parsing/Commands/Sequence/SequenceReorder.h"
 #include "Parsing/Commands/Sequence/SequenceReusable.h"
+#include "Parsing/Commands/Sequence/SequenceReusablePointerArrayElements.h"
 #include "Parsing/Commands/Sequence/SequenceScriptString.h"
+#include "Parsing/Commands/Sequence/SequenceSetAliasWordSize.h"
 #include "Parsing/Commands/Sequence/SequenceSetBlock.h"
+#include "Parsing/Commands/Sequence/SequenceSetWordSize.h"
 #include "Parsing/Commands/Sequence/SequenceString.h"
 #include "Parsing/Commands/Sequence/SequenceUse.h"
 #include "Parsing/Commands/Sequence/SequenceWordSize.h"
@@ -38,9 +42,13 @@ const std::vector<CommandsParser::sequence_t*>& CommandsParser::GetTestsForState
         new SequenceCount(),
         new SequenceGame(),
         new SequenceReorder(),
+        new SequencePointerArrayWordSize(),
         new SequenceReusable(),
+        new SequenceReusablePointerArrayElements(),
         new SequenceScriptString(),
         new SequenceSetBlock(),
+        new SequenceSetAliasWordSize(),
+        new SequenceSetWordSize(),
         new SequenceString(),
         new SequenceUse(),
         new SequenceWordSize(),

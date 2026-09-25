@@ -7,6 +7,9 @@ set allocalign Material 4;
 set string info::name;
 set reusable textureTable;
 set count textureTable textureCount;
+#if defined(ARCH_x64)
+set allocalign textureTable 4;
+#endif
 set reusable constantTable;
 set count constantTable constantCount;
 set reusable stateBitsTable;
@@ -28,8 +31,17 @@ set count stateBitsTable stateBitsCount;
 use MaterialTextureDef;
 set condition u::water semantic == TS_WATER_MAP;
 set reusable u::water;
+#if defined(ARCH_x64)
+set allocalign u::water 4;
+#endif
 
 // water_t
 use water_t;
+// NOTE 2026-09-26: upstream's own diff splits this into H0X/H0Y for x64 (a
+// genuine struct-level change to water_t this fork hasn't ported -- our own
+// IW5_Assets.h still declares a single `complex_s* H0` field). Left as the
+// original single-field form until/unless that struct change is confirmed
+// needed and ported too -- not required for the AddonMapEnts regression this
+// merge pass is actually chasing.
 set count H0 N * M;
 set count wTerm N * M;

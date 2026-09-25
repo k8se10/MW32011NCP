@@ -1,6 +1,8 @@
 #include "CodeGenerator.h"
 
 #include "Domain/Computations/StructureComputations.h"
+#include "Parsing/PostProcessing/CalculateSizeAndAlignPostProcessor.h"
+#include "Parsing/PostProcessing/CrossPlatformStructurePostProcessor.h"
 #include "Templates/AssetStructTestsTemplate.h"
 #include "Templates/ZoneLoadTemplate.h"
 #include "Templates/ZoneMarkTemplate.h"
@@ -117,9 +119,52 @@ bool CodeGenerator::GetAssetWithName(const IDataRepository* repository, const st
     return true;
 }
 
-bool CodeGenerator::GenerateCode(const IDataRepository* repository)
+bool CodeGenerator::GenerateCode(IDataRepository* repository)
 {
     std::vector<StructureInformation*> assets;
+
+    // A zone may contain a structure graph serialized with a different ABI than
+    // the surrounding asset. Preserve that layout alongside the native one so
+    // generated fill code can select it from the accessor's pointer width.
+    const auto repositoryWordSize = repository->GetWordSize();
+
+    // Alias insertion slots can use a narrower word size than otherwise native
+    // structures. The setting is a property of the zone ABI, so one asset-level
+    // declaration applies to every generated structure in that game.
+    for (auto* rootInfo : repository->GetAllStructureInformation())
+    {
+        if (rootInfo->m_alias_word_size == WordSize::UNKNOWN)
+            continue;
+
+        for (auto* info : repository->GetAllStructureInformation())
+            info->m_alias_word_size = rootInfo->m_alias_word_size;
+        break;
+    }
+
+    for (auto* rootInfo : repository->GetAllStructureInformation())
+    {
+        if (rootInfo->m_word_size == WordSize::UNKNOWN || rootInfo->m_word_size == repositoryWordSize)
+            continue;
+
+        repository->SetWordSize(rootInfo->m_word_size);
+        if (!CalculateSizeAndAlignPostProcessor().PostProcess(repository))
+            return false;
+
+        for (auto* info : repository->GetAllStructureInformation())
+        {
+            info->m_serialized_word_size = rootInfo->m_word_size;
+            info->m_serialized_size = info->m_definition->GetSize();
+            for (const auto& member : info->m_ordered_members)
+            {
+                member->m_serialized_offset = member->m_member->m_offset;
+                member->m_serialized_type_size = member->m_member->m_type_declaration->m_type->GetSize();
+            }
+        }
+    }
+
+    repository->SetWordSize(repositoryWordSize);
+    if (!CalculateSizeAndAlignPostProcessor().PostProcess(repository) || !CrossPlatformStructurePostProcessor().PostProcess(repository))
+        return false;
 
     for (auto* info : repository->GetAllStructureInformation())
     {
@@ -145,6 +190,7 @@ bool CodeGenerator::GenerateCode(const IDataRepository* repository)
         {
             auto context = OncePerAssetRenderingContext::BuildContext(repository, asset);
             const auto result = GenerateCodeOncePerAsset(*context, foundTemplate->second.get());
+
             switch (result)
             {
             case utils::TextFileCheckDirtyResult::OUTPUT_WRITTEN:

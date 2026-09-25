@@ -25,6 +25,7 @@ public:
 
     [[nodiscard]] ZoneStreamFillReadAccessor AtOffset(size_t offset) const;
     [[nodiscard]] size_t Offset() const;
+    [[nodiscard]] unsigned PointerByteCount() const;
     [[nodiscard]] void* BlockBuffer(size_t offset) const;
 
     template<typename T> void Fill(T& value, const size_t offset) const
@@ -191,7 +192,7 @@ public:
      */
     virtual void LoadDataInBlock(void* dst, size_t size) = 0;
     virtual void LoadNullTerminated(void* dst) = 0;
-    virtual ZoneStreamFillReadAccessor LoadWithFill(size_t size) = 0;
+    virtual ZoneStreamFillReadAccessor LoadWithFill(size_t size, unsigned pointerByteCount = 0) = 0;
     virtual ZoneStreamFillReadAccessor AppendToFill(size_t appendSize) = 0;
     virtual ZoneStreamFillReadAccessor GetLastFill() = 0;
 
@@ -262,6 +263,27 @@ public:
         return static_cast<T*>(ConvertOffsetToAliasNative(static_cast<const void*>(offset)));
     }
 
+    // 2026-09-26 CORRECTION: initially skipped as "dead code" (see git history), reasoning
+    // it would only matter once wired into the generated loader output -- that reasoning was
+    // WRONG. Once the real IW5 asset .txt DSL files (upstream PR #1007) were also ported, the
+    // regenerated ZoneLoadTemplate.cpp output calls these two methods directly for every asset
+    // with aliases -- confirmed live via real C2039 link errors across ~30+ generated
+    // *_load_db.cpp files once the .txt ABI-width directives were merged. Genuinely required,
+    // not optional. See known_issues_x64.md issue #4's newest round for the full trail.
+    virtual bool ResolveOffsetToAliasNative(void** alias) = 0;
+
+    template<typename T> bool ResolveOffsetToAliasNative(T** alias)
+    {
+        return ResolveOffsetToAliasNative(reinterpret_cast<void**>(alias));
+    }
+
+    virtual void NotifyPointerResolved(void** pointer) = 0;
+
+    template<typename T> void NotifyPointerResolved(T** pointer)
+    {
+        NotifyPointerResolved(reinterpret_cast<void**>(pointer));
+    }
+
     /**
      * \brief Adds a lookup from a block pointer to out of block data
      * \param redirectTo A pointer to the out of block data to redirect to
@@ -293,5 +315,6 @@ public:
                                                    block_t insertBlock,
                                                    ILoadingStream& stream,
                                                    MemoryManager& memory,
-                                                   std::optional<std::unique_ptr<ProgressCallback>> progressCallback);
+                                                   std::optional<std::unique_ptr<ProgressCallback>> progressCallback,
+                                                   unsigned offsetPointerBitCount = 0);
 };

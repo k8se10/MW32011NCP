@@ -1691,13 +1691,17 @@ namespace IW5
         float* levels;
     };
 #pragma pack(pop)
+#ifndef __zonecodegenerator
     static_assert(sizeof(MSSSpeakerLevels) == 12, "MSSSpeakerLevels must match the real native 12-byte wire size (SS5.40)");
+#endif
 
     struct MSSChannelMap
     {
         MSSSpeakerLevels speakers[2];
     };
+#ifndef __zonecodegenerator
     static_assert(sizeof(MSSChannelMap) == 24, "MSSChannelMap must match the real native 24-byte wire size (SS5.40)");
+#endif
 
     struct SpeakerMap
     {
@@ -1705,7 +1709,9 @@ namespace IW5
         const char* name;
         MSSChannelMap channelMaps[2];
     };
+#ifndef __zonecodegenerator
     static_assert(sizeof(SpeakerMap) == 64, "SpeakerMap must match the real native 64-byte wire size (SS5.40)");
+#endif
 
     struct SndCurve
     {

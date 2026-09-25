@@ -44,8 +44,10 @@ void ContentLoader::LoadXAsset(const bool atStreamStart) const
 #define LOAD_ASSET(type_index, typeName, headerEntry)                                                                                                          \
     case type_index:                                                                                                                                           \
     {                                                                                                                                                          \
+        fprintf(stderr, "[asset-diag] loading type=%d (" #typeName ")\n", (int)type_index);                                                                   \
         Loader_##typeName loader(m_zone, m_stream);                                                                                                            \
         loader.Load(&varXAsset->header.headerEntry);                                                                                                           \
+        fprintf(stderr, "[asset-diag] done type=%d (" #typeName ")\n", (int)type_index);                                                                      \
         break;                                                                                                                                                 \
     }
 #define SKIP_ASSET(type_index)                                                                                                                                 \
