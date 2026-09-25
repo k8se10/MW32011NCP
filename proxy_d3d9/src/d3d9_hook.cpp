@@ -68,6 +68,18 @@ extern bool TryInitStreamlineX64(IUnknown* d3d9Device); // streamline_integratio
 extern "C" void __cdecl InjectMenuInputTick(); // defined in analog_input_hooks.cpp
 extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hooks.cpp
 
+// Real result of the [null-rt-shadow-cap-diag] hardware-capability probe
+// (Hook_CreateDevice, below) -- true file-scope statics, NOT declared inside
+// the anonymous namespace below, so the exported accessor after the
+// namespace's own close can see and return them via ordinary unqualified
+// lookup falling through to this enclosing scope (the same established
+// pattern this project uses elsewhere to avoid the anonymous-namespace
+// internal-linkage trap -- see analog_input_hooks_x64.cpp's own
+// RecordRenderViewFireX64 comment for the full explanation of why an
+// `extern` declared INSIDE the namespace would silently NOT bind here).
+static bool g_nullRtShadowCapableX64 = false;
+static bool g_nullRtShadowCapabilityKnownX64 = false;
+
 namespace {
 
 // TriggerSelfMemoryDumpX64 -- added 2026-09-16 after live memory investigation
@@ -1121,6 +1133,8 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
                 }
             }
         }
+        g_nullRtShadowCapableX64 = capable;
+        g_nullRtShadowCapabilityKnownX64 = true;
         char capBuf[320]; // worst case measured at 230 chars -- generous margin per this
             // project's own hard-learned per-commit sprintf_s buffer-safety discipline
         sprintf_s(capBuf, "[null-rt-shadow-cap-diag] x86-style capability check: capable=%s matchedPair=%d "
@@ -1155,6 +1169,19 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
 }
 
 } // namespace
+
+// Real result of the [null-rt-shadow-cap-diag] probe (Hook_CreateDevice,
+// above) -- exposed so analog_input_hooks_x64.cpp's per-light shadow-
+// activation skip (SkipRedundantShadowActivationX64, see its own comment
+// in mod_config.h) can gate itself on real hardware capability rather than
+// assuming it. Returns false (never skip) until the probe has actually run
+// at least once -- a device must exist before this can be known, and
+// defaulting to "not capable" is the conservative, safe direction (worst
+// case: the toggle simply does nothing yet, never an incorrect skip).
+extern "C" bool IsNullRenderTargetShadowCapableX64()
+{
+    return g_nullRtShadowCapabilityKnownX64 && g_nullRtShadowCapableX64;
+}
 
 // Exposed so analog_input_hooks.cpp can PostMessage a synthetic keypress directly at the
 // game's real window -- used for two explicit, narrowly-scoped exceptions to this

@@ -1360,6 +1360,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudFontIdLoggingX64", g_modConfig.hudFontIdLoggingX64);
+    ReadBool(path, "Experimental", "SkipRedundantShadowActivationX64", g_modConfig.skipRedundantShadowActivationX64);
     ReadBool(path, "Experimental", "UnboundedDevLog", g_modConfig.unboundedDevLog);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
@@ -1434,7 +1435,7 @@ void LoadModConfig()
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
         "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d projectionMatrixJitterProbeEnabled=%d "
-        "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d",
+        "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d skipRedundantShadowActivationX64=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1473,7 +1474,8 @@ void LoadModConfig()
         g_modConfig.iwdReadAccelEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeCandidateIndex,
-        g_modConfig.projectionJitterEnabled ? 1 : 0);
+        g_modConfig.projectionJitterEnabled ? 1 : 0,
+        g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

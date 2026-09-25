@@ -195,6 +195,16 @@ bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, siz
 void RecordRenderViewFireX64(int viewIndex);
 int GetAndResetRenderViewTransitionCountX64();
 
+// d3d9_hook.cpp -- real result of the [null-rt-shadow-cap-diag] hardware-
+// capability probe, consumed by Hook_RenderViewSelectDiag's own
+// SkipRedundantShadowActivationX64 gate (see kPerLightShadowDispatchSignature's
+// comment, further down this file). Must be declared `extern "C"` here (not
+// plain `extern`) to correctly bind to its real definition's linkage -- a
+// plain `extern` would silently declare a second, disconnected, internally-
+// linked phantom instead, the exact same anonymous-namespace trap already
+// documented for RecordRenderViewFireX64 immediately above.
+extern "C" bool IsNullRenderTargetShadowCapableX64();
+
 namespace {
 
 // FUN_1400168a0 -- the confirmed x64 Pmove per-substep tick function (the real hook
@@ -5811,6 +5821,35 @@ constexpr const char* kRenderViewSelectSignature =
 using RenderViewSelectFn = void(__fastcall*)(void* param_1, int param_2);
 RenderViewSelectFn g_origRenderViewSelect = nullptr;
 
+// [Experimental] SkipRedundantShadowActivationX64 -- 2026-09-26, issue #4's
+// real-transitions investigation (known_issues_x64.md). Signature for
+// FUN_140196ad0 (x64's per-light shadow-dispatch function, reached from the
+// already-confirmed-identical-to-x86 per-light loop) -- x86's exact
+// structural counterpart, FUN_00698f10, gates its own equivalent call to
+// the activator behind a real hardware-capability check (DAT_021d35f4,
+// confirmed to be the classic D3D9 "NULL render-target" shadow-map trick)
+// that FUN_140196ad0 has no equivalent of at all. Rather than reimplementing
+// FUN_140196ad0's full body (which would need resolving several more
+// unknowns -- DAT_1418854b5/DAT_1418854a4 and the two tail-call functions
+// it conditionally invokes -- a materially larger, riskier undertaking),
+// this identifies FUN_140196ad0's OWN specific call site into the already-
+// hooked activator via its real return address and skips forwarding ONLY
+// there, leaving every other one of the activator's 40 real call sites
+// completely untouched. Bytes/mask from DumpSigBytes.java -- only the
+// `CALL FUN_1401dfd80` operand (a rel32, genuinely address-dependent) is
+// wildcarded; the earlier RSP-relative MOV/LEA/MOVAPS instructions this
+// tool's own heuristic initially flagged as "PC-relative" are a known,
+// already-documented false-positive class for this project's own
+// DumpSigBytes.java (see CLAUDE.md's dvar-value-discovery-chain note) and
+// are kept as literal bytes here, not wildcarded.
+constexpr const char* kPerLightShadowDispatchSignature =
+    "48 89 5C 24 18 55 56 57 48 83 EC 40 48 8B 39 48 8B F2 0F 10 02 48 8B 69 08 "
+    "48 8D 4C 24 30 8B 97 D0 01 00 00 0F 29 44 24 30 E8 ?? ?? ?? ?? "
+    "83 BF E4 01 00 00 00 48 8B 46 08 48 8B 98 10 01 00 00";
+constexpr int kPerLightShadowDispatchCallOffset = 0x29; // offset of the CALL opcode itself
+constexpr int kPerLightShadowDispatchCallLen = 5;       // E8 + rel32
+void* g_perLightShadowDispatchReturnAddr = nullptr;     // resolved once at startup; nullptr = unresolved/unknown, never matches
+
 // Real per-frame fire-SEQUENCE tracking, 2026-09-25 -- CONFIRMED, real,
 // quantitative result from the plain-count version of this diagnostic
 // (317 real samples): 100+fps frames averaged 19.1 fires/frame, 0-19fps
@@ -5844,6 +5883,31 @@ void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
         sprintf_s(buf, "[x64-renderview-select-diag] view index changed -> %d (call #%d)", param_2, s_fireCount);
         LogFromController(buf);
     }
+
+    // [Experimental] SkipRedundantShadowActivationX64 -- see its own comment
+    // above kPerLightShadowDispatchSignature and mod_config.h. Only skips
+    // forwarding when ALL THREE hold: the toggle is explicitly on (off by
+    // default), the real hardware-capability probe reported capable, AND
+    // this specific call genuinely originated from FUN_140196ad0's own
+    // known, signature-resolved call site (never any of the activator's
+    // other 39 real callers). Extern declared locally, matching this
+    // project's own established cross-file-function-not-shared-variable
+    // pattern (see RecordRenderViewFireX64's own comment).
+    if (g_modConfig.skipRedundantShadowActivationX64 && g_perLightShadowDispatchReturnAddr != nullptr) {
+        if (IsNullRenderTargetShadowCapableX64() && _ReturnAddress() == g_perLightShadowDispatchReturnAddr) {
+            static long long s_skipCount = 0;
+            ++s_skipCount;
+            if (s_skipCount <= 5 || (s_skipCount % 500) == 0) { // rate-limited, matches this
+                // project's own established "first 5 then periodic" convention
+                char skipBuf[160];
+                sprintf_s(skipBuf, "[x64-shadow-activation-skip] skipped redundant per-light "
+                    "activation (view=%d, skip #%lld)", param_2, s_skipCount);
+                LogFromController(skipBuf);
+            }
+            return; // deliberately does NOT call g_origRenderViewSelect -- this is the fix itself
+        }
+    }
+
     g_origRenderViewSelect(param_1, param_2);
 }
 
@@ -8831,6 +8895,30 @@ void InstallAnalogInputHooksX64()
                         "render-view-select dispatcher (read-only, changes no behavior).");
                 }
             }
+        }
+    }
+    {
+        // Resolve FUN_140196ad0's own known call site into the activator, once,
+        // for SkipRedundantShadowActivationX64's own gate above -- deliberately
+        // NOT a MinHook install (nothing gets hooked at this address itself),
+        // just a signature resolution so the expected return address can be
+        // computed. Never fatal if this doesn't resolve -- the toggle simply
+        // has no effect (g_perLightShadowDispatchReturnAddr stays nullptr,
+        // which the gate above already treats as "never match").
+        SigScan::Result r = SigScan::FindPatternInMainModule(kPerLightShadowDispatchSignature);
+        if (!r.found) {
+            LogFromController("[x64-shadow-activation-skip] FATAL: FUN_140196ad0 signature did not resolve -- "
+                "SkipRedundantShadowActivationX64 will have no effect this session even if enabled");
+        } else {
+            g_perLightShadowDispatchReturnAddr = reinterpret_cast<void*>(
+                r.address + kPerLightShadowDispatchCallOffset + kPerLightShadowDispatchCallLen);
+            char buf[180];
+            sprintf_s(buf, "[x64-shadow-activation-skip] FUN_140196ad0 resolved @ 0x%llX, expected return addr 0x%llX "
+                "(SkipRedundantShadowActivationX64=%d)",
+                static_cast<unsigned long long>(r.address),
+                reinterpret_cast<unsigned long long>(g_perLightShadowDispatchReturnAddr),
+                g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0);
+            LogFromController(buf);
         }
     }
 
