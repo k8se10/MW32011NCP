@@ -205,6 +205,13 @@
     <ClCompile Include="src\iwd_read_cache_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-26: real in-process sampling profiler (F10), built
+         after live x64dbg attach and MiniDumpWriteDump both hit real limitations
+         chasing the pause-vs-gameplay regression. See that file's own header
+         comment for why this is a genuinely different, safer mechanism. -->
+    <ClCompile Include="src\self_sampling_profiler_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\signature_scan.cpp" />
     <ClCompile Include="src\game_exe_detect.cpp" />
     <ClCompile Include="src\controller_input.cpp" />

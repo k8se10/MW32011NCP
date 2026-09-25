@@ -80,6 +80,10 @@ extern "C" bool IsGlyphPositionEditModeActive(); // defined in analog_input_hook
 static bool g_nullRtShadowCapableX64 = false;
 static bool g_nullRtShadowCapabilityKnownX64 = false;
 
+#if defined(_M_X64) || defined(_WIN64)
+extern void TriggerSelfSamplingProfileX64(); // self_sampling_profiler_x64.cpp
+#endif
+
 namespace {
 
 // TriggerSelfMemoryDumpX64 -- added 2026-09-16 after live memory investigation
@@ -553,6 +557,15 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // once per Windows key-repeat tick while held.
         TriggerSelfMemoryDumpX64();
     }
+
+#if defined(_M_X64) || defined(_WIN64)
+    if (msg == WM_KEYDOWN && wParam == VK_F10 && (lParam & 0x40000000) == 0) {
+        // See self_sampling_profiler_x64.cpp's own header comment for why this
+        // exists (a real in-process sampling profiler, not an external debugger
+        // attach) and how it differs from F9's single-instant memory dump.
+        TriggerSelfSamplingProfileX64();
+    }
+#endif
 
     if (msg == WM_MOUSEMOVE) {
         int newX = static_cast<short>(LOWORD(lParam));
