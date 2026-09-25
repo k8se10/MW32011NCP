@@ -61,6 +61,11 @@
 #include "game_exe_detect.h"
 
 extern void LogFromController(const char* msg); // dllmain.cpp
+extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
+    // 2026-09-26 -- see its own comment for the full rationale. MSVC (unlike
+    // clang) requires a linkage-specification declaration at true global
+    // scope, not inside a function body -- a real C2598 caught before this
+    // shipped.
 
 namespace {
 
@@ -158,6 +163,19 @@ bool ResolveObjectMotionGlobalsX64()
 // init path, not lazily from the render loop.
 void EnsureObjectMotionGlobalsResolvedX64()
 {
+    // Real backend gate, 2026-09-26 (direct instruction, following the
+    // GraphicsApi default flip to Vulkan) -- previously ran unconditionally
+    // on every SP launch regardless of whether Streamline was even enabled,
+    // meaning CaptureObjectMotionSnapshotX64 (which only checks this
+    // resolve step's own success flag) would do real per-frame memcpy/
+    // per-object-diff work for zero purpose under LegacyD3D9 or with
+    // StreamlineEnabled=0. See IsStreamlineInitializedX64's own comment
+    // (streamline_integration_x64.cpp) for why this is the correct signal
+    // -- this cascades correctly to CaptureObjectMotionSnapshotX64 without
+    // needing its own separate gate, since it already early-returns when
+    // g_dobjGlobalsResolvedX64 (set below) stays false.
+    if (!IsStreamlineInitializedX64()) return;
+
     if (GetDetectedGameExecutable() != GameExecutable::SP) return;
     if (g_dobjGlobalsResolveTriedX64) return;
     g_dobjGlobalsResolveTriedX64 = true;

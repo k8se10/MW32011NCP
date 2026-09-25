@@ -54,6 +54,11 @@
 #include "overlay_hud.h" // GetLastKnownRenderDevice/GetRealScreenSize
 
 extern void LogFromController(const char* msg); // dllmain.cpp
+extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
+    // 2026-09-26 -- see its own comment for the full rationale. MSVC (unlike
+    // clang) requires a linkage-specification declaration at true global
+    // scope, not inside a function body -- a real C2598 caught before this
+    // shipped.
 extern VkInstance GetDxvkVkInstanceX64(); // streamline_integration_x64.cpp
 extern VkDevice GetDxvkVkDeviceX64();     // streamline_integration_x64.cpp
 extern bool StreamlineSetTagForFrameX64(const sl::ResourceTag* tags, uint32_t numTags); // streamline_integration_x64.cpp
@@ -892,6 +897,20 @@ bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outH
 // installer in this codebase uses.
 void InstallDepthStencilHookX64(void* realDevice)
 {
+    // Real backend gate, 2026-09-26 (direct instruction, following the
+    // GraphicsApi default flip to Vulkan) -- previously unconditional,
+    // installing these MinHook detours (and thus firing TagColorResourceForFrame/
+    // TagDepthResourceForFrame on every real SetRenderTarget/
+    // SetDepthStencilSurface call, 9+ times/frame) regardless of whether
+    // Streamline was even enabled. Never unsafe (the resource-tagging work
+    // itself only ever reaches a real Vulkan/DXVK call after its own
+    // internal resolution succeeds, which requires DXVK to be active) but
+    // genuine wasted per-call overhead under LegacyD3D9 or with
+    // StreamlineEnabled=0 for zero purpose. TryInitStreamlineX64 (d3d9_hook.cpp)
+    // always runs before this -- see IsStreamlineInitializedX64's own
+    // comment (streamline_integration_x64.cpp) for the full ordering
+    // guarantee this relies on.
+    if (!IsStreamlineInitializedX64()) return;
     if (!realDevice || g_origSetDepthStencilSurface) return;
 
     void** deviceVtbl = *reinterpret_cast<void***>(realDevice);

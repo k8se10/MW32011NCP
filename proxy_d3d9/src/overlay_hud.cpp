@@ -60,6 +60,15 @@ void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp, 2026-09-24 
 void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, 2026-09-24 --
     // real motion-vectors buffer (kBufferTypeMotionVectors), same "we own this
     // resource" rationale as the output buffer above.
+extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
+    // 2026-09-26 -- the single correct "is it safe/meaningful to do real
+    // Streamline-adjacent work right now" gate (false unless StreamlineEnabled,
+    // GraphicsApi==Vulkan, SP, and slInit() itself all succeeded). Declared
+    // extern "C" and at true global scope (MSVC, unlike clang, refuses a
+    // linkage-specification declaration inside a function body -- a real
+    // C2598 caught via this exact mistake before it shipped) to correctly
+    // bind to its real definition's linkage rather than this file's own
+    // anonymous namespace silently declaring a second, disconnected entity.
 void CaptureObjectMotionSnapshotX64(); // streamline_object_motion_x64.cpp, 2026-09-24 --
     // real per-object (DObj) transform capture, groundwork for real per-object
     // motion vectors (research doc section 2.6). SP-only, self-gated inside.
@@ -7782,7 +7791,21 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // for the live-reported sustained fps drop this session). Logs only when
     // a call takes >=1ms, same convention as that precedent, so this stays
     // silent in the normal/fast case.
-    {
+    // Real backend gate, 2026-09-26 (direct instruction, following the
+    // GraphicsApi default flip to Vulkan): "make sure theyre code gated
+    // based on api too, we dont wanna accidentally enable weird
+    // behavbiopuirs" -- every function in this block was already safe
+    // (each has its own internal early-return once Vulkan/Streamline state
+    // isn't present -- StreamlineFrameTick on g_streamlineVulkanInfoSet,
+    // the two Tag* functions on ResolveVulkanFunctionsIfNeeded's own cheap
+    // VK_NULL_HANDLE check, CaptureObjectMotionSnapshotX64 on its own
+    // resolve flag) but ran unconditionally regardless, paying real
+    // per-frame overhead (4x QueryPerformanceCounter plus each function's
+    // own early-exit checks) for zero purpose under LegacyD3D9 or with
+    // StreamlineEnabled=0. One explicit gate here, matching every other
+    // Streamline-adjacent entry point fixed the same session (see
+    // IsStreamlineInitializedX64's own comment, streamline_integration_x64.cpp).
+    if (IsStreamlineInitializedX64()) {
         LARGE_INTEGER freq{}, t0{}, t1{}, t2{}, t3{}, t4{};
         QueryPerformanceFrequency(&freq);
         auto ms = [&](LARGE_INTEGER a, LARGE_INTEGER b) {

@@ -37,6 +37,11 @@
 #include "overlay_hud.h" // GetLastKnownRenderDevice/GetRealScreenSize
 
 extern void LogFromController(const char* msg); // dllmain.cpp
+extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
+    // 2026-09-26 -- see its own comment for the full rationale. MSVC (unlike
+    // clang) requires a linkage-specification declaration at true global
+    // scope, not inside a function body -- a real C2598 caught before this
+    // shipped.
 extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp,
     // real, already-live-confirmed dvar reader (already used for "cg_fov" itself
     // in that same file's own ADS zoom-slowdown feature).
@@ -141,6 +146,20 @@ sl::float4x4 BuildStandardProjectionMatrixX64(float* outFovRadians = nullptr, fl
 void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
     const float right[3], const float up[3])
 {
+    // Real backend gate, 2026-09-26 (direct instruction, following the
+    // GraphicsApi default flip to Vulkan) -- previously ran unconditionally
+    // every real frame (real projection-matrix and camera-to-world-matrix
+    // construction, real CPU work) regardless of whether Streamline was
+    // even enabled, since its own caller (Hook_ProjectionMatrixBuild,
+    // analog_input_hooks_x64.cpp) only checked "camera position isn't
+    // zero," not backend/feature state. The one real SDK call this
+    // function reaches (slSetConstants, via StreamlineSetConstantsX64) was
+    // already safely gated on g_streamlineVulkanInfoSet -- never unsafe --
+    // but this was genuine wasted per-frame work under LegacyD3D9 or with
+    // StreamlineEnabled=0. See IsStreamlineInitializedX64's own comment
+    // (streamline_integration_x64.cpp) for why this is the correct signal.
+    if (!IsStreamlineInitializedX64()) return;
+
     ++g_streamlineCameraTickCountX64;
     bool heartbeat = g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0;
 

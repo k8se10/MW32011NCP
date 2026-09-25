@@ -355,7 +355,29 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     return true;
 }
 
-bool IsStreamlineInitializedX64()
+// extern "C" (not plain C++ linkage) so every other Streamline-adjacent
+// file (streamline_resources_x64.cpp/streamline_camera_x64.cpp/
+// streamline_object_motion_x64.cpp) can forward-declare and call this
+// without needing to pull in this file's own headers -- this is the single,
+// most correct gate for "is it actually safe/meaningful to do real
+// Streamline-adjacent work right now": it's false unless StreamlineEnabled,
+// GraphicsApi==Vulkan, SP, AND slInit() itself actually succeeded all held
+// (see TryInitStreamlineX64's own gate chain above) -- a stronger, more
+// specific signal than re-checking the raw config flags at each call site,
+// and the real fix for a genuine gap found 2026-09-26 (direct user
+// instruction: "make sure theyre code gated based on api too, we dont wanna
+// accidentally enable weird behavbiopuirs") -- several real per-frame
+// Streamline-adjacent entry points (the SetRenderTarget/SetDepthStencilSurface
+// resource-tagging hook INSTALL, the per-frame camera-matrix build, the
+// per-frame DObj motion-snapshot capture) were doing real, unconditional
+// work regardless of backend or even whether Streamline was enabled at all
+// -- never unsafe (the one real SDK call, slSetConstants via
+// StreamlineSetConstantsX64, was already correctly gated on
+// g_streamlineVulkanInfoSet), but genuine wasted per-frame CPU work with
+// zero purpose whenever Streamline isn't actually active, now that Vulkan
+// is SP's own default. See each call site's own comment for the specific
+// fix.
+extern "C" bool IsStreamlineInitializedX64()
 {
     return g_streamlineInitialized;
 }
