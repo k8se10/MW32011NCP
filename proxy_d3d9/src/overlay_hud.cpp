@@ -103,6 +103,13 @@ void InstallDepthStencilHookX64(void* realDevice); // streamline_resources_x64.c
 extern void LogFromController(const char* msg);
 extern DWORD GetMainThreadId(); // dllmain.cpp -- see g_mainThreadId's own comment for the real-thread-ID diagnostic this feeds
 #if defined(_M_X64) || defined(_WIN64)
+extern int GetAndResetRenderViewSequenceX64(int* outIndices, int maxCount); // analog_input_hooks_x64.cpp
+    // -- real per-frame render-view-activation SEQUENCE (not just a count),
+    // 2026-09-25. The plain-count version of this diagnostic already
+    // CONFIRMED the "2-4x round trips per frame" hypothesis quantitatively
+    // (317 samples: 19.1 fires/frame @100+fps vs 78.4 @0-19fps, ~4.1x) --
+    // this identifies WHICH specific view indices account for the extra
+    // fires during the slow stretches.
 // Local copy of analog_input_hooks_x64.cpp's own ToGhidraAddressX64 -- that
 // one has internal (anonymous-namespace) linkage in its own file (this
 // project's own already-documented linkage trap, CLAUDE.md's "checking is
@@ -7681,6 +7688,73 @@ HRESULT WINAPI Hook_EndScene(void* device)
             LogFromController(buf);
         }
     }
+
+    // Real per-frame render-view-fire-count sampling, 2026-09-25 -- direct
+    // instruction/hypothesis: "something internally is causing 2-4x round
+    // trips per frame causing directly correlating 120-60-30 fps on diff
+    // missions/scenes." Samples every 30 real frames (not every frame, to
+    // keep log volume sane across a whole mission at 120fps) plus
+    // unconditionally on any frame whose own real wall-clock delta exceeds
+    // 40ms (<25fps) so a genuine slow moment is never missed between
+    // samples. Real, direct QueryPerformanceCounter timing, independent of
+    // frame_benchmark.cpp's own infrastructure -- this is measuring actual
+    // wall-clock time between consecutive real EndScene calls, the ground
+    // truth for "how long did this frame really take."
+#if defined(_M_X64) || defined(_WIN64)
+    {
+        static LARGE_INTEGER s_freq{};
+        static LARGE_INTEGER s_lastEndSceneTime{};
+        static bool s_haveLastTime = false;
+        static long long s_frameCounter = 0;
+        if (s_freq.QuadPart == 0) QueryPerformanceFrequency(&s_freq);
+
+        LARGE_INTEGER now{};
+        QueryPerformanceCounter(&now);
+        double frameMs = 0.0;
+        if (s_haveLastTime) {
+            frameMs = (static_cast<double>(now.QuadPart - s_lastEndSceneTime.QuadPart) * 1000.0) /
+                static_cast<double>(s_freq.QuadPart);
+        }
+        s_lastEndSceneTime = now;
+        s_haveLastTime = true;
+        ++s_frameCounter;
+
+        // Always read+reset every frame (regardless of whether this frame
+        // gets logged) -- the underlying counter/buffer must never
+        // accumulate across frame boundaries, same as the plain-count
+        // version this replaces.
+        constexpr int kSeqCap = 128;
+        static int s_seqBuf[kSeqCap];
+        int totalFires = GetAndResetRenderViewSequenceX64(s_seqBuf, kSeqCap);
+
+        if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
+            char buf[180];
+            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d",
+                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires);
+            LogFromController(buf);
+
+            // Real sequence dump, ONLY on genuinely slow frames (not the
+            // routine every-30-frames sample -- that alone would flood the
+            // log with sequences from ordinary smooth play) -- this is the
+            // real data point that identifies WHICH view index(es) account
+            // for the extra fires during a slow moment.
+            if (frameMs >= 40.0 && totalFires > 0) {
+                int copyCount = totalFires < kSeqCap ? totalFires : kSeqCap;
+                char seqBuf[900];
+                int w = sprintf_s(seqBuf, "[x64-renderview-seq] frame=%lld frameMs=%.2f indices:",
+                    s_frameCounter, frameMs);
+                for (int i = 0; i < copyCount && w > 0 && w < 860; ++i) {
+                    w += sprintf_s(seqBuf + w, sizeof(seqBuf) - w, " %d", s_seqBuf[i]);
+                }
+                if (totalFires > copyCount) {
+                    sprintf_s(seqBuf + w, sizeof(seqBuf) - w, " ...(+%d more, buffer cap reached)",
+                        totalFires - copyCount);
+                }
+                LogFromController(seqBuf);
+            }
+        }
+    }
+#endif
 
     // 2026-08-08 fix (issue #70, round 4): the ONLY real D3D9 device pointer this
     // project ever sees, refreshed every frame -- exposed via GetLastKnownRenderDevice()

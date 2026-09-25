@@ -177,6 +177,23 @@ bool TryGetMenuGlyphAssetNameForKeyName(const char* keyName, char* outAssetName,
 // already compiled and linkable for x64 the same way the four functions above are.
 bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, size_t outSize);
 
+// Real per-frame render-view-activation tracking, 2026-09-25 -- see
+// Hook_RenderViewSelectDiag's own comment for the "2-4x round trips per
+// frame" hypothesis this tests and CONFIRMS (317 real samples, 100+fps
+// averaged 19.1 fires/frame, 0-19fps averaged 78.4 -- a real ~4.1x
+// multiplier, not noise). This round extends the plain COUNT to the real
+// SEQUENCE of view indices fired each frame, to identify which specific
+// render pass is being redundantly resubmitted during the slow stretches.
+// Forward-declared here, at true global/file scope BEFORE the anonymous
+// namespace below opens, specifically so a call from inside that namespace
+// resolves to this real, externally-linked definition (further down, past
+// the namespace's own close) rather than silently declaring a second,
+// disconnected, internally-linked entity -- the exact trap a declaration
+// placed INSIDE the namespace hit here before this fix (a real LNK2019,
+// then a real "always reads 0" logic bug once the LNK2019 was worked
+// around the naive way, both caught before shipping, not assumed away).
+void RecordRenderViewFireX64(int viewIndex);
+
 namespace {
 
 // FUN_1400168a0 -- the confirmed x64 Pmove per-substep tick function (the real hook
@@ -5793,11 +5810,33 @@ constexpr const char* kRenderViewSelectSignature =
 using RenderViewSelectFn = void(__fastcall*)(void* param_1, int param_2);
 RenderViewSelectFn g_origRenderViewSelect = nullptr;
 
+// Real per-frame fire-SEQUENCE tracking, 2026-09-25 -- CONFIRMED, real,
+// quantitative result from the plain-count version of this diagnostic
+// (317 real samples): 100+fps frames averaged 19.1 fires/frame, 0-19fps
+// frames averaged 78.4 -- a real ~4.1x multiplier, directly matching the
+// "2-4x round trips per frame" hypothesis. This round records the actual
+// SEQUENCE of view indices (not just a count) so the slow-frame captures
+// show WHICH specific render pass is being redundantly resubmitted. Real
+// storage and both functions live OUTSIDE this file's own anonymous
+// namespace (see RecordRenderViewFireX64's own definition, further down)
+// -- deliberately NOT a shared variable reached via an extern declaration
+// placed here inside the namespace: an unnamed-namespace-scoped `extern`
+// declaration of the same NAME does not bind to the external definition at
+// all, it silently declares a second, distinct, internally-linked entity
+// instead (a real, subtle trap this project caught once already this
+// session before shipping, not assumed) -- calling a real external
+// FUNCTION instead sidesteps it entirely, since ordinary unqualified
+// lookup for a name not declared inside this namespace correctly falls
+// through to the enclosing (global) scope. Forward-declared at true
+// global (file) scope, before this namespace even opens -- see the
+// top-of-file declaration.
+
 void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
 {
     static int s_lastLoggedIndex = -12345; // sentinel, guaranteed to differ from any real first value
     static int s_fireCount = 0;
     ++s_fireCount;
+    RecordRenderViewFireX64(param_2);
     if (param_2 != s_lastLoggedIndex) {
         s_lastLoggedIndex = param_2;
         char buf[128];
@@ -7638,6 +7677,52 @@ void __fastcall Hook_HudElemTextDrawX64(uint32_t clientNum, const char* text, vo
 }
 
 }  // namespace
+
+// Real storage + all three record/accessor functions for the render-view
+// fire-SEQUENCE diagnostic, 2026-09-25 -- see Hook_RenderViewSelectDiag's
+// own comment (inside the anonymous namespace above) for the "2-4x round
+// trips per frame" hypothesis this CONFIRMED (317 real samples, ~4.1x at
+// the worst frames). This round extends the plain count to the real
+// sequence of view indices, to identify which specific render pass is
+// being redundantly resubmitted. Deliberately placed HERE, outside this
+// file's own anonymous namespace -- the natural spot right next to
+// Hook_RenderViewSelectDiag triggered a real LNK2019 once already this
+// session (this project's own already-documented linkage trap, CLAUDE.md's
+// "checking is far cheaper than digging" note), confirming that spot is
+// still inside it despite being ~5000 lines past the namespace's own
+// opening brace. `g_...` itself stays file-static (no external declaration
+// of the storage anywhere) -- only these functions are the real public
+// surface, matching this project's own established "wrap shared internal
+// state in an accessor function" convention (e.g.
+// GetStreamlineInternalRenderResolutionX64).
+constexpr int kRenderViewSequenceCapX64 = 128; // generous headroom -- the
+    // worst real samples so far peaked under 80 fires/frame.
+static int g_renderViewSequenceX64Real[kRenderViewSequenceCapX64];
+static int g_renderViewSequenceCountX64Real = 0; // real count, may exceed
+    // kRenderViewSequenceCapX64 -- only the first Cap indices are RETAINED,
+    // but the true total fire count is still tracked correctly.
+
+void RecordRenderViewFireX64(int viewIndex)
+{
+    if (g_renderViewSequenceCountX64Real < kRenderViewSequenceCapX64) {
+        g_renderViewSequenceX64Real[g_renderViewSequenceCountX64Real] = viewIndex;
+    }
+    ++g_renderViewSequenceCountX64Real;
+}
+
+// Copies up to maxCount real recorded indices into outIndices, resets all
+// state for the next frame, and returns the REAL total fire count (which
+// may be larger than the number of indices actually copied, if it exceeded
+// kRenderViewSequenceCapX64 this frame).
+int GetAndResetRenderViewSequenceX64(int* outIndices, int maxCount)
+{
+    int total = g_renderViewSequenceCountX64Real;
+    int copyCount = total < maxCount ? total : maxCount;
+    if (copyCount > kRenderViewSequenceCapX64) copyCount = kRenderViewSequenceCapX64;
+    for (int i = 0; i < copyCount; ++i) outIndices[i] = g_renderViewSequenceX64Real[i];
+    g_renderViewSequenceCountX64Real = 0;
+    return total;
+}
 
 extern "C" bool IsReadyUpHudElemTextDrawnX64();
 extern "C" bool GetReadyUpHintTextX64(char* prefixOut, size_t prefixSize, char* suffixOut, size_t suffixSize)
