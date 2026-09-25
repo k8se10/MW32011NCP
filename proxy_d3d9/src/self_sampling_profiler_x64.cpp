@@ -58,14 +58,34 @@
 #include <cstdio>
 #include <vector>
 #include <map>
+#include <string>
 #include <algorithm>
+#include <processthreadsapi.h> // GetThreadDescription -- ordinary same-process WinAPI,
+                                // no debugger required. Reads back whatever a thread set
+                                // via SetThreadDescription (DXVK names its own worker
+                                // threads this way: "dxvk-cs", "dxvk-submit", etc. -- the
+                                // same names this project's own crash-dump analysis has
+                                // already seen via cdb, which reads the identical
+                                // underlying data).
 
 extern void LogFromController(const char* msg); // dllmain.cpp
 
 namespace {
 
-constexpr DWORD kProfileDurationMs = 3000;
-constexpr DWORD kSampleIntervalMs = 20;
+// Tightened 2026-09-26 after the first live captures came back with every thread
+// 89-100% idle in ntdll wait syscalls, no usable signal: at 20ms intervals, a
+// sampler mostly just catches the gaps BETWEEN frames (a few ms of real work at
+// this project's own typical 100+fps), not the work itself. 5ms keeps total
+// overhead reasonable (CreateToolhelp32Snapshot + per-thread suspend/resume is
+// cheap, low-microseconds per thread) while catching real per-frame work far more
+// often. Duration widened to a real multi-second window (direct instruction: "do
+// a multi second scan") -- more total samples per thread means a genuinely busy
+// thread's real work has more chances to get caught and show up as a real
+// percentage rather than getting lost in a short window's own sampling noise.
+// Report size stays bounded regardless of round count since only the top 5
+// entries per thread are ever written out.
+constexpr DWORD kProfileDurationMs = 8000;
+constexpr DWORD kSampleIntervalMs = 5;
 constexpr int kTopEntriesPerThread = 5;
 
 struct ModuleRange {
@@ -113,6 +133,33 @@ const ModuleRange* ResolveModule(const std::vector<ModuleRange>& modules, uintpt
         if (addr >= m.base && addr < m.end) return &m;
     }
     return nullptr;
+}
+
+// Resolves a thread's real SetThreadDescription name, if it set one -- most named
+// threads in this process are DXVK's own worker pool ("dxvk-cs", "dxvk-submit",
+// "dxvk-queue", "dxvk-frame", "dxvk-shader-*", etc.) plus a handful this project's
+// own background threads may name. Unnamed threads get an empty string, printed
+// as just the bare thread ID in the report. THREAD_QUERY_LIMITED_INFORMATION is
+// enough for this -- deliberately not reusing the THREAD_SUSPEND_RESUME-bearing
+// handle from sampling, since name resolution only needs to happen once per
+// thread, not once per sample round.
+std::string ResolveThreadName(DWORD tid)
+{
+    HANDLE h = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, tid);
+    if (!h) return "";
+    std::string result;
+    PWSTR desc = nullptr;
+    if (SUCCEEDED(GetThreadDescription(h, &desc)) && desc && desc[0] != L'\0') {
+        int len = WideCharToMultiByte(CP_UTF8, 0, desc, -1, nullptr, 0, nullptr, nullptr);
+        if (len > 1) {
+            std::vector<char> buf(len);
+            WideCharToMultiByte(CP_UTF8, 0, desc, -1, buf.data(), len, nullptr, nullptr);
+            result = buf.data();
+        }
+    }
+    if (desc) LocalFree(desc);
+    CloseHandle(h);
+    return result;
 }
 
 // One sampling round: enumerates threads fresh (this project's own background
@@ -201,7 +248,12 @@ DWORD WINAPI SelfSamplingProfilerThreadProc(LPVOID)
     for (const auto& tkv : samplesPerThread) {
         DWORD tid = tkv.first;
         int totalForThread = tkv.second;
-        fprintf(f, "Thread %lu (%d samples):\n", tid, totalForThread);
+        std::string name = ResolveThreadName(tid);
+        if (!name.empty()) {
+            fprintf(f, "Thread %lu [%s] (%d samples):\n", tid, name.c_str(), totalForThread);
+        } else {
+            fprintf(f, "Thread %lu (%d samples):\n", tid, totalForThread);
+        }
 
         // Collect this thread's entries, sorted by count descending -- top N only.
         std::vector<std::pair<SampleKey, int>> entries;
@@ -241,9 +293,9 @@ DWORD WINAPI SelfSamplingProfilerThreadProc(LPVOID)
 void TriggerSelfSamplingProfileX64()
 {
     // Runs on its own dedicated thread so the profile window doesn't block the
-    // calling (WndProc) thread for the full ~3 seconds -- same reasoning this
-    // project's other background work (controller poll, vibration, log-flush)
-    // already uses dedicated threads instead of blocking a shared one.
+    // calling (WndProc) thread for the full profile duration -- same reasoning
+    // this project's other background work (controller poll, vibration,
+    // log-flush) already uses dedicated threads instead of blocking a shared one.
     HANDLE h = CreateThread(nullptr, 0, SelfSamplingProfilerThreadProc, nullptr, 0, nullptr);
     if (h) CloseHandle(h);
     else LogFromController("[self-profile] Failed to start profiler thread");
