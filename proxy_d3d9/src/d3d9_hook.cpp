@@ -115,9 +115,33 @@ void TriggerSelfMemoryDumpX64()
         return;
     }
 
+    // Switched from MiniDumpWithFullMemory, 2026-09-26 -- direct user report/
+    // fix: the first real F9 capture came out at ~10GB despite Task Manager
+    // showing iw5sp.exe's own working set at ~2.4GB. Real, non-suspicious
+    // cause, not a bug in this function: MiniDumpWithFullMemory captures
+    // EVERY committed page in the process's address space, including this
+    // project's own IwdReadAccelEnabled feature's real memory-mapped .iwd
+    // archive file views (WaitCoalescingEnabled/analog_input_hooks_x64.cpp's
+    // sibling feature) -- committed VA, not resident working set, so it
+    // never shows up in Task Manager's Memory column but still gets fully
+    // captured. Direct user instruction: "we just need the bounded game
+    // memory... weve identified it lives in subsections of the memory based
+    // on x86 approach" -- MiniDumpWithPrivateReadWriteMemory captures the
+    // process's own private (not file-backed/shared) read-write memory --
+    // real heaps, stacks, static data -- while excluding exactly the giant
+    // mapped-file views that bloated the first capture. MiniDumpWithDataSegs
+    // adds the module .data/.bss sections (global variables like every
+    // DAT_141xxxxxx this project's own RE work already tracks by address);
+    // MiniDumpWithThreadInfo/MiniDumpWithFullMemoryInfo keep real per-thread
+    // context/stack-walk data, still needed for the same "walk the render
+    // thread's real call stack at the exact capture moment" purpose this
+    // tool was originally built for.
+    constexpr MINIDUMP_TYPE kBoundedDumpType = static_cast<MINIDUMP_TYPE>(
+        MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory |
+        MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithFullMemoryInfo);
     BOOL ok = MiniDumpWriteDump(
         GetCurrentProcess(), GetCurrentProcessId(), hFile,
-        MiniDumpWithFullMemory, nullptr, nullptr, nullptr);
+        kBoundedDumpType, nullptr, nullptr, nullptr);
 
     CloseHandle(hFile);
 
