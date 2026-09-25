@@ -104,6 +104,10 @@ extern void LogFromController(const char* msg);
 extern DWORD GetMainThreadId(); // dllmain.cpp -- see g_mainThreadId's own comment for the real-thread-ID diagnostic this feeds
 #if defined(_M_X64) || defined(_WIN64)
 extern int GetAndResetRenderViewSequenceX64(int* outIndices, int maxCount); // analog_input_hooks_x64.cpp
+extern int GetAndResetRenderViewTransitionCountX64(); // analog_input_hooks_x64.cpp -- real pass-VALUE
+    // transition count, 2026-09-26, added after finding FUN_1401dfd80's own
+    // same-pass dedup early-out means raw fire count (below) is an upper
+    // bound on real activation cost, not a direct measurement of it.
     // -- real per-frame render-view-activation SEQUENCE (not just a count),
     // 2026-09-25. The plain-count version of this diagnostic already
     // CONFIRMED the "2-4x round trips per frame" hypothesis quantitatively
@@ -7726,11 +7730,12 @@ HRESULT WINAPI Hook_EndScene(void* device)
         constexpr int kSeqCap = 128;
         static int s_seqBuf[kSeqCap];
         int totalFires = GetAndResetRenderViewSequenceX64(s_seqBuf, kSeqCap);
+        int realTransitions = GetAndResetRenderViewTransitionCountX64();
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
-            char buf[180];
-            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d",
-                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires);
+            char buf[220];
+            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d",
+                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions);
             LogFromController(buf);
 
             // Real sequence dump, ONLY on genuinely slow frames (not the

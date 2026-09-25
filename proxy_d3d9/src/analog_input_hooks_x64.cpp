@@ -193,6 +193,7 @@ bool TryGetGlyphAssetNameForKeyName(const char* keyName, char* outAssetName, siz
 // then a real "always reads 0" logic bug once the LNK2019 was worked
 // around the naive way, both caught before shipping, not assumed away).
 void RecordRenderViewFireX64(int viewIndex);
+int GetAndResetRenderViewTransitionCountX64();
 
 namespace {
 
@@ -7702,12 +7703,50 @@ static int g_renderViewSequenceCountX64Real = 0; // real count, may exceed
     // kRenderViewSequenceCapX64 -- only the first Cap indices are RETAINED,
     // but the true total fire count is still tracked correctly.
 
+// Real pass-VALUE transition counter, 2026-09-26 -- added following the
+// discovery that FUN_1401dfd80 (the render-view activator itself) has its
+// own same-pass dedup early-out (`if (param_2 == *(int*)(lVar1+0xbd8))
+// return;`) -- meaning every raw fire count gathered so far in this
+// investigation (the 317-sample fps-bucket data, the dead-stable 56/92-
+// fire captures) is an upper bound on real activation cost, not a direct
+// measurement: repeated calls with the SAME pass value are cheap no-ops,
+// only a genuine value CHANGE does the real work (vtable state-reset,
+// sampler-slot clearing, render-target rebind). This tracks the real
+// transition count directly, so the next live capture answers the open
+// question (how much of the raw fire count is real work vs. no-op) without
+// needing to manually post-process the sequence array. `s_lastFiredIndex`
+// persists across frames on purpose -- a transition INTO a frame's first
+// real pass from whatever the previous frame ended on is exactly as real
+// as any transition within a frame, and this hook fires in the same
+// real call order the game itself makes into the activator, so comparing
+// consecutive calls here is equivalent to comparing against the field the
+// game's own code reads.
+static int s_lastFiredIndexX64Real = -12345; // sentinel, differs from any real first value
+static int g_renderViewTransitionCountX64Real = 0;
+
 void RecordRenderViewFireX64(int viewIndex)
 {
     if (g_renderViewSequenceCountX64Real < kRenderViewSequenceCapX64) {
         g_renderViewSequenceX64Real[g_renderViewSequenceCountX64Real] = viewIndex;
     }
     ++g_renderViewSequenceCountX64Real;
+    if (viewIndex != s_lastFiredIndexX64Real) {
+        ++g_renderViewTransitionCountX64Real;
+        s_lastFiredIndexX64Real = viewIndex;
+    }
+}
+
+// Read-and-reset accessor, mirroring GetAndResetRenderViewSequenceX64's own
+// convention -- resets the transition count for the next sampling window
+// but deliberately does NOT reset s_lastFiredIndexX64Real, since the real
+// activator's own dedup state (what it's comparing param_2 against) is
+// never reset either -- resetting it here would create a false transition
+// on the very next real call after a read.
+int GetAndResetRenderViewTransitionCountX64()
+{
+    int total = g_renderViewTransitionCountX64Real;
+    g_renderViewTransitionCountX64Real = 0;
+    return total;
 }
 
 // Copies up to maxCount real recorded indices into outIndices, resets all
