@@ -136,52 +136,71 @@ void TriggerSelfMemoryDumpX64()
     // context/stack-walk data, still needed for the same "walk the render
     // thread's real call stack at the exact capture moment" purpose this
     // tool was originally built for.
-    constexpr MINIDUMP_TYPE kBoundedDumpType = static_cast<MINIDUMP_TYPE>(
-        MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory |
-        MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithFullMemoryInfo);
-    BOOL ok = MiniDumpWriteDump(
-        GetCurrentProcess(), GetCurrentProcessId(), hFile,
-        kBoundedDumpType, nullptr, nullptr, nullptr);
-    DWORD firstAttemptErr = ok ? 0 : GetLastError();
+    // Fixed 2026-09-26, round 2 -- direct live report: the bounded combo from
+    // round 1 failed with ERROR_INVALID_PARAMETER (0x80070057) specifically
+    // during in-game-pause captures, and a same-day retest showed the
+    // round-1 fallback (MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory)
+    // ALSO fails with the identical error in the same scenario -- ruling out
+    // MiniDumpWithHandleData/MiniDumpWithFullMemoryInfo as the specific
+    // culprits, since a combo without either of them still fails the same
+    // way. This points at something more fundamental than one bad flag pair
+    // -- possibly a thread/driver-state issue specific to the paused render
+    // loop that DbgHelp's internal thread-suspend/GetThreadContext walk
+    // can't handle regardless of which optional streams are requested. Real
+    // second bug found and fixed here too: a failed MiniDumpWriteDump call
+    // can partially write to the file handle before erroring, so retrying
+    // on the SAME handle risked feeding a corrupted/appended file into the
+    // next attempt -- each tier below now reopens (CREATE_ALWAYS, truncating)
+    // a fresh handle rather than reusing one across attempts. Three tiers
+    // now attempted in order: the original bounded combo, the round-1
+    // fallback, and finally bare `MiniDumpNormal` (0, no extra flags at all)
+    // -- the most minimal, universally-supported combination DbgHelp
+    // supports, still enough to recover real thread stacks/module list/
+    // exception info even if every optional stream this tool wanted is
+    // refused. If even THIS tier fails, the real cause isn't a flag choice
+    // at all and needs a different investigation angle entirely.
+    struct DumpTier { MINIDUMP_TYPE type; const char* label; };
+    const DumpTier kTiers[] = {
+        { static_cast<MINIDUMP_TYPE>(MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory |
+                                      MiniDumpWithHandleData | MiniDumpWithThreadInfo | MiniDumpWithFullMemoryInfo),
+          "full" },
+        { static_cast<MINIDUMP_TYPE>(MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory),
+          "reduced" },
+        { MiniDumpNormal, "minimal" },
+    };
 
-    // Fixed 2026-09-26 -- direct live report: the combo above failed with
-    // ERROR_INVALID_PARAMETER (0x80070057) specifically during in-game-pause
-    // captures (3 real attempts, all producing tiny ~250KB unusable dumps),
-    // while the exact same combo worked fine at the main menu and during live
-    // gameplay. Two real bugs fixed here: (1) GetLastError() was previously
-    // read AFTER CloseHandle(hFile), which can silently clobber the real
-    // error code -- now captured immediately, before any other API call.
-    // (2) No fallback existed at all -- a failure meant a totally empty
-    // capture for that scenario, with nothing to analyze. MiniDumpWithHandleData
-    // and MiniDumpWithFullMemoryInfo are the two flags with the most
-    // documented real-world dbghelp.dll fragility (handle-table/thread-info
-    // edge cases specifically tied to unusual process states like an
-    // open menu/paused sim) -- if the full combo fails, retry once with
-    // just the two flags that have never failed in any capture so far
-    // (MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory), which is
-    // still enough for the heap/stack/global-data analysis this tool exists
-    // for, just without the handle table or the extra thread/memory-region
-    // metadata.
-    if (!ok) {
-        constexpr MINIDUMP_TYPE kFallbackDumpType = static_cast<MINIDUMP_TYPE>(
-            MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory);
+    BOOL ok = FALSE;
+    DWORD tierErrs[3] = { 0, 0, 0 };
+    int succeededTier = -1;
+    for (int i = 0; i < 3 && !ok; ++i) {
+        if (i > 0) {
+            // Fresh handle per tier -- a prior failed attempt may have
+            // partially written to the file before erroring out.
+            CloseHandle(hFile);
+            hFile = CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (hFile == INVALID_HANDLE_VALUE) {
+                tierErrs[i] = GetLastError();
+                continue;
+            }
+        }
         ok = MiniDumpWriteDump(
             GetCurrentProcess(), GetCurrentProcessId(), hFile,
-            kFallbackDumpType, nullptr, nullptr, nullptr);
+            kTiers[i].type, nullptr, nullptr, nullptr);
+        tierErrs[i] = ok ? 0 : GetLastError();
+        if (ok) succeededTier = i;
     }
-    DWORD finalErr = ok ? 0 : GetLastError();
 
     CloseHandle(hFile);
 
     char logBuf[320];
-    if (ok && firstAttemptErr == 0) {
+    if (ok && succeededTier == 0) {
         sprintf_s(logBuf, "[self-dump] Wrote %s (self-triggered, no external handle)", path);
     } else if (ok) {
-        sprintf_s(logBuf, "[self-dump] Wrote %s via fallback flags (full combo failed, GetLastError=%lu)",
-                  path, firstAttemptErr);
+        sprintf_s(logBuf, "[self-dump] Wrote %s via '%s' tier (earlier tier(s) failed, first=%lu)",
+                  path, kTiers[succeededTier].label, tierErrs[0]);
     } else {
-        sprintf_s(logBuf, "[self-dump] MiniDumpWriteDump FAILED even with fallback flags (first=%lu, fallback=%lu)",
-                  firstAttemptErr, finalErr);
+        sprintf_s(logBuf, "[self-dump] MiniDumpWriteDump FAILED at all 3 tiers (full=%lu, reduced=%lu, minimal=%lu)",
+                  tierErrs[0], tierErrs[1], tierErrs[2]);
     }
     LogFromController(logBuf);
 }
