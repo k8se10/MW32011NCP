@@ -707,7 +707,13 @@ extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVers
     Log("Direct3DCreate9 called");
 
 #if defined(_M_X64) || defined(_WIN64)
-    InitRenderDocX64();
+    // 2026-09-26 REAL GAP FIX: this used to run unconditionally, meaning RenderDoc's own
+    // Vulkan capture layer attached in-process for the WHOLE session the instant a player
+    // had RenderDoc installed for any reason, whether F11 was ever pressed or not -- see
+    // mod_config.h's own gpuCaptureEnabled comment for the full rationale. Now opt-in.
+    if (g_modConfig.gpuCaptureEnabled) {
+        InitRenderDocX64();
+    }
 #endif
 
     if (!g_real_Direct3DCreate9) return nullptr;

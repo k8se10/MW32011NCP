@@ -705,6 +705,20 @@ struct ModConfig
         // cost real fps while active -- diagnostic only, default OFF, Vulkan/DXVK-only (LegacyD3D9
         // has no Vulkan queue to sync).
 
+    bool gpuCaptureEnabled = false; // 2026-09-26 REAL GAP FOUND AND FIXED: InitRenderDocX64()
+        // (renderdoc_capture_x64.cpp) had no config gate at all -- it ran unconditionally on
+        // EVERY launch, meaning the instant a player has RenderDoc installed for any reason
+        // (even unrelated to this mod), its Vulkan capture layer attaches in-process for the
+        // whole session regardless of whether F11 is ever pressed. Found live: a real hang/
+        // freeze was reported during extended pause/unpause/menu-transition testing, and
+        // while the user directly confirmed the hang itself predates this session's tooling
+        // ("its contibuting but this has been existent throughout long before any of that
+        // stuff"), an always-on third-party Vulkan capture layer sitting across every real
+        // swapchain/device-state transition is still a real, legitimate contributing-factor
+        // candidate worth gating like every other diagnostic tool in this project, not left
+        // silently unconditional. Default OFF -- F11 GPU capture (see known_issues_x64.md
+        // issue #4's own RenderDoc round) now requires explicitly opting in here first.
+
     bool frametimeBenchmarkLogging = false; // 2026-08-17: live-reported "still jittery,
         // 239 fps on the counter but feels like 40" AFTER the log-truncate fix and the
         // asset-capture async-write fix -- both real, evidence-backed fixes that didn't
