@@ -142,14 +142,46 @@ void TriggerSelfMemoryDumpX64()
     BOOL ok = MiniDumpWriteDump(
         GetCurrentProcess(), GetCurrentProcessId(), hFile,
         kBoundedDumpType, nullptr, nullptr, nullptr);
+    DWORD firstAttemptErr = ok ? 0 : GetLastError();
+
+    // Fixed 2026-09-26 -- direct live report: the combo above failed with
+    // ERROR_INVALID_PARAMETER (0x80070057) specifically during in-game-pause
+    // captures (3 real attempts, all producing tiny ~250KB unusable dumps),
+    // while the exact same combo worked fine at the main menu and during live
+    // gameplay. Two real bugs fixed here: (1) GetLastError() was previously
+    // read AFTER CloseHandle(hFile), which can silently clobber the real
+    // error code -- now captured immediately, before any other API call.
+    // (2) No fallback existed at all -- a failure meant a totally empty
+    // capture for that scenario, with nothing to analyze. MiniDumpWithHandleData
+    // and MiniDumpWithFullMemoryInfo are the two flags with the most
+    // documented real-world dbghelp.dll fragility (handle-table/thread-info
+    // edge cases specifically tied to unusual process states like an
+    // open menu/paused sim) -- if the full combo fails, retry once with
+    // just the two flags that have never failed in any capture so far
+    // (MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory), which is
+    // still enough for the heap/stack/global-data analysis this tool exists
+    // for, just without the handle table or the extra thread/memory-region
+    // metadata.
+    if (!ok) {
+        constexpr MINIDUMP_TYPE kFallbackDumpType = static_cast<MINIDUMP_TYPE>(
+            MiniDumpWithDataSegs | MiniDumpWithPrivateReadWriteMemory);
+        ok = MiniDumpWriteDump(
+            GetCurrentProcess(), GetCurrentProcessId(), hFile,
+            kFallbackDumpType, nullptr, nullptr, nullptr);
+    }
+    DWORD finalErr = ok ? 0 : GetLastError();
 
     CloseHandle(hFile);
 
-    char logBuf[256];
-    if (ok) {
+    char logBuf[320];
+    if (ok && firstAttemptErr == 0) {
         sprintf_s(logBuf, "[self-dump] Wrote %s (self-triggered, no external handle)", path);
+    } else if (ok) {
+        sprintf_s(logBuf, "[self-dump] Wrote %s via fallback flags (full combo failed, GetLastError=%lu)",
+                  path, firstAttemptErr);
     } else {
-        sprintf_s(logBuf, "[self-dump] MiniDumpWriteDump FAILED (GetLastError=%lu)", GetLastError());
+        sprintf_s(logBuf, "[self-dump] MiniDumpWriteDump FAILED even with fallback flags (first=%lu, fallback=%lu)",
+                  firstAttemptErr, finalErr);
     }
     LogFromController(logBuf);
 }
