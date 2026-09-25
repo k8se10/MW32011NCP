@@ -1,0 +1,100 @@
+================================================================
+Function: FUN_1401d3290 @ 1401d3290
+----------------------------------------------------------------
+
+bool FUN_1401d3290(void)
+
+{
+  return DAT_1418854d0 != 0;
+}
+
+
+---- CALLERS of FUN_1401d3290 ----
+  CALLER #1: from 14029bad7 in FUN_14029baa0 @ 14029baa0 refType=UNCONDITIONAL_CALL
+Total callers: 1
+
+================================================================
+Function: FUN_1401d2c50 @ 1401d2c50
+----------------------------------------------------------------
+
+void FUN_1401d2c50(void)
+
+{
+  char cVar1;
+  
+  cVar1 = FUN_14024a250();
+  if ((cVar1 != '\0') && (DAT_1418854c9 != '\0')) {
+    if (DAT_1418854d0 != 0) {
+      DAT_1418854d0 = DAT_1418854d0 + 1;
+      return;
+    }
+    DAT_1418854d0 = 1;
+    FUN_1401d3660();
+    FUN_14024a350();
+    return;
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_1401d2c50 ----
+  CALLER #1: from 1444504d4 in <none/data> refType=DATA
+  CALLER #2: from 1400a5c1c in FUN_1400a5a20 @ 1400a5a20 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 1400a7fad in FUN_1400a7fa0 @ 1400a7fa0 refType=UNCONDITIONAL_CALL
+  CALLER #4: from 1400a7d65 in FUN_1400a7d40 @ 1400a7d40 refType=UNCONDITIONAL_CALL
+  CALLER #5: from 1400a71a2 in FUN_1400a7150 @ 1400a7150 refType=UNCONDITIONAL_CALL
+  CALLER #6: from 1400a723c in FUN_1400a7150 @ 1400a7150 refType=UNCONDITIONAL_CALL
+  CALLER #7: from 1400a7519 in FUN_1400a7150 @ 1400a7150 refType=UNCONDITIONAL_CALL
+  CALLER #8: from 1400a7703 in FUN_1400a7150 @ 1400a7150 refType=UNCONDITIONAL_CALL
+  CALLER #9: from 1400a77c8 in FUN_1400a7150 @ 1400a7150 refType=UNCONDITIONAL_CALL
+  CALLER #10: from 14022da57 in FUN_14022da30 @ 14022da30 refType=UNCONDITIONAL_CALL
+  CALLER #11: from 14022cb55 in FUN_14022ca20 @ 14022ca20 refType=UNCONDITIONAL_CALL
+  CALLER #12: from 14027a6f0 in FUN_14027a470 @ 14027a470 refType=UNCONDITIONAL_CALL
+  CALLER #13: from 14022d0dd in FUN_14022cee0 @ 14022cee0 refType=UNCONDITIONAL_CALL
+  CALLER #14: from 14022c7f1 in FUN_14022c6d0 @ 14022c6d0 refType=UNCONDITIONAL_CALL
+  CALLER #15: from 14022dd86 in FUN_14022dbb0 @ 14022dbb0 refType=UNCONDITIONAL_CALL
+  CALLER #16: from 14022df1d in FUN_14022dbb0 @ 14022dbb0 refType=UNCONDITIONAL_CALL
+  CALLER #17: from 14022e091 in FUN_14022dbb0 @ 14022dbb0 refType=UNCONDITIONAL_CALL
+  CALLER #18: from 14022e3a1 in FUN_14022dbb0 @ 14022dbb0 refType=UNCONDITIONAL_CALL
+  CALLER #19: from 14022d2e6 in FUN_14022d1b0 @ 14022d1b0 refType=UNCONDITIONAL_CALL
+  CALLER #20: from 14022d484 in FUN_14022d1b0 @ 14022d1b0 refType=UNCONDITIONAL_CALL
+  CALLER #21: from 14022d5b1 in FUN_14022d1b0 @ 14022d1b0 refType=UNCONDITIONAL_CALL
+  CALLER #22: from 14022d851 in FUN_14022d1b0 @ 14022d1b0 refType=UNCONDITIONAL_CALL
+  CALLER #23: from 14022c591 in FUN_14022c3c0 @ 14022c3c0 refType=UNCONDITIONAL_CALL
+  CALLER #24: from 14008a5fa in FUN_14008a5b0 @ 14008a5b0 refType=UNCONDITIONAL_CALL
+  CALLER #25: from 1400a703e in FUN_1400a6e30 @ 1400a6e30 refType=UNCONDITIONAL_CALL
+  CALLER #26: from 14023c50b in FUN_14023c490 @ 14023c490 refType=UNCONDITIONAL_CALL
+  CALLER #27: from 14026a9d2 in FUN_14026a9b0 @ 14026a9b0 refType=UNCONDITIONAL_CALL
+  CALLER #28: from 14026a911 in FUN_14026a810 @ 14026a810 refType=UNCONDITIONAL_CALL
+  CALLER #29: from 14026b3ee in FUN_14026b220 @ 14026b220 refType=UNCONDITIONAL_CALL
+  CALLER #30: from 14026b43a in FUN_14026b220 @ 14026b220 refType=UNCONDITIONAL_CALL
+  CALLER #31: from 14026b5a3 in FUN_14026b220 @ 14026b220 refType=UNCONDITIONAL_CALL
+  CALLER #32: from 14026b5ad in FUN_14026b220 @ 14026b220 refType=UNCONDITIONAL_CALL
+Total callers: 32
+
+================================================================
+Function: FUN_140186bd0 @ 140186bd0
+----------------------------------------------------------------
+
+void FUN_140186bd0(void)
+
+{
+  if (DAT_1418854d0 != 0) {
+    DAT_1418854cc = 1;
+    DAT_1418854ca = 1;
+    do {
+      Sleep(1);
+    } while (DAT_1418854d0 != 0);
+    DAT_1418854ca = 0;
+    DAT_1418854cc = 1;
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_140186bd0 ----
+  CALLER #1: from 14444cf28 in <none/data> refType=DATA
+  CALLER #2: from 14018dfcf in FUN_14018dfb0 @ 14018dfb0 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 14018dfff in FUN_14018dfe0 @ 14018dfe0 refType=UNCONDITIONAL_CALL
+Total callers: 3
+
