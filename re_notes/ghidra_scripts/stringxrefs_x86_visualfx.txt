@@ -1,0 +1,426 @@
+STRING @ 00824650: "r_sunflare_fadein"
+  REF #1: from 0045ec86 in FUN_0045eb00 @ 0045eb00
+  REF #2: from 0093a3b8 in <none/data>
+
+STRING @ 00825078: "Clear floatz buffer to threshold value so that DoF is applied to all pixels"
+  REF #1: from 0043b001 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00825cec: "nightfog %f %f %f %f %f %f %f 1 %f %f %f %f %f %f %f %f %f"
+  REF #1: from 005db08f in FUN_005dae10 @ 005dae10
+
+STRING @ 00826719: "z$?endofgame"
+
+STRING @ 00826d24: "glowalpha"
+  REF #1: from 0047234c in FUN_00470d00 @ 00470d00
+
+STRING @ 00827f20: "r_glowTweakBloomCutoff"
+  REF #1: from 0043b5e8 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00828210: "r_sunflare_fadeout"
+  REF #1: from 0045ecb7 in FUN_0045eb00 @ 0045eb00
+  REF #2: from 0093a3bc in <none/data>
+
+STRING @ 00828b18: "Fog max opacity that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3d70 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0082966c: "con_typewriterColorGlowFailed"
+  REF #1: from 00541821 in FUN_00541480 @ 00541480
+
+STRING @ 0082af04: "thermalfog %f %f %f %f %f %f %f 0"
+  REF #1: from 005dadc5 in FUN_005daac0 @ 005daac0
+
+STRING @ 0082b430: "Change the distance at which culling fog reaches 100% opacity; 0 is off"
+  REF #1: from 0043a517 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0082b478: "Allow glow."
+  REF #1: from 0043b4e0 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0082b7ac: "postfx_grain_dof_color"
+  REF #1: from 00880018 in <none/data>
+
+STRING @ 0082baba: "zEr_sunflare_min_size"
+
+STRING @ 0082c0cc: "Enable glow."
+  REF #1: from 0043b513 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0082c45c: "g_fogHalfDistReadOnly"
+  REF #1: from 005c3d61 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0082c4b8: "dofnear"
+  REF #1: from 00472e5d in FUN_00470d00 @ 00470d00
+
+STRING @ 0082c5cc: "r_dof_nearEnd"
+  REF #1: from 0043ba40 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0082d75c: "r_glow"
+  REF #1: from 0043b51c in FUN_0043a1e0 @ 0043a1e0
+  REF #2: from 00575da3 in FUN_00575d50 @ 00575d50
+  REF #3: from 009297e0 in <none/data>
+
+STRING @ 0082ea34: "laserLightEndOffset"
+  REF #1: from 0043d305 in FUN_0043d160 @ 0043d160
+
+STRING @ 0082f558: "decode_characters_glow"
+  REF #1: from 006190ca in FUN_00619020 @ 00619020
+
+STRING @ 0082f820: "Tweak dev var; Enable glow"
+  REF #1: from 0043b543 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0082fca8: "r_glowTweakSkyBleedIntensity0"
+
+STRING @ 0082fe34: "r_glowTweakBloomIntensity0"
+  REF #1: from 0043b5b7 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0082ff88: "r_dof_farStart"
+  REF #1: from 0043ba75 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0083022c: "r_ssao"
+  REF #1: from 0041743e in FUN_00417430 @ 00417430
+
+STRING @ 008302aa: "<Br_sunflare_max_size"
+
+STRING @ 008305d8: "r_dof_enable"
+  REF #1: from 0043b8e6 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00831128: "r_glowTweakRadius1"
+
+STRING @ 008311cc: "laserFlarePct_alt"
+  REF #1: from 0043d461 in FUN_0043d160 @ 0043d160
+
+STRING @ 00831cfc: "laserFlarePct"
+  REF #1: from 0043d373 in FUN_0043d160 @ 0043d160
+
+STRING @ 00832548: "Fog color scale for viewmodel (< 0 disabled) [SP Only]"
+  REF #1: from 0043a55a in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00832760: "r_dof_nearBlur"
+  REF #1: from 0043b937 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00832874: "enable dof"
+  REF #1: from 005c369b in FUN_005c2230 @ 005c2230
+
+STRING @ 00832ad8: "r_ssaoBlurRadius"
+  REF #1: from 004174d5 in FUN_00417430 @ 00417430
+
+STRING @ 0083449c: "r_glow_allowed_script_forced"
+  REF #1: from 0043b501 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 008361ac: "g_fogStartDistReadOnly"
+  REF #1: from 005c3d29 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 008364f8: "Sun fog direction that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3deb in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00837458: "r_dof_farEnd"
+  REF #1: from 0043baaa in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 008375b0: "Allocate a float z buffer (required for effects such as floatz, dof, laser light and SSAO)"
+  REF #1: from 0043afe4 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00837f30: "glow_consistent_setup_color2"
+  REF #1: from 0087ff18 in <none/data>
+
+STRING @ 00838344: "postfx_grain_dof"
+  REF #1: from 00880010 in <none/data>
+
+STRING @ 008387e4: "r_glowTweakSkyBleedIntensity1"
+
+STRING @ 00839f1c: "XBOXLIVE_LOGGEDOFF"
+  REF #1: from 005fd1b7 in FUN_005fd190 @ 005fd190
+  REF #2: from 0092cf64 in <none/data>
+
+STRING @ 0083b54c: "dof_near_coc"
+  REF #1: from 0087fe88 in <none/data>
+
+STRING @ 0083b6bc: "thermalfog %f %f %f %f %f %f %f 1 %f %f %f %f %f %f %f %f %f"
+  REF #1: from 005dad3f in FUN_005daac0 @ 005daac0
+
+STRING @ 0083c1e0: "r_glowBloomCutoff"
+  REF #1: from 00575da3 in FUN_00575d50 @ 00575d50
+  REF #2: from 009297ec in <none/data>
+
+STRING @ 0083c388: "g_fogColorReadOnly"
+  REF #1: from 005c3cf7 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0083cf0c: "Force 'allow glow' to be treated as true, by script."
+  REF #1: from 0043b4f8 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0083df9c: "largest size of flare effect in pixels at 640x480"
+  REF #1: from 0045ebd3 in FUN_0045eb00 @ 0045eb00
+
+STRING @ 0083e0c0: "r_glowTweakEnable"
+  REF #1: from 0043b54c in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0083e168: "nightfog"
+  REF #1: from 0056f182 in FUN_0056d4f0 @ 0056d4f0
+  REF #2: from 0056f177 in FUN_0056d4f0 @ 0056d4f0
+
+STRING @ 0083ee1c: "r_glowBloomIntensity0"
+
+STRING @ 00840848: "Sun fog color that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3db9 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 008418dc: "Tweak dev var; Glow bloom cut off fraction"
+  REF #1: from 0043b5c6 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00841f1c: "Fog color that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3cd9 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00842720: "r_fog"
+  REF #1: from 0043a546 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00842838: "r_dof_viewModelEnd"
+  REF #1: from 0043b9d6 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00842940: "r_glowBloomIntensity1"
+
+STRING @ 008447d8: "r_sunflare_shader"
+  REF #1: from 0045eb57 in FUN_0045eb00 @ 0045eb00
+  REF #2: from 0093a3a0 in <none/data>
+
+STRING @ 008448f8: "g_sunFogBeginFadeAngleReadOnly"
+  REF #1: from 005c3e4a in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00844a30: "Set sun flare values from dvars rather than the level"
+  REF #1: from 0043bb49 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00844be0: "r_glowTweakRadius0"
+  REF #1: from 0043b586 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 008450a4: "postfx_grain_dof_color2"
+  REF #1: from 00880020 in <none/data>
+
+STRING @ 00845adc: "ent.normalFogScale = "
+  REF #1: from 00572009 in FUN_00571ab0 @ 00571ab0
+  REF #2: from 0057201a in FUN_00571ab0 @ 00571ab0
+
+STRING @ 00847030: "glowcolor"
+  REF #1: from 0047233c in FUN_00470d00 @ 00470d00
+
+STRING @ 00847890: "Tweak dev var; Glow radius in pixels at 640x480"
+  REF #1: from 0043b564 in FUN_0043a1e0 @ 0043a1e0
+  REF #2: from 004a5448 in FUN_004a5260 @ 004a5260
+
+STRING @ 008478f0: "r_sunflare_min_angle"
+  REF #1: from 0045ebc0 in FUN_0045eb00 @ 0045eb00
+  REF #2: from 0093a3a8 in <none/data>
+
+STRING @ 00848368: "r_glowTweakBloomDesaturation"
+  REF #1: from 0043b613 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00848478: "con_typewriterColorGlowCheckpoint"
+  REF #1: from 00541864 in FUN_00541480 @ 00541480
+
+STRING @ 00848cd8: "Angle from the sun direction to start fade away from the sun fog color that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3e2b in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0084a43c: "postfx_dof_color"
+  REF #1: from 0087fea0 in <none/data>
+
+STRING @ 0084a6f8: "Depth of field used (enabled via r_dof_enable or r_dof_tweak) with no float-z buffer (r_floatz wasn't enabled when the renderer was started.)\n"
+  REF #1: from 00683765 in FUN_00683670 @ 00683670
+
+STRING @ 0084ab3c: "r_glowSkyBleedIntensity1"
+
+STRING @ 0084b0b0: "Fog start distance that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3d0a in FUN_005c36c0 @ 005c36c0
+  REF #2: from 005c3d3c in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0084b2d4: "scr_dof_enable"
+  REF #1: from 005c36a7 in FUN_005c2230 @ 005c2230
+
+STRING @ 0084c4d8: "doesn't support separate alpha blend, glow will be disabled"
+
+STRING @ 0084cec8: "Tweak dev var; Glow bloom desaturation"
+  REF #1: from 0043b5f7 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0084d860: "set_pip_near_dof"
+  REF #1: from 0056f852 in FUN_0056d4f0 @ 0056d4f0
+  REF #2: from 0056f845 in FUN_0056d4f0 @ 0056d4f0
+
+STRING @ 0084db4c: "r_dof_viewModelStart"
+  REF #1: from 0043b9a1 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0084ddf4: "r_ssaoStrength"
+  REF #1: from 00417473 in FUN_00417430 @ 00417430
+
+STRING @ 0084ec78: "Distance scale in the sun fog direction that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3e8f in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0084ef74: "r_glowBloomDesaturation"
+
+STRING @ 0084f2c8: "r_ssaoDownsample"
+  REF #1: from 004174e8 in FUN_00417430 @ 00417430
+
+STRING @ 0084f6ec: "maps/createart/%s_fog.gsc"
+  REF #1: from 00424c1a in FUN_00424b80 @ 00424b80
+
+STRING @ 0084fb7c: "r_glowSkyBleedIntensity0"
+
+STRING @ 00850d50: "Overide glow with tweak dvar values."
+  REF #1: from 0043b52b in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00850db6: ".@r_sunflare_max_angle"
+
+STRING @ 00851a9c: "r_ssaoPower"
+  REF #1: from 004174a4 in FUN_00417430 @ 00417430
+
+STRING @ 0085299c: "thermalfog"
+  REF #1: from 0056eeb5 in FUN_0056d4f0 @ 0056d4f0
+  REF #2: from 0056eeac in FUN_0056d4f0 @ 0056d4f0
+
+STRING @ 008532a8: "MAX_CLIENT_SIDE_VISION_AND_FOG_SETS_PER_LEVEL exceeded - increase size to account for g_zoneLookup or lower mapEnts clientTrigger count from %d to %d"
+  REF #1: from 00424c52 in FUN_00424b80 @ 00424b80
+
+STRING @ 00853aa4: "con_typewriterColorGlowUpdated"
+  REF #1: from 0054179d in FUN_00541480 @ 00541480
+
+STRING @ 00853c84: "r_dof_farBlur"
+  REF #1: from 0043b96c in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00853ed8: "Fogable material '%s' used for 2D text '%s'\n"
+  REF #1: from 0093a528 in <none/data>
+
+STRING @ 00853f9c: "g_sunFogScaleReadOnly"
+  REF #1: from 005c3eb0 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00854624: "glow_consistent_setup"
+  REF #1: from 0087ff10 in <none/data>
+
+STRING @ 00856640: "doffar"
+  REF #1: from 00472e73 in FUN_00470d00 @ 00470d00
+
+STRING @ 0085710c: "r_dof_nearStart"
+  REF #1: from 0043ba0b in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00857858: "Angle from the sun direction to end fade away from the sun fog color that was set in the most recent call to \"setexpfog\""
+  REF #1: from 005c3e5d in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00857934: "name for flare effect; can be any material"
+  REF #1: from 0045eb4b in FUN_0045eb00 @ 0045eb00
+
+STRING @ 00857de0: "Sun fog was enabled in the most recent call to \"setexpfog\""
+  REF #1: from 005c3d99 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00858084: "postfx_dof_color2"
+  REF #1: from 0087fea8 in <none/data>
+
+STRING @ 00859227: "?Fogable material '%s' used for 2D glyph\n"
+
+STRING @ 00859ac8: "r_glowRadius0"
+
+STRING @ 00859fa8: "laserEndOffset"
+  REF #1: from 0043d33e in FUN_0043d160 @ 0043d160
+
+STRING @ 0085a2b8: "r_showModelLightingLowWaterMark"
+  REF #1: from 0043ab7c in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0085a5d0: "r_dof_tweak"
+  REF #1: from 0043b8f9 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0085aadc: "r_fog_depthhack_scale"
+  REF #1: from 0043a57a in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0085aeec: "ent = maps\\_utility::create_vision_set_fog("
+  REF #1: from 00571b6a in FUN_00571ab0 @ 00571ab0
+  REF #2: from 00571b7f in FUN_00571ab0 @ 00571ab0
+
+STRING @ 0085b4c8: "g_sunFogEndFadeAngleReadOnly"
+  REF #1: from 005c3e7c in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0085b660: "r_glowRadius1"
+
+STRING @ 0085c8e2: "+2r_ssaoDebug"
+
+STRING @ 0085cd5c: "hostileNameFontGlowColor"
+  REF #1: from 00431447 in FUN_00430250 @ 00430250
+
+STRING @ 0085d018: "nightfog %f %f %f %f %f %f %f 0"
+  REF #1: from 005db115 in FUN_005dae10 @ 005dae10
+
+STRING @ 0085d178: "con_typewriterColorGlowCompleted"
+  REF #1: from 005417e2 in FUN_00541480 @ 00541480
+
+STRING @ 0085d19c: "smallest size of flare effect in pixels at 640x480"
+  REF #1: from 0045eb6f in FUN_0045eb00 @ 0045eb00
+
+STRING @ 0085d2d0: "ent.sunFogEnabled = "
+  REF #1: from 00571e77 in FUN_00571ab0 @ 00571ab0
+  REF #2: from 00571e8c in FUN_00571ab0 @ 00571ab0
+
+STRING @ 0085de20: "dof_downsample"
+  REF #1: from 0087fe80 in <none/data>
+
+STRING @ 0085e3c4: "friendlyNameFontGlowColor"
+  REF #1: from 004313c5 in FUN_00430250 @ 00430250
+
+STRING @ 0085e5f0: "Use dvars to set the depth of field effect; overrides r_dof_enable"
+  REF #1: from 0043b8f0 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0085e928: "r_glowTweakBloomIntensity1"
+
+STRING @ 0085ee84: "set_pip_far_dof"
+  REF #1: from 0056f8e2 in FUN_0056d4f0 @ 0056d4f0
+  REF #2: from 0056f8d7 in FUN_0056d4f0 @ 0056d4f0
+
+STRING @ 0085f3cf: "?g_sunFogColorReadOnly"
+
+STRING @ 0085f7ec: "g_sunFogEnabledReadOnly"
+  REF #1: from 005c3da5 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 008602ac: "r_glowUseTweaks"
+  REF #1: from 0043b534 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 008606d8: "fog color"
+  REF #1: from 00931b2c in <none/data>
+
+STRING @ 008609f8: "fogswitch"
+  REF #1: from 0044bbb0 in FUN_0044bb50 @ 0044bb50
+
+STRING @ 00860d78: "r_dof_bias"
+  REF #1: from 0043bae3 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00861604: "r_glow_allowed"
+  REF #1: from 0043b4e9 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 008616b4: "clearnightfog"
+  REF #1: from 0056f493 in FUN_0056d4f0 @ 0056d4f0
+  REF #2: from 0056f48a in FUN_0056d4f0 @ 0056d4f0
+
+STRING @ 008621f8: "g_fogMaxOpacityReadOnly"
+  REF #1: from 005c3d8f in FUN_005c36c0 @ 005c36c0
+
+STRING @ 0086357c: "glow_apply_bloom"
+  REF #1: from 0087ff20 in <none/data>
+
+STRING @ 00865080: "postfx_dof"
+  REF #1: from 0087fe98 in <none/data>
+
+STRING @ 00865500: "fog %s"
+  REF #1: from 004798c6 in FUN_004798c0 @ 004798c0
+  REF #2: from 004808e9 in FUN_004808e0 @ 004808e0
+
+STRING @ 00865794: "r_sunflare_max_alpha"
+  REF #1: from 0045ec55 in FUN_0045eb00 @ 0045eb00
+  REF #2: from 0093a3b4 in <none/data>
+
+STRING @ 00865a00: "clearthermalfog"
+  REF #1: from 0056f452 in FUN_0056d4f0 @ 0056d4f0
+  REF #2: from 0056f444 in FUN_0056d4f0 @ 0056d4f0
+
+STRING @ 00866a44: "Tweak dev var; Glow bloom intensity"
+  REF #1: from 0043b599 in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 0086701c: "g_sunFogDirReadOnly"
+  REF #1: from 005c3e18 in FUN_005c36c0 @ 005c36c0
+
+STRING @ 00867458: "Set to 0 to disable fog"
+  REF #1: from 0043a53d in FUN_0043a1e0 @ 0043a1e0
+
+STRING @ 00867b2c: "sun_flare"
+  REF #1: from 0045eb52 in FUN_0045eb00 @ 0045eb00
+
+STRING @ 00927180: "_BinkDoFrame@4"
+
+STRING @ 009283ec: "SetEndOfFile"
+

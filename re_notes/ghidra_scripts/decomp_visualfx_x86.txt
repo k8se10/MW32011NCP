@@ -1,0 +1,156 @@
+================================================================
+Function: FUN_00575d50 @ 00575d50
+----------------------------------------------------------------
+
+undefined4 FUN_00575d50(undefined4 param_1,undefined4 param_2,undefined4 param_3)
+
+{
+  char cVar1;
+  char *pcVar2;
+  int iVar3;
+  uint uVar4;
+  int iVar5;
+  undefined4 local_1c;
+  undefined4 local_18;
+  undefined4 local_14;
+  undefined4 local_10;
+  undefined4 local_c;
+  undefined4 local_8;
+  undefined4 local_4;
+  
+  local_1c = 0;
+  local_18 = 0;
+  local_14 = 0;
+  local_10 = 0;
+  local_c = 0;
+  local_8 = 0;
+  local_4 = 0;
+  FUN_00477140(param_2);
+  pcVar2 = (char *)FUN_00434560(&param_1);
+  cVar1 = *pcVar2;
+  do {
+    if (cVar1 == '\0') {
+      FUN_00520cc0();
+      return 1;
+    }
+    iVar5 = 0;
+    uVar4 = 0;
+    do {
+      if ((*(char *)((int)&local_1c + iVar5) == '\0') &&
+         (iVar3 = FUN_00463bb0(pcVar2,*(undefined4 *)((int)&PTR_s_r_glow_009297e0 + uVar4)),
+         iVar3 == 0)) {
+        FUN_00538770(&param_1);
+        cVar1 = FUN_00575c90(param_3);
+        if (cVar1 != '\0') {
+          *(undefined1 *)((int)&local_1c + iVar5) = 1;
+        }
+        break;
+      }
+      uVar4 = uVar4 + 0xc;
+      iVar5 = iVar5 + 1;
+    } while (uVar4 < 0x150);
+    FUN_00536ab0(&param_1);
+    pcVar2 = (char *)FUN_00434560(&param_1);
+    cVar1 = *pcVar2;
+  } while( true );
+}
+
+
+
+================================================================
+Function: FUN_00683670 @ 00683670
+----------------------------------------------------------------
+
+void FUN_00683670(int param_1,int param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined4 *puVar3;
+  undefined4 *puVar4;
+  
+  if (*(char *)(DAT_021cd5d8 + 0xc) == '\0') {
+    if (*(char *)(DAT_021cd560 + 0xc) == '\0') {
+      *(undefined4 *)(param_1 + 0x1fc) = 0;
+      *(undefined4 *)(param_1 + 0x200) = 0;
+      *(undefined4 *)(param_1 + 0x204) = 0;
+      *(undefined4 *)(param_1 + 0x208) = 0;
+      *(undefined4 *)(param_1 + 0x20c) = 0;
+      *(undefined4 *)(param_1 + 0x210) = 0;
+      *(undefined4 *)(param_1 + 0x214) = 0;
+      *(undefined4 *)(param_1 + 0x218) = 0;
+    }
+    else {
+      puVar3 = (undefined4 *)(param_2 + 0x10);
+      puVar4 = (undefined4 *)(param_1 + 0x1fc);
+      for (iVar2 = 8; iVar2 != 0; iVar2 = iVar2 + -1) {
+        *puVar4 = *puVar3;
+        puVar3 = puVar3 + 1;
+        puVar4 = puVar4 + 1;
+      }
+    }
+  }
+  else {
+    *(undefined4 *)(param_1 + 0x1fc) = *(undefined4 *)(DAT_021cd480 + 0xc);
+    *(undefined4 *)(param_1 + 0x200) = *(undefined4 *)(DAT_021cd484 + 0xc);
+    *(undefined4 *)(param_1 + 0x204) = *(undefined4 *)(DAT_021cd5e4 + 0xc);
+    *(undefined4 *)(param_1 + 0x208) = *(undefined4 *)(DAT_021cd384 + 0xc);
+    *(undefined4 *)(param_1 + 0x20c) = *(undefined4 *)(DAT_021cd3b8 + 0xc);
+    *(undefined4 *)(param_1 + 0x210) = *(undefined4 *)(DAT_021cd64c + 0xc);
+    *(undefined4 *)(param_1 + 0x214) = *(undefined4 *)(DAT_021cd5ac + 0xc);
+    *(undefined4 *)(param_1 + 0x218) = *(undefined4 *)(DAT_021cd658 + 0xc);
+  }
+  cVar1 = FUN_00504eb0(param_1);
+  if (cVar1 != '\0') {
+    if (DAT_024bf4e8 == 0) {
+      FUN_00425540(0,
+                   "Depth of field used (enabled via r_dof_enable or r_dof_tweak) with no float-z buffer (r_floatz wasn\'t enabled when the renderer was started.)\n"
+                  );
+    }
+    *(undefined1 *)(param_1 + 0x1ac) = 2;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_004a5260 @ 004a5260
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_004a5260(void)
+
+{
+  DAT_00a94f64 = FUN_004f9cc0("cg_crosshairVerticalOffset",0,_DAT_0082e3a0,0x3f800000,4,
+                              "Amount to vertically offset the crosshair from the center.");
+  DAT_00a94f78 = FUN_00549310("RemoteCameraSounds_RoomType",&PTR_s_generic_00930d70,0x16,4,
+                              &DAT_0085f9c3);
+  DAT_00a94f28 = FUN_004f9cc0("RemoteCameraSounds_DryLevel",_DAT_00868700,0,0x3f800000,4,
+                              &DAT_0085f9c3);
+  DAT_00a94f38 = FUN_004f9cc0("RemoteCameraSounds_WetLevel",_DAT_0082bd70,0,0x3f800000,4,
+                              &DAT_0085f9c3);
+  DAT_00a94f40 = FUN_004f9cc0("radarjamDistMin",_DAT_0084612c,0,_DAT_00837418,4,&DAT_0085f9c3);
+  DAT_00a94f5c = FUN_004f9cc0("radarjamDistMax",_DAT_00842e78,0x3f800000,_DAT_00837418,4,
+                              &DAT_0085f9c3);
+  DAT_00a94f50 = FUN_004914d0("radarjamSinCurve",1,4,&DAT_0085f9c3);
+  DAT_00a94f4c = FUN_0048cd40("thermalBlurFactorScope",0xfa,0,10000,0x44,
+                              "Amount of blur to use when drawing blur through a weapon\'s thermal scope."
+                             );
+  DAT_00a94f7c = FUN_0048cd40("thermalBlurFactorNoScope",0xfa,0,10000,0x44,
+                              "Amount of blur to use when drawing blur that is NOT through a weapon\'s thermal scope."
+                             );
+  DAT_00a94f68 = FUN_0043a0a0("cg_waterSheeting_distortionScaleFactor",_DAT_0083dd6c,0x3f800000,0,0,
+                              0,0x3f800000,1,"Distortion uv scales (Default to 1)");
+  DAT_00a94f48 = FUN_004f9cc0("cg_waterSheeting_magnitude",_DAT_0085de98,0,0x3f800000,1,
+                              "Distortion magnitude");
+  DAT_00a94f30 = FUN_004f9cc0("cg_waterSheeting_radius",_DAT_0085bde4,0,_DAT_0085cd78,1,
+                              "Tweak dev var; Glow radius in pixels at 640x480");
+  DAT_00a94f60 = FUN_004b9a80("viewposNow",0,0,0,_DAT_008380f4,_DAT_00837418,0x12000,&DAT_0085f9c3);
+  DAT_00a94f74 = FUN_004b9a80("viewangNow",0,0,0,_DAT_008380f4,_DAT_00837418,0x12000,&DAT_0085f9c3);
+  return;
+}
+
+
+
