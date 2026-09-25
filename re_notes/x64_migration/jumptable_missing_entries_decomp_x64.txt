@@ -1,0 +1,72 @@
+================================================================
+Function: FUN_14018a8c0 @ 14018a8c0
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14018a8c0(longlong *param_1)
+
+{
+  longlong lVar1;
+  
+  lVar1 = *param_1;
+  _DAT_1415e8a88 = *(undefined4 *)(lVar1 + 0xc);
+  _DAT_1415e8a84 = *(undefined4 *)(lVar1 + 8);
+  _DAT_1415e8a80 = *(undefined4 *)(lVar1 + 4);
+  _DAT_1415e92ae = _DAT_1415e92ae + 1;
+  _DAT_1415e8a8c = 0;
+  _DAT_1415e8a78 = *(undefined4 *)(lVar1 + 0x18);
+  _DAT_1415e8a74 = *(undefined4 *)(lVar1 + 0x14);
+  _DAT_1415e8a70 = *(undefined4 *)(lVar1 + 0x10);
+  _DAT_1415e92ac = _DAT_1415e92ac + 1;
+  _DAT_1415e8a7c = 0;
+  _DAT_1415e8a98 = *(undefined4 *)(lVar1 + 0x24);
+  _DAT_1415e8a94 = *(undefined4 *)(lVar1 + 0x20);
+  _DAT_1415e8a90 = *(undefined4 *)(lVar1 + 0x1c);
+  _DAT_1415e92b0 = _DAT_1415e92b0 + 1;
+  _DAT_1415e8a9c = 0;
+  _DAT_1415e8aa8 = *(undefined4 *)(lVar1 + 0x30);
+  _DAT_1415e8aa4 = *(undefined4 *)(lVar1 + 0x2c);
+  _DAT_1415e8aa0 = *(undefined4 *)(lVar1 + 0x28);
+  _DAT_1415e92b2 = _DAT_1415e92b2 + 1;
+  _DAT_1415e8aac = 0;
+  _DAT_1415e8ab8 = *(undefined4 *)(lVar1 + 0x3c);
+  _DAT_1415e8ab4 = *(undefined4 *)(lVar1 + 0x38);
+  _DAT_1415e8ab0 = *(undefined4 *)(lVar1 + 0x34);
+  _DAT_1415e92b4 = _DAT_1415e92b4 + 1;
+  _DAT_1415e8abc = 0;
+  *param_1 = (ulonglong)*(ushort *)(*param_1 + 2) + *param_1;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14018aa10 @ 14018aa10
+----------------------------------------------------------------
+
+void FUN_14018aa10(longlong *param_1)
+
+{
+  longlong lVar1;
+  ulonglong uVar2;
+  
+  lVar1 = *param_1;
+  uVar2 = (ulonglong)*(uint *)(lVar1 + 4);
+  if ((((*(float *)(&DAT_1415e8a70 + uVar2 * 0x10) != *(float *)(lVar1 + 8)) ||
+       (*(float *)(&DAT_1415e8a74 + uVar2 * 0x10) != *(float *)(lVar1 + 0xc))) ||
+      (*(float *)(&DAT_1415e8a78 + uVar2 * 0x10) != *(float *)(lVar1 + 0x10))) ||
+     (*(float *)(&DAT_1415e8a7c + uVar2 * 0x10) != *(float *)(lVar1 + 0x14))) {
+    *(float *)(&DAT_1415e8a70 + uVar2 * 0x10) = *(float *)(lVar1 + 8);
+    *(undefined4 *)(&DAT_1415e8a74 + uVar2 * 0x10) = *(undefined4 *)(lVar1 + 0xc);
+    *(undefined4 *)(&DAT_1415e8a78 + uVar2 * 0x10) = *(undefined4 *)(lVar1 + 0x10);
+    *(undefined4 *)(&DAT_1415e8a7c + uVar2 * 0x10) = *(undefined4 *)(lVar1 + 0x14);
+    *(short *)(&DAT_1415e92ac + uVar2 * 2) = *(short *)(&DAT_1415e92ac + uVar2 * 2) + 1;
+    lVar1 = *param_1;
+  }
+  *param_1 = (ulonglong)*(ushort *)(lVar1 + 2) + lVar1;
+  return;
+}
+
+
+
