@@ -82,6 +82,7 @@ static bool g_nullRtShadowCapabilityKnownX64 = false;
 
 #if defined(_M_X64) || defined(_WIN64)
 extern void TriggerSelfSamplingProfileX64(); // self_sampling_profiler_x64.cpp
+extern void TriggerGpuCaptureX64(); // renderdoc_capture_x64.cpp
 #endif
 
 namespace {
@@ -570,6 +571,13 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // exists (a real in-process sampling profiler, not an external debugger
         // attach) and how it differs from F9's single-instant memory dump.
         TriggerSelfSamplingProfileX64();
+    }
+
+    if (msg == WM_KEYDOWN && wParam == VK_F11 && (lParam & 0x40000000) == 0) {
+        // See renderdoc_capture_x64.cpp's own header comment -- a real GPU-side
+        // frame capture via RenderDoc's official in-application API, the class of
+        // data neither F9's memory dump nor F10's CPU thread sampler can produce.
+        TriggerGpuCaptureX64();
     }
 #endif
 

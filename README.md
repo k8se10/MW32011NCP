@@ -693,6 +693,15 @@ This project vendors and links the following third-party library:
   vendor-neutral `Vulkan` mode. See
   `re_notes/x64_migration/vulkan_dlss_pipeline_research.md` section 2.4 for
   the full licensing research and section 2 for the integration plan.
+- **[RenderDoc](https://github.com/baldurk/renderdoc)** —
+  `renderdoc_app.h` only (`proxy_d3d9/third_party/renderdoc/`), Copyright (c)
+  2015-2026 Baldur Karlsson, MIT license. This is the official in-application
+  API header for RenderDoc's real GPU frame-capture tool, letting the mod
+  itself trigger a capture (F11, dev/RE tooling — see
+  `re_notes/known_issues_x64.md` issue #4) without any external process
+  attach. RenderDoc's own runtime (`renderdoc.dll`) is not vendored or
+  bundled — it must be installed separately (free, renderdoc.org) for F11 to
+  do anything; the mod degrades cleanly and logs clearly if it isn't found.
 
 The x64 line's `[Video] FramePacingEnabled` frame-pacing limiter
 (`proxy_d3d9/src/frame_pacing_x64.cpp`), `[Video] WaitCoalescingEnabled`

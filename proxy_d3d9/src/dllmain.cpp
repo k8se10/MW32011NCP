@@ -695,9 +695,20 @@ typedef IDirect3D9* (WINAPI* Direct3DCreate9On12_t)(UINT, D3D9ON12_ARGS_LOCAL*, 
 // `Direct3DCreate9On12_t` and friends stay resolved/declared above -- still
 // needed for this proxy's own transparent FORWARD_STUB passthrough of that
 // real export to OTHER callers, just no longer invoked by this project itself.
+#if defined(_M_X64) || defined(_WIN64)
+extern void InitRenderDocX64(); // renderdoc_capture_x64.cpp -- must run before the
+                                 // real Direct3DCreate9 call below creates DXVK's
+                                 // own VkInstance; see that file's own header
+                                 // comment for the full timing rationale.
+#endif
+
 extern "C" __declspec(dllexport) IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVersion)
 {
     Log("Direct3DCreate9 called");
+
+#if defined(_M_X64) || defined(_WIN64)
+    InitRenderDocX64();
+#endif
 
     if (!g_real_Direct3DCreate9) return nullptr;
     IDirect3D9* real = g_real_Direct3DCreate9(SDKVersion);
