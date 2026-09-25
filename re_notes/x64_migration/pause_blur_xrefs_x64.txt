@@ -1,0 +1,50 @@
+STRING @ 1403f0ab0: "scr_blur"
+  REF #1: from 14005a0a9 in FUN_1400595c0 @ 1400595c0
+
+STRING @ 1403f0ac0: "clear_blur"
+  REF #1: from 140134cf9 in FUN_140134cb0 @ 140134cb0
+  REF #2: from 140123334 in FUN_1401232b0 @ 1401232b0
+  REF #3: from 14005a17e in FUN_1400595c0 @ 1400595c0
+
+STRING @ 1403f2d20: "r_glowBloomDesaturation"
+
+STRING @ 1403f2e00: "r_filmDesaturation"
+
+STRING @ 1403f2e18: "r_filmDesaturationDark"
+
+STRING @ 1403f3148: "r_glowTweakBloomDesaturation"
+  REF #1: from 1401b6b89 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 1403f31b0: "r_filmTweakDesaturation"
+  REF #1: from 1401b6d20 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 1403f31c8: "r_filmTweakDesaturationDark"
+  REF #1: from 1401b6d62 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 1404008e8: "scr_blur %i %f %i %i"
+  REF #1: from 140125f6f in FUN_140125ed0 @ 140125ed0
+  REF #2: from 14012334c in FUN_1401232b0 @ 1401232b0
+  REF #3: from 14015af55 in FUN_14015aef0 @ 14015aef0
+
+STRING @ 1404128b8: "r_blur"
+  REF #1: from 1401b6a0f in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412a20: "Tweak dev var; Glow bloom desaturation"
+  REF #1: from 1401b6b90 in FUN_1401b50e0 @ 1401b50e0
+  REF #2: from 1401b6b9b in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412b90: "Desaturation adjustment"
+  REF #1: from 1401b6cc3 in FUN_1401b50e0 @ 1401b50e0
+  REF #2: from 1401b6ccd in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412ba8: "r_desaturation"
+  REF #1: from 1401b6cbc in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412be0: "Tweak dev var; Desaturation applied after all 3D drawing to light areas"
+  REF #1: from 1401b6d3e in FUN_1401b50e0 @ 1401b50e0
+  REF #2: from 1401b6d49 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412c30: "Tweak dev var; Additional desaturation applied after all 3D drawing to dark areas"
+  REF #1: from 1401b6d69 in FUN_1401b50e0 @ 1401b50e0
+  REF #2: from 1401b6d74 in FUN_1401b50e0 @ 1401b50e0
+
