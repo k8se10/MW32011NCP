@@ -1,0 +1,2 @@
+Symbol: WakeConditionVariable @ EXTERNAL:000000a6 isExternal=true space=EXTERNAL
+No non-external (real memory) address found for WakeConditionVariable -- cannot scan for indirect callers this way.

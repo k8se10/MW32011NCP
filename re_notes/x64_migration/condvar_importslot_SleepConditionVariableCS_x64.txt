@@ -1,0 +1,2 @@
+Symbol: SleepConditionVariableCS @ EXTERNAL:000000a4 isExternal=true space=EXTERNAL
+No non-external (real memory) address found for SleepConditionVariableCS -- cannot scan for indirect callers this way.

@@ -1,0 +1,140 @@
+================================================================
+Function: FUN_140002280 @ 140002280
+----------------------------------------------------------------
+
+void FUN_140002280(void)
+
+{
+  NTSTATUS NVar1;
+  char *lpOutputString;
+  
+  NVar1 = BCryptOpenAlgorithmProvider((BCRYPT_ALG_HANDLE *)&DAT_144430998,L"RNG",(LPCWSTR)0x0,0);
+  if (NVar1 != 0) {
+    if (NVar1 == -0x3ffffff3) {
+      lpOutputString = "bdPlatformTrulyRandom Invalid parameter passed to init\n";
+    }
+    else {
+      lpOutputString = "bdPlatformTrulyRandom Init failed due to no memory\n.";
+      if (NVar1 != -0x3fffffe9) {
+        lpOutputString = "bdPlatformTrulyRandom Init failed\n";
+      }
+    }
+    OutputDebugStringA(lpOutputString);
+  }
+  atexit(FUN_1403e26b0);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14031ae50 @ 14031ae50
+----------------------------------------------------------------
+
+/* WARNING: Function: __security_check_cookie replaced with injection: security_check_cookie */
+
+void FUN_14031ae50(void)
+
+{
+  undefined1 auStack_b8 [32];
+  undefined4 local_98;
+  CHAR local_88 [112];
+  ulonglong local_18;
+  
+  local_18 = DAT_1404d62e8 ^ (ulonglong)auStack_b8;
+  if (DAT_144430948 != 0) {
+    thunk_FUN_140341740(&DAT_144430958);
+    local_98 = DAT_144430950;
+    FUN_140228ff0(local_88,100,"%u Bytes leaked in %u allocation(s)\n",DAT_144430948);
+    thunk_FUN_140341760(&DAT_144430958);
+    OutputDebugStringA("********************************************\n");
+    OutputDebugStringA("*      BITDEMON MEMORY LEAKS DETECTED      *\n");
+    OutputDebugStringA("********************************************\n");
+    OutputDebugStringA(local_88);
+    OutputDebugStringA("********************************************\n");
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1403416e0 @ 1403416e0
+----------------------------------------------------------------
+
+LPCRITICAL_SECTION FUN_1403416e0(LPCRITICAL_SECTION param_1)
+
+{
+  InitializeCriticalSection(param_1);
+  SetCriticalSectionSpinCount(param_1,4000);
+  return param_1;
+}
+
+
+
+================================================================
+Function: FUN_140341710 @ 140341710
+----------------------------------------------------------------
+
+undefined1 FUN_140341710(undefined8 *param_1)
+
+{
+  if ((LPCRITICAL_SECTION)*param_1 != (LPCRITICAL_SECTION)0x0) {
+    DeleteCriticalSection((LPCRITICAL_SECTION)*param_1);
+    *param_1 = 0;
+  }
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_140365980 @ 140365980
+----------------------------------------------------------------
+
+void FUN_140365980(void)
+
+{
+  DeleteCriticalSection((LPCRITICAL_SECTION)&DAT_144433ff0);
+  if (DAT_144433fe8 != (HANDLE)0x0) {
+    CloseHandle(DAT_144433fe8);
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1403ba07c @ 1403ba07c
+----------------------------------------------------------------
+
+int FUN_1403ba07c(void)
+
+{
+  longlong lVar1;
+  int iVar2;
+  int iVar3;
+  longlong lVar4;
+  int local_18;
+  
+  local_18 = 0;
+  __acrt_lock(8);
+  for (iVar3 = 3; iVar3 != DAT_144434d20; iVar3 = iVar3 + 1) {
+    lVar4 = (longlong)iVar3;
+    lVar1 = *(longlong *)(DAT_144434d28 + lVar4 * 8);
+    if (lVar1 != 0) {
+      if (((*(uint *)(lVar1 + 0x14) >> 0xd & 1) != 0) &&
+         (iVar2 = FUN_1403a8564(*(undefined8 *)(DAT_144434d28 + lVar4 * 8)), iVar2 != -1)) {
+        local_18 = local_18 + 1;
+      }
+      DeleteCriticalSection((LPCRITICAL_SECTION)(*(longlong *)(DAT_144434d28 + lVar4 * 8) + 0x30));
+      FUN_1403b76f8(*(undefined8 *)(DAT_144434d28 + lVar4 * 8));
+      *(undefined8 *)(DAT_144434d28 + lVar4 * 8) = 0;
+    }
+  }
+  __acrt_unlock(8);
+  return local_18;
+}
+
+
+

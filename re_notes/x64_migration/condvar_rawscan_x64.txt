@@ -1,0 +1,24 @@
+Target: 1403e3438
+Target: 1403e3440
+Target: 1403e3448
+Target: 1403e3450
+
+MATCH target=1403e3448 call@=1400022c6 in=FUN_140002280 @ 140002280
+MATCH target=1403e3448 call@=14031aeb9 in=FUN_14031ae50 @ 14031ae50
+MATCH target=1403e3448 call@=14031aec6 in=FUN_14031ae50 @ 14031ae50
+MATCH target=1403e3448 call@=14031aed3 in=FUN_14031ae50 @ 14031ae50
+MATCH target=1403e3448 call@=14031aede in=FUN_14031ae50 @ 14031ae50
+MATCH target=1403e3448 call@=14031aeeb in=FUN_14031ae50 @ 14031ae50
+MATCH target=1403e3440 call@=1403416f7 in=FUN_1403416e0 @ 1403416e0
+MATCH target=1403e3438 call@=140341721 in=FUN_140341710 @ 140341710
+MATCH target=1403e3438 call@=14036598b in=FUN_140365980 @ 140365980
+MATCH target=1403e3450 call@=14038f399 in=__crtLCMapStringA @ 14038f244
+MATCH target=1403e3450 call@=14038f3f2 in=__crtLCMapStringA @ 14038f244
+MATCH target=1403e3450 call@=14038f49f in=__crtLCMapStringA @ 14038f244
+MATCH target=1403e3450 call@=14038ff81 in=__crtLCMapStringW @ 14038ff14
+MATCH target=1403e3438 call@=140395207 in=__vcrt_uninitialize_locks @ 1403951e8
+MATCH target=1403e3438 call@=1403a5c0d in=__acrt_uninitialize_stdio @ 1403a5bdc
+MATCH target=1403e3438 call@=1403b2a63 in=__acrt_uninitialize_locks @ 1403b2a44
+MATCH target=1403e3438 call@=1403ba0ee in=FUN_1403ba07c @ 1403ba07c
+MATCH target=1403e3438 call@=1403bdda9 in=__acrt_lowio_destroy_handle_array @ 1403bdd80
+Scan complete.
