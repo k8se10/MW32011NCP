@@ -1,0 +1,40 @@
+STRING @ 008d9bf0: "C:\\trees\\iw5\\code_source\\DemonWare\\bdLobby\\bdHTTPWrapper\\bdHTTPWrapper-curl.cpp"
+  REF #1: from 00719c89 in FUN_00719c10 @ 00719c10
+  REF #2: from 00718d17 in FUN_00718bd0 @ 00718bd0
+  REF #3: from 00718dd0 in FUN_00718bd0 @ 00718bd0
+  REF #4: from 00718e0b in FUN_00718bd0 @ 00718bd0
+  REF #5: from 00718e4f in FUN_00718bd0 @ 00718bd0
+
+STRING @ 008d9c40: "bdHTTPWrapper::performOperation"
+  REF #1: from 00718d12 in FUN_00718bd0 @ 00718bd0
+  REF #2: from 00718dcb in FUN_00718bd0 @ 00718bd0
+  REF #3: from 00718e06 in FUN_00718bd0 @ 00718bd0
+  REF #4: from 00718e4a in FUN_00718bd0 @ 00718bd0
+
+STRING @ 008d9d48: "bdHTTPWrapper::defaultDownloadCallback"
+  REF #1: from 00719c84 in FUN_00719c10 @ 00719c10
+
+STRING @ 008d9df8: "C:\\trees\\iw5\\code_source\\DemonWare\\bdLobby\\bdHTTPWrapper\\bdHTTPWrapperBase.cpp"
+  REF #1: from 0071a9b3 in FUN_0071a980 @ 0071a980
+  REF #2: from 0071a9fd in FUN_0071a980 @ 0071a980
+  REF #3: from 0071aa5e in FUN_0071a980 @ 0071a980
+  REF #4: from 0071ab8f in FUN_0071a980 @ 0071a980
+  REF #5: from 0071ab0d in FUN_0071a980 @ 0071a980
+  REF #6: from 0071ab48 in FUN_0071a980 @ 0071a980
+  REF #7: from 0071a884 in FUN_0071a790 @ 0071a790
+
+STRING @ 008d9e48: "bdHTTPWrapperBase::startAsyncOperation"
+  REF #1: from 0071a87f in FUN_0071a790 @ 0071a790
+
+STRING @ 008d9f3c: "bdHTTPWrapperBase::parseURL"
+  REF #1: from 0071a9ae in FUN_0071a980 @ 0071a980
+  REF #2: from 0071a9f8 in FUN_0071a980 @ 0071a980
+  REF #3: from 0071aa59 in FUN_0071a980 @ 0071a980
+  REF #4: from 0071ab8a in FUN_0071a980 @ 0071a980
+  REF #5: from 0071ab08 in FUN_0071a980 @ 0071a980
+  REF #6: from 0071ab43 in FUN_0071a980 @ 0071a980
+
+STRING @ 0093c63c: ".?AVbdHTTPWrapper@@"
+
+STRING @ 0093c658: ".?AVbdHTTPWrapperBase@@"
+

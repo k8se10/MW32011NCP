@@ -1,0 +1,89 @@
+Target symbol: WinHttpOpen @ EXTERNAL:00000133
+Callers (1):
+  FUN_14031d790 @ 14031d790
+
+================================================================
+Function: FUN_14031d790 @ 14031d790
+----------------------------------------------------------------
+
+ulonglong FUN_14031d790(longlong param_1)
+
+{
+  DWORD DVar1;
+  char *pcVar2;
+  longlong lVar3;
+  ulonglong uVar4;
+  longlong lVar5;
+  undefined4 local_res8 [2];
+  undefined4 uVar6;
+  undefined8 in_stack_fffffffffffffff0;
+  undefined4 uVar7;
+  
+  uVar7 = (undefined4)((ulonglong)in_stack_fffffffffffffff0 >> 0x20);
+  FUN_140341890(0,"info/","bdHTTPWorker(WinHTTP)",
+                "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0xc6,
+                "bdHTTPWorker(WinHTTP): Checking if network is ready");
+  if (*(char *)(param_1 + 0x98) == '\0') {
+    pcVar2 = (char *)FUN_1400563d0(&DAT_144430988);
+    if (*pcVar2 != '\0') {
+      uVar6 = 1;
+      FUN_140341890(0,"info/","bdHTTPWorker(WinHTTP)",
+                    "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                    ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0xca,
+                    "bdHTTPWorker(WinHTTP): Initializing worker");
+      lVar3 = WinHttpOpen(L"DW-HTTP-USER-AGENT WinHTTP (Windows)",4,0,0,CONCAT44(uVar6,0x10000000));
+      *(longlong *)(param_1 + 0xa0) = lVar3;
+      if (lVar3 == 0) {
+        DVar1 = GetLastError();
+        if (0 < (int)DVar1) {
+          DVar1 = DVar1 & 0xffff | 0x80070000;
+        }
+        uVar4 = FUN_140341890(2,&DAT_140441930,"bdHTTPWorker(WinHTTP)",
+                              "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                              ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0xeb,
+                              "bdHTTPWorker(WinHTTP): WinHttpOpen() failed with Error[%08X]",
+                              CONCAT44(uVar7,DVar1));
+        return uVar4 & 0xffffffffffffff00;
+      }
+      FUN_140341890(0,"info/","bdHTTPWorker(WinHTTP)",
+                    "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                    ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0xf0,
+                    "bdHTTPWorker(WinHTTP): WinHttpOpen() created Session[%p]",lVar3);
+      local_res8[0] = 0x800;
+      WinHttpSetOption(*(undefined8 *)(param_1 + 0xa0),0x54,local_res8);
+      lVar5 = WinHttpSetStatusCallback(*(undefined8 *)(param_1 + 0xa0),FUN_14031c2b0,0xffffffff,0);
+      if (lVar5 == -1) {
+        DVar1 = GetLastError();
+        if (0 < (int)DVar1) {
+          DVar1 = DVar1 & 0xffff | 0x80070000;
+        }
+        FUN_140341890(2,&DAT_140441930,"bdHTTPWorker(WinHTTP)",
+                      "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                      ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0x105,
+                      "bdHTTPWorker(WinHTTP): WinHttpSetStatusCallback() failed with Error[%08X]",
+                      DVar1);
+        uVar4 = WinHttpCloseHandle(*(undefined8 *)(param_1 + 0xa0));
+        *(undefined8 *)(param_1 + 0xa0) = 0;
+        return uVar4 & 0xffffffffffffff00;
+      }
+      if (lVar5 != 0) {
+        FUN_140341890(1,"warn/","bdHTTPWorker(WinHTTP)",
+                      "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                      ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0x10c,
+                      "bdHTTPWorker(WinHTTP): WinHttpSetStatusCallback() found existing callback[%p]"
+                      ,lVar5);
+        lVar3 = lVar5;
+      }
+      *(undefined1 *)(param_1 + 0x98) = 1;
+      FUN_140341890(0,"info/","bdHTTPWorker(WinHTTP)",
+                    "d:\\workspace\\outrun\\iw5-depot\\iw5\\code_source\\DemonWare\\bdHTTP\\bdHTTPWorker\\bdHTTPWorkerWinHTTP.cpp"
+                    ,"bdHTTPWorkerWinHTTPImpl::initializeWinHTTP",0x110,
+                    "bdHTTPWorker(WinHTTP): Initialized worker",lVar3);
+    }
+  }
+  return (ulonglong)*(byte *)(param_1 + 0x98);
+}
+
+
+
