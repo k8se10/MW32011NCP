@@ -1,0 +1,605 @@
+Target symbol: VirtualAlloc @ EXTERNAL:00000070
+Callers (16):
+  FUN_1402bea40 @ 1402bea40
+  FUN_1402bead0 @ 1402bead0
+  FUN_1402beb20 @ 1402beb20
+  FUN_1402be080 @ 1402be080
+  FUN_1402be1a0 @ 1402be1a0
+  FUN_1402be3d0 @ 1402be3d0
+  FUN_1402be4a0 @ 1402be4a0
+  FUN_1402be580 @ 1402be580
+  FUN_1402bd980 @ 1402bd980
+  FUN_1402bda80 @ 1402bda80
+  FUN_1402bdb80 @ 1402bdb80
+  FUN_1402bdd80 @ 1402bdd80
+  FUN_1402bdef0 @ 1402bdef0
+  FUN_1402bd750 @ 1402bd750
+  FUN_1402c9130 @ 1402c9130
+  FUN_1402c8e30 @ 1402c8e30
+
+================================================================
+Function: FUN_1402bea40 @ 1402bea40
+----------------------------------------------------------------
+
+LPVOID FUN_1402bea40(SIZE_T param_1)
+
+{
+  LPVOID lpAddress;
+  LPVOID pvVar1;
+  
+  lpAddress = VirtualAlloc((LPVOID)0x0,param_1,0x2000,4);
+  pvVar1 = VirtualAlloc(lpAddress,param_1,0x1000,4);
+  if (pvVar1 == (LPVOID)0x0) {
+    VirtualFree(lpAddress,0,0x8000);
+  }
+  else if (lpAddress != (LPVOID)0x0) {
+    return lpAddress;
+  }
+  FUN_1402eeda0(5);
+  return (LPVOID)0x0;
+}
+
+
+
+================================================================
+Function: FUN_1402bead0 @ 1402bead0
+----------------------------------------------------------------
+
+void FUN_1402bead0(LPVOID param_1,SIZE_T param_2)
+
+{
+  LPVOID pvVar1;
+  
+  pvVar1 = VirtualAlloc(param_1,param_2,0x1000,4);
+  if (pvVar1 == (LPVOID)0x0) {
+    FUN_1402eeda0(2);
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402beb20 @ 1402beb20
+----------------------------------------------------------------
+
+void FUN_1402beb20(SIZE_T param_1)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x0001402beb31. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  VirtualAlloc((LPVOID)0x0,param_1,0x2000,4);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402be080 @ 1402be080
+----------------------------------------------------------------
+
+void FUN_1402be080(void)
+
+{
+  int iVar1;
+  SIZE_T SVar2;
+  LPVOID pvVar3;
+  
+  DAT_14265b4f4 = 0;
+  DAT_14265d504 = 0x140000;
+  FUN_1402be2d0();
+  DAT_14265b4f4 = DAT_14265b4f4 + 0x80;
+  pvVar3 = (LPVOID)(DAT_14265d510 + 0xfff + (longlong)DAT_14265d500 & 0xfffffffffffff000);
+  iVar1 = DAT_14265b4f4;
+  if (DAT_14265b4f4 <= DAT_14265d500) {
+    iVar1 = DAT_14265d500;
+  }
+  SVar2 = (DAT_14265d510 + 0xfff + (longlong)iVar1 & 0xfffffffffffff000U) - (longlong)pvVar3;
+  DAT_14265d500 = iVar1;
+  if ((SVar2 != 0) && (pvVar3 = VirtualAlloc(pvVar3,SVar2,0x1000,4), pvVar3 == (LPVOID)0x0)) {
+    FUN_1402eeda0(2);
+  }
+  DAT_14265d504 = DAT_14265d504 + -0x80;
+  iVar1 = DAT_14265d504;
+  if (DAT_14265d508 <= DAT_14265d504) {
+    iVar1 = DAT_14265d508;
+  }
+  pvVar3 = (LPVOID)(iVar1 + DAT_14265d510 & 0xfffffffffffff000);
+  SVar2 = (DAT_14265d510 + DAT_14265d508 & 0xfffffffffffff000U) - (longlong)pvVar3;
+  DAT_14265d508 = iVar1;
+  if ((SVar2 != 0) && (pvVar3 = VirtualAlloc(pvVar3,SVar2,0x1000,4), pvVar3 == (LPVOID)0x0)) {
+    FUN_1402eeda0(2);
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402be1a0 @ 1402be1a0
+----------------------------------------------------------------
+
+void FUN_1402be1a0(void)
+
+{
+  int iVar1;
+  SIZE_T SVar2;
+  LPVOID pvVar3;
+  
+  DAT_14265d510 = VirtualAlloc((LPVOID)0x0,0x140000,0x2000,4);
+  DAT_14265d500 = 0;
+  DAT_14265b4f4 = 0;
+  DAT_14265d508 = 0x140000;
+  DAT_14265d504 = 0x140000;
+  FUN_1402be2d0();
+  DAT_14265b4f4 = DAT_14265b4f4 + 0x80;
+  pvVar3 = (LPVOID)((longlong)DAT_14265d510 + (longlong)DAT_14265d500 + 0xfff & 0xfffffffffffff000);
+  iVar1 = DAT_14265b4f4;
+  if (DAT_14265b4f4 <= DAT_14265d500) {
+    iVar1 = DAT_14265d500;
+  }
+  SVar2 = ((longlong)DAT_14265d510 + (longlong)iVar1 + 0xfff & 0xfffffffffffff000U) -
+          (longlong)pvVar3;
+  DAT_14265d500 = iVar1;
+  if ((SVar2 != 0) && (pvVar3 = VirtualAlloc(pvVar3,SVar2,0x1000,4), pvVar3 == (LPVOID)0x0)) {
+    FUN_1402eeda0(2);
+  }
+  DAT_14265d504 = DAT_14265d504 + -0x80;
+  iVar1 = DAT_14265d504;
+  if (DAT_14265d508 <= DAT_14265d504) {
+    iVar1 = DAT_14265d508;
+  }
+  pvVar3 = (LPVOID)((longlong)iVar1 + (longlong)DAT_14265d510 & 0xfffffffffffff000);
+  SVar2 = ((longlong)DAT_14265d510 + (longlong)DAT_14265d508 & 0xfffffffffffff000U) -
+          (longlong)pvVar3;
+  DAT_14265d508 = iVar1;
+  if ((SVar2 != 0) && (pvVar3 = VirtualAlloc(pvVar3,SVar2,0x1000,4), pvVar3 == (LPVOID)0x0)) {
+    FUN_1402eeda0(2);
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402be3d0 @ 1402be3d0
+----------------------------------------------------------------
+
+void FUN_1402be3d0(void)
+
+{
+  DAT_14266f240 = 0xa00000;
+  DAT_14265d518 = VirtualAlloc((LPVOID)0x0,0xa00000,0x2000,4);
+  if (DAT_14265d518 == (LPVOID)0x0) {
+    FUN_1402eeda0(6);
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402be4a0 @ 1402be4a0
+----------------------------------------------------------------
+
+ulonglong FUN_1402be4a0(longlong param_1)
+
+{
+  ulonglong uVar1;
+  LPVOID pvVar2;
+  longlong lVar3;
+  SIZE_T dwSize;
+  ulonglong uVar4;
+  
+  lVar3 = DAT_14266f240 - DAT_14266f238;
+  uVar4 = DAT_14266f238 + 0xf + param_1;
+  DAT_14266f238 = uVar4 & 0xfffffffffffffff0;
+  uVar1 = (DAT_14266f240 - DAT_14266f238) + DAT_14265d518;
+  pvVar2 = (LPVOID)(uVar1 & 0xfffffffffffff000);
+  if (pvVar2 < (LPVOID)(DAT_14265d518 + 0xfff + DAT_14266f228 & 0xfffffffffffff000)) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570("Hunk_AllocateTempMemoryHigh: failed on %i bytes (total %i MB, low %i MB, high %i MB)"
+                  ,param_1,DAT_14266f240 >> 0x14,DAT_14266f228 >> 0x14,uVar4 >> 0x14);
+  }
+  dwSize = (lVar3 + DAT_14265d518 & 0xfffffffffffff000U) - (longlong)pvVar2;
+  if (dwSize != 0) {
+    pvVar2 = VirtualAlloc(pvVar2,dwSize,0x1000,4);
+    if (pvVar2 == (LPVOID)0x0) {
+      FUN_1402eeda0(2);
+    }
+  }
+  return uVar1;
+}
+
+
+
+================================================================
+Function: FUN_1402be580 @ 1402be580
+----------------------------------------------------------------
+
+longlong * FUN_1402be580(longlong param_1)
+
+{
+  longlong *plVar1;
+  longlong lVar2;
+  ulonglong uVar3;
+  SIZE_T dwSize;
+  LPVOID pvVar4;
+  
+  lVar2 = DAT_14266f228;
+  uVar3 = DAT_14266f228 + 0xf & 0xfffffffffffffff0;
+  pvVar4 = (LPVOID)(DAT_14265d518 + 0xfff + DAT_14266f228 & 0xfffffffffffff000);
+  DAT_14266f228 = uVar3 + param_1 + 0x20;
+  plVar1 = (longlong *)(uVar3 + DAT_14265d518);
+  uVar3 = DAT_14265d518 + 0xfff + DAT_14266f228 & 0xfffffffffffff000;
+  if (((DAT_14266f240 - DAT_14266f238) + DAT_14265d518 & 0xfffffffffffff000) < uVar3) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570("Hunk_AllocateTempMemory: failed on %i bytes (total %i MB, low %i MB, high %i MB), needs %i more hunk bytes"
+                  ,param_1 + 0x20,DAT_14266f240 >> 0x14,DAT_14266f228 >> 0x14,DAT_14266f238 >> 0x14,
+                  (DAT_14266f228 - DAT_14266f240) + DAT_14266f238);
+  }
+  dwSize = uVar3 - (longlong)pvVar4;
+  if (dwSize != 0) {
+    pvVar4 = VirtualAlloc(pvVar4,dwSize,0x1000,4);
+    if (pvVar4 == (LPVOID)0x0) {
+      FUN_1402eeda0(2);
+    }
+  }
+  *(undefined4 *)(plVar1 + 1) = 0x89537892;
+  *plVar1 = DAT_14266f228 - lVar2;
+  return plVar1 + 4;
+}
+
+
+
+================================================================
+Function: FUN_1402bd980 @ 1402bd980
+----------------------------------------------------------------
+
+ulonglong FUN_1402bd980(longlong param_1,longlong param_2)
+
+{
+  longlong lVar1;
+  SIZE_T dwSize;
+  LPVOID pvVar2;
+  ulonglong uVar3;
+  
+  lVar1 = DAT_14266f240 - DAT_14266f230;
+  DAT_14266f230 = DAT_14266f230 + param_1 + (param_2 - 1U) & ~(param_2 - 1U);
+  uVar3 = (DAT_14266f240 - DAT_14266f230) + DAT_14265d518;
+  pvVar2 = (LPVOID)(uVar3 & 0xfffffffffffff000);
+  DAT_14266f238 = DAT_14266f230;
+  if (pvVar2 < (LPVOID)(DAT_14265d518 + 0xfff + DAT_14266f228 & 0xfffffffffffff000)) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570("Hunk_AllocAlign failed on %i bytes (total %i MB, low %i MB, high %i MB)",param_1,
+                  DAT_14266f240 >> 0x14,DAT_14266f228 >> 0x14,DAT_14266f230 >> 0x14);
+  }
+  dwSize = (lVar1 + DAT_14265d518 & 0xfffffffffffff000U) - (longlong)pvVar2;
+  if (dwSize != 0) {
+    pvVar2 = VirtualAlloc(pvVar2,dwSize,0x1000,4);
+    if (pvVar2 == (LPVOID)0x0) {
+      FUN_1402eeda0(2);
+    }
+  }
+  FUN_140390680(uVar3,0,param_1);
+  return uVar3;
+}
+
+
+
+================================================================
+Function: FUN_1402bda80 @ 1402bda80
+----------------------------------------------------------------
+
+ulonglong FUN_1402bda80(longlong param_1)
+
+{
+  longlong lVar1;
+  SIZE_T dwSize;
+  LPVOID pvVar2;
+  ulonglong uVar3;
+  ulonglong uVar4;
+  
+  lVar1 = DAT_14266f240 - DAT_14266f230;
+  uVar4 = DAT_14266f230 + 0x1f + param_1;
+  DAT_14266f230 = uVar4 & 0xffffffffffffffe0;
+  uVar3 = (DAT_14266f240 - DAT_14266f230) + DAT_14265d518;
+  pvVar2 = (LPVOID)(uVar3 & 0xfffffffffffff000);
+  DAT_14266f238 = DAT_14266f230;
+  if (pvVar2 < (LPVOID)(DAT_14265d518 + 0xfff + DAT_14266f228 & 0xfffffffffffff000)) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570("Hunk_AllocAlign failed on %i bytes (total %i MB, low %i MB, high %i MB)",param_1,
+                  DAT_14266f240 >> 0x14,DAT_14266f228 >> 0x14,uVar4 >> 0x14);
+  }
+  dwSize = (lVar1 + DAT_14265d518 & 0xfffffffffffff000U) - (longlong)pvVar2;
+  if (dwSize != 0) {
+    pvVar2 = VirtualAlloc(pvVar2,dwSize,0x1000,4);
+    if (pvVar2 == (LPVOID)0x0) {
+      FUN_1402eeda0(2);
+    }
+  }
+  FUN_140390680(uVar3,0,param_1);
+  return uVar3;
+}
+
+
+
+================================================================
+Function: FUN_1402bdb80 @ 1402bdb80
+----------------------------------------------------------------
+
+longlong FUN_1402bdb80(longlong param_1)
+
+{
+  longlong lVar1;
+  ulonglong uVar2;
+  SIZE_T dwSize;
+  LPVOID pvVar3;
+  
+  pvVar3 = (LPVOID)(DAT_14265d518 + 0xfff + DAT_14266f220 & 0xfffffffffffff000);
+  uVar2 = DAT_14266f220 + 0x1f & 0xffffffffffffffe0;
+  DAT_14266f220 = uVar2 + param_1;
+  lVar1 = uVar2 + DAT_14265d518;
+  uVar2 = DAT_14265d518 + 0xfff + DAT_14266f220 & 0xfffffffffffff000;
+  DAT_14266f228 = DAT_14266f220;
+  if (((DAT_14266f240 - DAT_14266f238) + DAT_14265d518 & 0xfffffffffffff000) < uVar2) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570("Hunk_AllocLowAlign failed on %i bytes (total %i MB, low %i MB, high %i MB)",
+                  param_1,DAT_14266f240 >> 0x14,DAT_14266f220 >> 0x14,DAT_14266f238 >> 0x14);
+  }
+  dwSize = uVar2 - (longlong)pvVar3;
+  if (dwSize != 0) {
+    pvVar3 = VirtualAlloc(pvVar3,dwSize,0x1000,4);
+    if (pvVar3 == (LPVOID)0x0) {
+      FUN_1402eeda0(2);
+    }
+  }
+  FUN_140390680(lVar1,0,param_1);
+  return lVar1;
+}
+
+
+
+================================================================
+Function: FUN_1402bdd80 @ 1402bdd80
+----------------------------------------------------------------
+
+ulonglong FUN_1402bdd80(longlong *param_1,longlong param_2,longlong param_3)
+
+{
+  ulonglong uVar1;
+  undefined4 uVar2;
+  SIZE_T dwSize;
+  LPVOID lpAddress;
+  LPVOID pvVar3;
+  longlong lVar4;
+  LPVOID pvVar5;
+  ulonglong uVar6;
+  ulonglong uVar7;
+  
+  uVar1 = param_3 - 1;
+  pvVar5 = (LPVOID)*param_1;
+  lVar4 = *(longlong *)((longlong)pvVar5 + 0x20);
+  uVar7 = lVar4 + uVar1 & ~uVar1;
+  uVar6 = param_2 + uVar7;
+  lpAddress = pvVar5;
+  if (*(ulonglong *)((longlong)pvVar5 + 0x18) < uVar6) {
+    do {
+      if ((char)param_1[6] != '\0') {
+        FUN_14023c700(0,"Hunk_UserAlloc: out of memory for \'%s\'",param_1[5]);
+      }
+      dwSize = param_1[2];
+      uVar2 = *(undefined4 *)((longlong)param_1 + 0x34);
+      lVar4 = param_1[5];
+      lpAddress = VirtualAlloc((LPVOID)0x0,dwSize,0x2000,4);
+      pvVar3 = VirtualAlloc(lpAddress,0x40,0x1000,4);
+      if (pvVar3 == (LPVOID)0x0) {
+        FUN_1402eeda0(2);
+      }
+      *(SIZE_T *)((longlong)lpAddress + 0x10) = dwSize;
+      *(SIZE_T *)((longlong)lpAddress + 0x18) = dwSize + (longlong)lpAddress;
+      *(longlong *)((longlong)lpAddress + 0x20) = (longlong)lpAddress + 0x40;
+      *(LPVOID *)lpAddress = lpAddress;
+      *(undefined1 *)((longlong)lpAddress + 0x30) = 0;
+      *(longlong *)((longlong)lpAddress + 0x28) = lVar4;
+      *(undefined4 *)((longlong)lpAddress + 0x34) = uVar2;
+      *param_1 = (longlong)lpAddress;
+      *(LPVOID *)((longlong)pvVar5 + 8) = lpAddress;
+      lVar4 = *(longlong *)((longlong)lpAddress + 0x20);
+      uVar7 = lVar4 + uVar1 & ~uVar1;
+      uVar6 = param_2 + uVar7;
+      pvVar5 = lpAddress;
+    } while (*(ulonglong *)((longlong)lpAddress + 0x18) < uVar6);
+  }
+  pvVar5 = (LPVOID)(lVar4 + 0xfffU & 0xfffffffffffff000);
+  *(ulonglong *)((longlong)lpAddress + 0x20) = uVar6;
+  if ((pvVar5 != (LPVOID)(uVar6 + 0xfff & 0xfffffffffffff000)) &&
+     (pvVar5 = VirtualAlloc(pvVar5,uVar6 - (longlong)pvVar5,0x1000,4), pvVar5 == (LPVOID)0x0)) {
+    FUN_1402eeda0(2);
+  }
+  return uVar7;
+}
+
+
+
+================================================================
+Function: FUN_1402bdef0 @ 1402bdef0
+----------------------------------------------------------------
+
+LPVOID FUN_1402bdef0(SIZE_T param_1,undefined8 param_2,char param_3,undefined4 param_4)
+
+{
+  LPVOID lpAddress;
+  LPVOID pvVar1;
+  SIZE_T dwSize;
+  
+  dwSize = param_1 + 0x40;
+  if (param_3 == '\0') {
+    dwSize = param_1;
+  }
+  lpAddress = VirtualAlloc((LPVOID)0x0,dwSize,0x2000,4);
+  pvVar1 = VirtualAlloc(lpAddress,0x40,0x1000,4);
+  if (pvVar1 == (LPVOID)0x0) {
+    FUN_1402eeda0(2);
+  }
+  *(SIZE_T *)((longlong)lpAddress + 0x10) = dwSize;
+  *(longlong *)((longlong)lpAddress + 0x20) = (longlong)lpAddress + 0x40;
+  *(char *)((longlong)lpAddress + 0x30) = param_3;
+  *(undefined4 *)((longlong)lpAddress + 0x34) = param_4;
+  *(SIZE_T *)((longlong)lpAddress + 0x18) = dwSize + (longlong)lpAddress;
+  *(LPVOID *)lpAddress = lpAddress;
+  *(undefined8 *)((longlong)lpAddress + 0x28) = param_2;
+  return lpAddress;
+}
+
+
+
+================================================================
+Function: FUN_1402bd750 @ 1402bd750
+----------------------------------------------------------------
+
+int * FUN_1402bd750(int *param_1,int param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  int iVar3;
+  LPVOID pvVar4;
+  ulonglong uVar5;
+  ulonglong uVar6;
+  SIZE_T dwSize;
+  uint uVar7;
+  int iVar8;
+  
+  uVar7 = param_2 + 0x7fU & 0xffffff80;
+  cVar1 = FUN_14024a250();
+  if (cVar1 == '\0') {
+    uVar6 = DAT_14265d508 + DAT_14265d510;
+    iVar2 = DAT_14265d504 - uVar7;
+    iVar3 = iVar2;
+    if (DAT_14265d508 <= iVar2) {
+      iVar3 = DAT_14265d508;
+    }
+    uVar5 = iVar3 + DAT_14265d510;
+    iVar8 = DAT_14265d504;
+    DAT_14265d504 = iVar2;
+    DAT_14265d508 = iVar3;
+  }
+  else {
+    uVar5 = DAT_14265d510 + 0xfff + (longlong)DAT_14265d500;
+    iVar3 = DAT_14265b4f4 + uVar7;
+    iVar2 = iVar3;
+    if (iVar3 <= DAT_14265d500) {
+      iVar2 = DAT_14265d500;
+    }
+    uVar6 = DAT_14265d510 + 0xfff + (longlong)iVar2;
+    iVar8 = DAT_14265b4f4;
+    DAT_14265b4f4 = iVar3;
+    DAT_14265d500 = iVar2;
+  }
+  dwSize = (uVar6 & 0xfffffffffffff000) - (longlong)(uVar5 & 0xfffffffffffff000);
+  if (dwSize != 0) {
+    pvVar4 = VirtualAlloc((LPVOID)(uVar5 & 0xfffffffffffff000),dwSize,0x1000,4);
+    if (pvVar4 == (LPVOID)0x0) {
+      FUN_1402eeda0(2);
+    }
+  }
+  *param_1 = iVar8;
+  param_1[1] = uVar7;
+  return param_1;
+}
+
+
+
+================================================================
+Function: FUN_1402c9130 @ 1402c9130
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_1402c9130(void)
+
+{
+  LPVOID pvVar1;
+  
+  pvVar1 = VirtualAlloc((LPVOID)0x0,0x12c00000,0x2000,4);
+  FUN_140390680(&DAT_142717ce8,0,0x21c);
+  FUN_140390680(&DAT_142717f08,0,0x200);
+  DAT_142717f04 = 0x12a00000;
+  DAT_142717ce0 = pvVar1;
+  FUN_140390680(&DAT_142718118,0,0x21c);
+  FUN_140390680(&DAT_142718338,0,0x200);
+  _DAT_142718334 = 0x200000;
+  DAT_142718110 = (longlong)pvVar1 + 0x12a00000;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402c8e30 @ 1402c8e30
+----------------------------------------------------------------
+
+longlong FUN_1402c8e30(int param_1,int param_2,int param_3,int param_4)
+
+{
+  longlong lVar1;
+  char cVar2;
+  uint uVar3;
+  uint uVar4;
+  ulonglong uVar5;
+  uint uVar6;
+  longlong *plVar7;
+  uint *puVar8;
+  
+  plVar7 = &DAT_142718110;
+  if (param_4 != 3) {
+    plVar7 = &DAT_142717ce0;
+  }
+  if (param_4 == 2) {
+    uVar4 = *(uint *)((longlong)plVar7 + 0x14);
+    puVar8 = (uint *)((longlong)plVar7 + 0x14);
+    uVar3 = ~(param_2 - 1U);
+  }
+  else {
+    cVar2 = FUN_1400a6410();
+    if (cVar2 == '\0') {
+      uVar5 = (ulonglong)(param_3 != 4);
+    }
+    else {
+      uVar4 = FUN_1400a5fd0();
+      uVar5 = (ulonglong)uVar4;
+    }
+    puVar8 = (uint *)((longlong)plVar7 + uVar5 * 0x210 + 0x14);
+    uVar3 = ~(param_2 - 1U);
+    uVar4 = *puVar8;
+    if ((int)uVar5 != 0) {
+      uVar3 = uVar4 - param_1 & uVar3;
+      if (0 < (int)(*(int *)((longlong)plVar7 + 0x14) - uVar3)) {
+        FUN_1402eeda0(7);
+      }
+      uVar6 = param_1 + uVar3;
+      uVar4 = uVar3;
+      goto LAB_1402c8eef;
+    }
+  }
+  uVar3 = uVar4 + param_2 + -1 & uVar3;
+  uVar6 = param_1 + uVar3;
+  uVar4 = uVar6;
+  if (0 < (int)(uVar6 - *(int *)((longlong)plVar7 + 0x224))) {
+    FUN_1402eeda0(7);
+  }
+LAB_1402c8eef:
+  lVar1 = *plVar7;
+  *puVar8 = uVar4;
+  VirtualAlloc((LPVOID)((ulonglong)(uVar3 & 0xfffff000) + *plVar7),
+               (ulonglong)((uVar6 + 0xfff & 0xfffff000) - (uVar3 & 0xfffff000)),0x1000,4);
+  return (ulonglong)uVar3 + lVar1;
+}
+
+
+
