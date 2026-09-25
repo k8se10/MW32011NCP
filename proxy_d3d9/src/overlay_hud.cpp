@@ -114,6 +114,7 @@ extern DWORD GetMainThreadId(); // dllmain.cpp -- see g_mainThreadId's own comme
 #if defined(_M_X64) || defined(_WIN64)
 extern int GetAndResetRenderViewSequenceX64(int* outIndices, int maxCount); // analog_input_hooks_x64.cpp
 extern int GetAndResetRenderViewTransitionCountX64(); // analog_input_hooks_x64.cpp -- real pass-VALUE
+extern void GpuSyncMarkX64(const char* label); // gpu_timing_probe_x64.cpp -- real, GPU-inclusive frame timing
 extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp -- real, signature-
     // scanned dvar reader (see that function's own comment). Used here (2026-09-26) to log the real native
     // `cl_paused` dvar alongside the render-view diagnostic -- this project has never had a reliable "the game
@@ -8054,7 +8055,25 @@ HRESULT WINAPI Hook_EndScene(void* device)
     OnEndSceneFramePacingX64();
 #endif
 
-    return g_origEndScene(device);
+    // [Experimental] GpuSyncTimingLogging -- see gpu_timing_probe_x64.cpp's own header
+    // comment for the full rationale (built after every CPU-side static-RE lead and
+    // every CPU-side timing tool this session tried proved structurally unable to see
+    // real GPU execution time). Brackets the real native EndScene call -- the same
+    // call chain this whole investigation's own per-light-shadow/SSAO/post-effect
+    // tracing has been chasing all session -- with two real hardware GPU sync points,
+    // so the logged interval between consecutive "frame-end" marks is genuinely
+    // GPU-inclusive frame time, not just CPU submission time.
+#if defined(_M_X64) || defined(_WIN64)
+    if (g_modConfig.gpuSyncTimingLogging) GpuSyncMarkX64("frame-start");
+#endif
+
+    HRESULT gpuSyncHr = g_origEndScene(device);
+
+#if defined(_M_X64) || defined(_WIN64)
+    if (g_modConfig.gpuSyncTimingLogging) GpuSyncMarkX64("frame-end");
+#endif
+
+    return gpuSyncHr;
 }
 
 } // namespace

@@ -1368,6 +1368,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "GlyphPositionEditMode", g_modConfig.glyphPositionEditMode);
     ReadBool(path, "Experimental", "CaptureRuntimeMenuAssets", g_modConfig.captureRuntimeMenuAssets);
     ReadBool(path, "Experimental", "FrametimeBenchmarkLogging", g_modConfig.frametimeBenchmarkLogging);
+    ReadBool(path, "Experimental", "GpuSyncTimingLogging", g_modConfig.gpuSyncTimingLogging);
     ReadBool(path, "Experimental", "ResourceUsageLogging", g_modConfig.resourceUsageLogging);
     ReadBool(path, "Experimental", "FullScreenPassthroughTest", g_modConfig.fullScreenPassthroughTest);
     ReadBool(path, "Gyro", "Enabled", g_modConfig.gyroEnabled);

@@ -59,6 +59,8 @@
 extern void LogFromController(const char* msg);
 extern bool IsDxvkActive(); // dllmain.cpp -- see g_dxvkActive's own comment there
 #if defined(_M_X64) || defined(_WIN64)
+extern bool ResolveAndCacheDxvkVulkanHandlesX64(IUnknown* d3d9Device); // streamline_integration_x64.cpp,
+    // 2026-09-26 -- real DXVK Vulkan instance/device/queue resolution, independent of Streamline.
 extern bool TryInitStreamlineX64(IUnknown* d3d9Device); // streamline_integration_x64.cpp,
     // 2026-09-24 -- deliberately called from here (after CreateDevice returns), NOT from
     // DllMain -- see that file's own header comment and dllmain.cpp's TryLoadVendoredDxvk()
@@ -1102,6 +1104,16 @@ HRESULT WINAPI Hook_CreateDevice(void* This, UINT Adapter, DWORD DeviceType,
         *ppReturnedDeviceInterface) {
         s_streamlineInitAttempted = true;
         TryInitStreamlineX64(static_cast<IUnknown*>(*ppReturnedDeviceInterface));
+
+        // 2026-09-26: real DXVK Vulkan instance/device/queue resolution, deliberately
+        // independent of StreamlineEnabled -- gpu_timing_probe_x64.cpp's own GPU-inclusive
+        // frame-timing diagnostic needs these too and has nothing to do with Streamline/DLSS.
+        // Idempotent (ResolveAndCacheDxvkVulkanHandlesX64 returns the cached result if
+        // TryInitStreamlineX64 above already resolved them), so calling it unconditionally
+        // here whenever this is a real DXVK device is safe and never redundant work.
+        if (g_modConfig.graphicsApi == GraphicsApi::Vulkan) {
+            ResolveAndCacheDxvkVulkanHandlesX64(static_cast<IUnknown*>(*ppReturnedDeviceInterface));
+        }
     }
 #endif
 

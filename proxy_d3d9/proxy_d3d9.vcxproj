@@ -174,6 +174,14 @@
     <ClCompile Include="src\streamline_integration_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <!-- x64-only, 2026-09-26: custom in-process GPU-inclusive frame-timing
+         diagnostic (vkQueueWaitIdle-based), built after every CPU-side
+         static-RE lead and every CPU-side timing tool this session tried
+         proved unable to see real GPU execution time. See that file's own
+         header comment. -->
+    <ClCompile Include="src\gpu_timing_probe_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <!-- x64-only, 2026-09-24: runtime extraction of the embedded DXVK fork
          build + Streamline SDK binaries to %LOCALAPPDATA%, replacing the
          old "loose files the player had to manually place" design. See

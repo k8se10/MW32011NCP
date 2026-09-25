@@ -61,6 +61,15 @@ sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline 
     // refreshed once per real frame by StreamlineFrameTick() -- never freed by us.
 VkInstance g_dxvkVkInstanceX64 = VK_NULL_HANDLE; // cached in RegisterDxvkVulkanDeviceWithStreamline,
 VkDevice g_dxvkVkDeviceX64 = VK_NULL_HANDLE;     // 2026-09-24 -- real handles, exposed via
+VkQueue g_dxvkVkQueueX64 = VK_NULL_HANDLE;       // 2026-09-26 -- added for gpu_timing_probe_x64.cpp's
+    // own real vkQueueWaitIdle-based GPU-inclusive frame timing (see that file's own header comment) --
+    // the real DXVK submission queue, same one Streamline registration already resolves here, just also
+    // cached now instead of only used locally.
+VkPhysicalDevice g_dxvkVkPhysDeviceX64 = VK_NULL_HANDLE; // cached alongside the above, 2026-09-26 --
+    // needed by RegisterDxvkVulkanDeviceWithStreamline's own vkInfo.physicalDevice field, now resolved
+    // once in the shared ResolveAndCacheDxvkVulkanHandlesX64 instead of duplicated.
+uint32_t g_dxvkVkQueueIndexX64 = 0;
+uint32_t g_dxvkVkQueueFamilyIndexX64 = 0;
     // GetDxvkVkInstanceX64()/GetDxvkVkDeviceX64() below for streamline_resources_x64.cpp's
     // own real vkCreateImageView call (resource tagging needs a real VkImageView, which
     // ID3D9VkInteropTexture::GetVulkanImageInfo alone does not provide).
@@ -154,11 +163,29 @@ bool TryLoadStreamlineInterposer()
 // vkGetDeviceQueue indices that don't exist on this device (undefined
 // behavior per the Vulkan spec). That case is refused here, loudly, rather
 // than registered and left to fail inside the driver.
-bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
+} // namespace -- closed early here, not at this file's original spot further down.
+// ResolveAndCacheDxvkVulkanHandlesX64 needs real external linkage (called directly
+// from d3d9_hook.cpp), and RegisterDxvkVulkanDeviceWithStreamline now calls it, so
+// both must sit outside the anonymous namespace -- the exact same anonymous-
+// namespace-internal-linkage trap this project has hit and documented many times
+// before (see e.g. RecordRenderViewFireX64's own comment, analog_input_hooks_x64.cpp).
+
+// Extracted 2026-09-26 from RegisterDxvkVulkanDeviceWithStreamline's own top --
+// gpu_timing_probe_x64.cpp needs the real DXVK Vulkan instance/device/queue for its
+// own GPU-inclusive frame-timing diagnostic (vkQueueWaitIdle-based, see that file's
+// own header comment), completely independent of Streamline/DLSS. The Streamline
+// registration path below is gated on g_modConfig.streamlineEnabled -- a narrow,
+// separate opt-in feature -- so this resolution step must NOT live behind that gate;
+// it's called unconditionally from Hook_CreateDevice whenever GraphicsApi==Vulkan,
+// and RegisterDxvkVulkanDeviceWithStreamline below now just reuses the cached result
+// if it already ran (idempotent: returns the cached handles on a second call without
+// re-querying).
+bool ResolveAndCacheDxvkVulkanHandlesX64(IUnknown* d3d9Device)
 {
+    if (g_dxvkVkDeviceX64 != VK_NULL_HANDLE) return true; // already resolved this session
+
     if (!d3d9Device) {
-        LogFromController("[streamline] No device pointer passed to TryInitStreamlineX64() -- "
-            "slSetVulkanInfo not called this session.");
+        LogFromController("[dxvk-vk-handles] No device pointer passed -- Vulkan handle resolution skipped.");
         return false;
     }
 
@@ -167,9 +194,8 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
         reinterpret_cast<void**>(&interopDevice));
     if (FAILED(hr) || !interopDevice) {
         char buf[300];
-        sprintf_s(buf, "[streamline] QueryInterface(ID3D9VkInteropDevice) FAILED (hr=0x%08lX) -- the "
-            "created device is not DXVK's, or DXVK's interop IID changed. slSetVulkanInfo not "
-            "called this session.", static_cast<unsigned long>(hr));
+        sprintf_s(buf, "[dxvk-vk-handles] QueryInterface(ID3D9VkInteropDevice) FAILED (hr=0x%08lX) -- the "
+            "created device is not DXVK's, or DXVK's interop IID changed.", static_cast<unsigned long>(hr));
         LogFromController(buf);
         return false;
     }
@@ -184,26 +210,37 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
     uint32_t queueFamilyIndex = 0;
     interopDevice->GetSubmissionQueue(&vkQueue, &queueIndex, &queueFamilyIndex);
 
-    // The Vulkan handles are owned by DXVK's device and outlive this
-    // interface reference -- releasing it here does not invalidate them.
     interopDevice->Release();
 
-    // 2026-09-24: cache the real instance/device for reuse by
-    // streamline_resources_x64.cpp, which needs to call real Vulkan API
-    // functions directly (vkCreateImageView) -- resource tagging groundwork.
     g_dxvkVkInstanceX64 = vkInstance;
     g_dxvkVkDeviceX64 = vkDevice;
+    g_dxvkVkQueueX64 = vkQueue;
+    g_dxvkVkPhysDeviceX64 = vkPhysDev;
+    g_dxvkVkQueueIndexX64 = queueIndex;
+    g_dxvkVkQueueFamilyIndexX64 = queueFamilyIndex;
 
-    if (vkInstance == VK_NULL_HANDLE || vkPhysDev == VK_NULL_HANDLE ||
-        vkDevice == VK_NULL_HANDLE || vkQueue == VK_NULL_HANDLE) {
-        char buf[300];
-        sprintf_s(buf, "[streamline] ID3D9VkInteropDevice returned a null handle (instance=%p "
-            "physDev=%p device=%p queue=%p) -- slSetVulkanInfo not called this session.",
-            static_cast<void*>(vkInstance), static_cast<void*>(vkPhysDev),
-            static_cast<void*>(vkDevice), static_cast<void*>(vkQueue));
-        LogFromController(buf);
+    char buf[200];
+    sprintf_s(buf, "[dxvk-vk-handles] Resolved real DXVK Vulkan handles (instance=%p device=%p queue=%p)",
+        static_cast<void*>(vkInstance), static_cast<void*>(vkDevice), static_cast<void*>(vkQueue));
+    LogFromController(buf);
+    return vkInstance != VK_NULL_HANDLE && vkDevice != VK_NULL_HANDLE && vkQueue != VK_NULL_HANDLE;
+}
+
+bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
+{
+    if (!ResolveAndCacheDxvkVulkanHandlesX64(d3d9Device)) {
+        LogFromController("[streamline] Vulkan handle resolution failed -- slSetVulkanInfo not called this session.");
         return false;
     }
+
+    VkInstance vkInstance = g_dxvkVkInstanceX64;
+    VkDevice vkDevice = g_dxvkVkDeviceX64;
+    VkQueue vkQueue = g_dxvkVkQueueX64;
+    VkPhysicalDevice vkPhysDev = g_dxvkVkPhysDeviceX64;
+    uint32_t queueIndex = g_dxvkVkQueueIndexX64;
+    uint32_t queueFamilyIndex = g_dxvkVkQueueFamilyIndexX64;
+    // Non-null instance/device/queue is already guaranteed here -- ResolveAndCacheDxvkVulkanHandlesX64
+    // itself returns false (handled above) unless all three resolved to a real, non-null handle.
 
     sl::FeatureRequirements reqs{};
     sl::Result reqResult = g_slGetFeatureRequirements(sl::kFeatureDLSS, reqs);
@@ -285,8 +322,6 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
     LogFromController(buf);
     return true;
 }
-
-} // namespace
 
 // Opt-in entry point -- call once, right after CreateDevice returns
 // (Hook_CreateDevice, d3d9_hook.cpp), passing the just-created
@@ -395,6 +430,11 @@ VkInstance GetDxvkVkInstanceX64()
 VkDevice GetDxvkVkDeviceX64()
 {
     return g_dxvkVkDeviceX64;
+}
+
+VkQueue GetDxvkVkQueueX64()
+{
+    return g_dxvkVkQueueX64;
 }
 
 // 2026-09-24: real frame-tracking groundwork -- the next unstarted step per

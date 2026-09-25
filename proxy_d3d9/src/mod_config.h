@@ -691,6 +691,20 @@ struct ModConfig
         // ResourceLogThreadProc, to check the theory directly with real data rather than
         // reasoning about it further. Default OFF -- diagnostic only.
 
+    bool gpuSyncTimingLogging = false; // 2026-09-26: "we need a custom gpu dump tool that tells
+        // us all info we need statically" -- built after RenderDoc's own capture-file timing
+        // (CPU-side API-call recording only) and this project's own CPU thread sampler (idle
+        // waits are indistinguishable from GPU-bound blocking) both proved unable to show real
+        // GPU EXECUTION time, the one thing every static/CPU-side lead this session traced kept
+        // coming up unable to explain (the pause-vs-live differential this whole investigation
+        // is chasing). Forces a real vkQueueWaitIdle() at a per-frame boundary in Hook_EndScene
+        // (gpu_timing_probe_x64.cpp) -- the resulting wall-clock delta between two marks is
+        // genuinely GPU-inclusive (not just CPU submission time), fully in-process, no external
+        // tool, comparable directly between live and paused by reading the log. Real, deliberate
+        // tradeoff: forcing a hardware sync every frame destroys CPU/GPU pipelining and WILL
+        // cost real fps while active -- diagnostic only, default OFF, Vulkan/DXVK-only (LegacyD3D9
+        // has no Vulkan queue to sync).
+
     bool frametimeBenchmarkLogging = false; // 2026-08-17: live-reported "still jittery,
         // 239 fps on the counter but feels like 40" AFTER the log-truncate fix and the
         // asset-capture async-write fix -- both real, evidence-backed fixes that didn't
