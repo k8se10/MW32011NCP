@@ -1,0 +1,87 @@
+================================================================
+Function: FUN_0040de80 @ 0040de80
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_0040de80(void)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  int iVar3;
+  int unaff_FS_OFFSET;
+  
+  FUN_004e9000();
+  uVar1 = FUN_004411c0(2);
+  iVar2 = __setjmp3(uVar1,0);
+  while (iVar2 != 0) {
+    if (DAT_021d064a != '\0') {
+      do {
+        FUN_004cfbd0();
+        FUN_00438600(1);
+      } while (DAT_021d0650 != 0);
+      DAT_021d064a = '\0';
+      DAT_021d064c = 1;
+    }
+    if (DAT_025d6e14 != 0) {
+      DAT_025d6e14 = 0;
+      FUN_00496e20();
+    }
+    uVar1 = FUN_004411c0(2);
+    iVar2 = __setjmp3(uVar1,0);
+  }
+  *(undefined4 *)(*(int *)(*(int *)(unaff_FS_OFFSET + 0x2c) + _tls_index * 4) + 0xc) = 0xffffff7f;
+  do {
+    if (*(char *)(DAT_01769f40 + 0xc) == '\0') {
+      FUN_00484b90();
+    }
+    else {
+      FUN_00477d80(&LAB_004b3420,1);
+    }
+    iVar2 = FUN_004d7580();
+    if (iVar2 != 0) {
+      _DAT_02802ae0 = FUN_0045b590();
+      if (_DAT_02802ae0 != 0) {
+        FUN_00693b90(_DAT_02802ae0);
+      }
+      FUN_0042de00();
+      if ((*(char *)(DAT_01769f40 + 0xc) == '\0') || (*(char *)(DAT_021cd44c + 0xc) == '\0')) {
+        FUN_00556d30();
+      }
+      else {
+        FUN_00477d80(&LAB_0040acc0,1);
+      }
+      FUN_0042e1c0();
+    }
+    if (DAT_021d0650 != 0) {
+      _DAT_02802ae0 = FUN_0045b590();
+      if (_DAT_02802ae0 != 0) {
+        FUN_00693b90(_DAT_02802ae0);
+      }
+      if (DAT_021d0650 != 0) {
+        DAT_021d064c = 1;
+        DAT_021d064a = 1;
+        do {
+          FUN_004cfbd0();
+          iVar2 = FUN_004a1610();
+          FUN_004269b0();
+          iVar3 = FUN_004a1610();
+          iVar2 = (iVar2 - iVar3) + 0x21;
+          if (0 < iVar2) {
+            FUN_00438600(iVar2);
+          }
+        } while (DAT_021d0650 != 0);
+        DAT_021d064a = '\0';
+        DAT_021d064c = 1;
+      }
+    }
+    _DAT_02802ae0 = FUN_0045b590();
+    if (_DAT_02802ae0 != 0) {
+      FUN_00693b90(_DAT_02802ae0);
+    }
+  } while( true );
+}
+
+
+

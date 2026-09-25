@@ -1,0 +1,41 @@
+================================================================
+Function: FUN_00693b90 @ 00693b90
+----------------------------------------------------------------
+
+void FUN_00693b90(undefined4 param_1)
+
+{
+  bool bVar1;
+  char cVar2;
+  undefined4 uVar3;
+  
+  DAT_025d6e14 = 1;
+  uVar3 = 0;
+  cVar2 = FUN_0044b370();
+  if (cVar2 == '\0') {
+    bVar1 = false;
+  }
+  else {
+    bVar1 = true;
+    FUN_004c0950(param_1);
+    FUN_0052e290();
+    FUN_004e0ab0();
+    if (*(int *)(DAT_025d6e00 + 0x41a04) == 0) {
+      uVar3 = 0;
+    }
+    else {
+      uVar3 = *(undefined4 *)(DAT_025d6e00 + 0x419f0);
+    }
+    DAT_025d6e00 = 0;
+  }
+  DAT_025d6e14 = 0;
+  FUN_00496e20();
+  FUN_00477d80(&LAB_00691e20,1);
+  if (bVar1) {
+    FUN_00513340(uVar3);
+  }
+  return;
+}
+
+
+

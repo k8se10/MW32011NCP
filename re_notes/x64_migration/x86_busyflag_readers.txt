@@ -1,0 +1,8 @@
+================================================================
+Global: 025d6e14
+  REF #1: from 0040ded8 in FUN_0040de80 @ 0040de80 (fnSize=435)
+  REF #2: from 0040dee0 in FUN_0040de80 @ 0040de80 (fnSize=435)
+  REF #3: from 00693b92 in FUN_00693b90 @ 00693b90 (fnSize=139)
+  REF #4: from 00693bed in FUN_00693b90 @ 00693b90 (fnSize=139)
+Total refs: 4
+

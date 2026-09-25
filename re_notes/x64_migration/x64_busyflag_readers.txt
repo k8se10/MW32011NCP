@@ -1,0 +1,9 @@
+================================================================
+Global: 1415e6480
+  REF #1: from 14018a24d in FUN_14018a240 @ 14018a240 (fnSize=852)
+  REF #2: from 14018a262 in FUN_14018a240 @ 14018a240 (fnSize=852)
+  REF #3: from 14018a503 in FUN_14018a240 @ 14018a240 (fnSize=852)
+  REF #4: from 14018a5fa in FUN_14018a5a0 @ 14018a5a0 (fnSize=470)
+  REF #5: from 14018a602 in FUN_14018a5a0 @ 14018a5a0 (fnSize=470)
+Total refs: 5
+
