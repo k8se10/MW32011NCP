@@ -559,7 +559,13 @@ LRESULT CALLBACK HookWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
 #if defined(_M_X64) || defined(_WIN64)
-    if (msg == WM_KEYDOWN && wParam == VK_F10 && (lParam & 0x40000000) == 0) {
+    // Bug found live 2026-09-26: a bare F10 press (no Alt/Ctrl held) is delivered
+    // by Windows as WM_SYSKEYDOWN, not WM_KEYDOWN -- a well-known legacy quirk,
+    // since F10 alone also activates the menu-bar/system-menu context (this same
+    // file's own keybind-capture editor, line ~525, already handles both for the
+    // identical reason). Checking WM_KEYDOWN only meant this trigger silently
+    // never fired for a real, unmodified F10 press.
+    if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wParam == VK_F10 && (lParam & 0x40000000) == 0) {
         // See self_sampling_profiler_x64.cpp's own header comment for why this
         // exists (a real in-process sampling profiler, not an external debugger
         // attach) and how it differs from F9's single-instant memory dump.
