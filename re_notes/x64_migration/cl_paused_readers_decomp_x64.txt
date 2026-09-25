@@ -1,0 +1,1712 @@
+================================================================
+Function: FUN_14029fa20 @ 14029fa20
+----------------------------------------------------------------
+
+void FUN_14029fa20(undefined4 param_1)
+
+{
+  undefined4 uVar1;
+  
+  uVar1 = FUN_140083ae0();
+  FUN_1402c5b30("cl_paused",uVar1);
+  FUN_14007f3b0(param_1,0x10);
+  FUN_1402acbf0(&DAT_142605050,"popup_friends");
+  FUN_1402ad950(&DAT_142605050,"sp_acceptinvite_warning");
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029f3f0 @ 14029f3f0
+----------------------------------------------------------------
+
+undefined8 FUN_14029f3f0(int param_1,int param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined4 uVar3;
+  longlong lVar4;
+  char *pcVar5;
+  char *pcVar6;
+  
+  iVar2 = FUN_1402aa7e0(&DAT_142605050);
+  if ((iVar2 < 1) || ((param_2 == 6 && ((&DAT_142615b20)[param_1] == 6)))) {
+switchD_14029f447_caseD_5:
+    return 0;
+  }
+  (&DAT_142615b20)[param_1] = param_2;
+  switch(param_2) {
+  case 0:
+    FUN_14007f310(param_1,0xffffffef);
+    thunk_FUN_14007eeb0(param_1);
+    FUN_1402c5b30("cl_paused",0);
+    FUN_1402431b0(0);
+    FUN_1402ac9c0(&DAT_142605050);
+    return 1;
+  case 1:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402431b0(0);
+    FUN_1402ad950(&DAT_142605050,&DAT_14042cbf0);
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (((*pcVar5 == '\0') ||
+        (((lVar4 = FUN_1402acef0(&DAT_142605050,"pregame_loaderror"), lVar4 != 0 &&
+          (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 != 0)) &&
+         (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 != '\0')))) ||
+       (((lVar4 = FUN_1402acef0(&DAT_142605050,"error_popmenu_submenu"), lVar4 != 0 &&
+         (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 != 0)) &&
+        (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 != '\0')))) goto LAB_14029f579;
+    pcVar5 = "error_popmenu";
+    break;
+  case 2:
+    uVar3 = FUN_140083ae0();
+    FUN_1402c5b30("cl_paused",uVar3);
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ad950(&DAT_142605050,"pausedmenu");
+    return 1;
+  case 3:
+    if (*(char *)(DAT_142605000 + 0x10) == '\0') {
+      uVar3 = FUN_140083ae0();
+      FUN_1402c5b30("cl_paused",uVar3);
+      FUN_14007f3b0(param_1,0x10);
+      FUN_1402ac9c0(&DAT_142605050);
+      pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+      pcVar6 = "pregame_loaderror";
+      if (*pcVar5 == '\0') {
+        pcVar6 = "pregame";
+      }
+      FUN_1402ad950(&DAT_142605050,pcVar6);
+      return 1;
+    }
+    FUN_14029ccb0();
+    return 1;
+  case 4:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"endofgame");
+    return 1;
+  default:
+    goto switchD_14029f447_caseD_5;
+  case 6:
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"briefing");
+    return 1;
+  case 7:
+    DAT_142605060 = 0x43a00000;
+    DAT_142605064 = 0x43e00000;
+    FUN_1402b08e0(&DAT_142605050,DAT_1403e4164,DAT_1404340dc);
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402ad950(&DAT_142605050,"victoryscreen");
+    return 1;
+  case 10:
+    FUN_1402ad950(&DAT_142605050,"savegameloading");
+    return 1;
+  case 0xb:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402704a0(DAT_1403e3e6c,1000);
+    _guard_check_icall(param_1,1);
+    FUN_1402431b0(1);
+    FUN_1402ac9c0(&DAT_142605050);
+    FUN_1402ad950(&DAT_142605050,"coop_lobby");
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 == '\0') {
+      return 1;
+    }
+    FUN_1402ad950(&DAT_142605050,"error_popmenu_lobby");
+    FUN_1402c52b0(DAT_1406ef580,1);
+    FUN_1401f0cb0();
+    return 1;
+  case 0xc:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402704a0(DAT_1403e3e6c,1000);
+    FUN_1402431b0(1);
+    cVar1 = FUN_1402999b0(param_1,"levels_challenge");
+    if (cVar1 == '\0') {
+      FUN_1402ad950(&DAT_142605050,"levels_challenge");
+    }
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 != '\0') {
+      FUN_1402ad950(&DAT_142605050,"error_popmenu_submenu");
+    }
+    FUN_1402acb10(&DAT_142605050);
+    return 1;
+  case 0xd:
+    FUN_14007f3b0(param_1,0x10);
+    FUN_1402431b0(0);
+    pcVar5 = "main_text";
+    break;
+  case 0xe:
+    FUN_14007f3b0(param_1,0x10);
+    _guard_check_icall(param_1,1);
+    FUN_1402431b0(1);
+    lVar4 = FUN_1402acef0(&DAT_142605050,"main_specops");
+    if (((lVar4 == 0) || (iVar2 = FUN_1402ad530(&DAT_142605050,lVar4), iVar2 == 0)) ||
+       (cVar1 = FUN_1402ab950(&DAT_142605050,lVar4), cVar1 == '\0')) {
+      FUN_1402ad950(&DAT_142605050,"main_specops");
+    }
+    pcVar5 = (char *)FUN_1402c3b50("com_errorMessage");
+    if (*pcVar5 == '\0') goto LAB_14029f579;
+    pcVar5 = "error_popmenu_submenu";
+  }
+  FUN_1402ad950(&DAT_142605050,pcVar5);
+LAB_14029f579:
+  FUN_1402704a0(DAT_1403e3e6c,1000);
+  return 1;
+}
+
+
+
+================================================================
+Function: FUN_14023d890 @ 14023d890
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14023d890(void)
+
+{
+  uint uVar1;
+  ulonglong in_stack_ffffffffffffffe8;
+  undefined4 uVar4;
+  undefined8 uVar2;
+  ulonglong uVar3;
+  
+  DAT_141efb9e8 =
+       FUN_1402c46d0("com_maxfps",0,0,1000,in_stack_ffffffffffffffe8 & 0xffffffff00000000,
+                     "Cap frames per second");
+  uVar4 = 1;
+  DAT_141efb810 =
+       FUN_1402c45d0("sys_lockThreads",&PTR_DAT_1404d1528,0,0,
+                     "Prevents specified threads from changing CPUs; improves profiling and may fix some bugs, but can hurt performance"
+                    );
+  uVar1 = FUN_140249fd0();
+  DAT_141efb808 = FUN_1402c43f0("sys_smp_allowed",1 < uVar1,0x800,"Allow multi-threading");
+  uVar2 = CONCAT44(uVar4,0x204c);
+  DAT_141efb778 =
+       FUN_1402c4650("com_timescale",DAT_1403e3e6c,DAT_1403e3e60,DAT_1403e5284,uVar2,
+                     "Scale time of each frame");
+  uVar2 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),0xc);
+  DAT_141efb9d0 =
+       FUN_1402c4650("timescale",DAT_1403e3e6c,DAT_1403e3e60,DAT_1403e5284,uVar2,
+                     "Scale time of each frame");
+  uVar3 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),4);
+  DAT_141efb9d8 = FUN_1402c46d0("fixedtime",0,0,1000,uVar3,"Use a fixed time rate for each frame");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  DAT_141efb9e0 =
+       FUN_1402c46d0("com_maxFrameTime",100,0x32,5000,uVar3,
+                     "Time slows down if a frame takes longer than this many milliseconds");
+  uVar3 = CONCAT44((int)(uVar3 >> 0x20),0x10000);
+  DAT_141efb7a8 = FUN_1402c46d0("cl_paused",0,0,2,uVar3,"Pause the client");
+  DAT_141efb780 = FUN_1402c43f0("sv_running",0,0x2000,"Server is running");
+  _DAT_141efb788 =
+       FUN_1402c43f0("com_filter_output",0,0,"Use console filters for filtering output.");
+  DAT_141efb9f0 = FUN_1402c43f0("intro",1,1,"Intro movie should play");
+  DAT_141efbe10 = FUN_1402c43f0("com_animCheck",0,0,"Check anim tree");
+  _DAT_141efb7a0 = FUN_1402c43f0("hiDef",1,0x2000,"True if the game video is running in high-def.");
+  DAT_141efb9f8 =
+       FUN_1402c43f0("wideScreen",1,0x2000,
+                     "True if the game video is running in 16x9 aspect, false if 4x3.");
+  DAT_141efba00 =
+       FUN_1402c43f0("com_cinematicEndInWhite",0,0x40,
+                     "Set by script. True if cinematic ends with a white screen.");
+  DAT_141efb7f8 =
+       FUN_1402c49e0("com_errorResolveCommand",&DAT_1403e6bdb,0x2000,
+                     "Command to run when they close the error box");
+  DAT_141efb800 =
+       FUN_1402c49e0("com_completionResolveCommand",&DAT_1403e6bdb,0x2000,
+                     "Command to run when the message box successfully closes");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe38 =
+       FUN_1402c46d0("band_2players",64000,0,0x7fffffff,uVar3,"2 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe40 =
+       FUN_1402c46d0("band_4players",0x1f400,0,0x7fffffff,uVar3,"4 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe48 =
+       FUN_1402c46d0("band_8players",0x3e800,0,0x7fffffff,uVar3,"8 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe50 =
+       FUN_1402c46d0("band_12players",0x5dc00,0,0x7fffffff,uVar3,"12 player bandwidth req\'d");
+  uVar3 = uVar3 & 0xffffffff00000000;
+  _DAT_141efbe58 =
+       FUN_1402c46d0("band_18players",580000,0,0x7fffffff,uVar3,"18 player bandwidth req\'d");
+  _DAT_141efbe18 =
+       FUN_1402c46d0("stringtable_debug",0,0,2,uVar3 & 0xffffffff00000000,
+                     "spam debug info for stringtable lookups");
+  DAT_141efb818 =
+       FUN_1402c43f0("prologue_select",0,0x100,
+                     "Toggles intro.map between the prologue and the persona non grata setup.");
+  DAT_141efbe78 =
+       FUN_1402c43f0("accessToSubscriberContent",1,0,"Whether to display the subscriber maps.");
+  _DAT_141efbe80 =
+       FUN_1402c43f0("ui_open_free_content_notice",0,0,"flag to open the free content popup");
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029dfd0 @ 14029dfd0
+----------------------------------------------------------------
+
+/* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14029dfd0(undefined4 param_1,undefined8 param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  int iVar3;
+  undefined4 uVar4;
+  undefined8 uVar5;
+  longlong lVar6;
+  longlong lVar7;
+  undefined4 *puVar8;
+  longlong lVar9;
+  longlong lVar10;
+  char *pcVar11;
+  int *piVar12;
+  int local_res20 [2];
+  undefined8 in_stack_ffffffffffffead8;
+  char local_1518 [128];
+  char local_1498 [1024];
+  undefined1 local_1098 [128];
+  undefined1 local_1018 [1024];
+  undefined1 local_c18 [1024];
+  undefined1 local_818 [1024];
+  undefined1 local_418 [1016];
+  undefined8 uStack_20;
+  
+  uStack_20 = 0x14029dfe6;
+  iVar2 = FUN_1402af840(param_2,local_1498,0x400);
+  if (iVar2 == 0) {
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"clearError");
+  if (iVar2 == 0) {
+    FUN_1402af8c0(param_1);
+    FUN_1402c52b0(DAT_1406ef580,0);
+    if (*(char *)(DAT_1406479e8 + 0x10) == '\0') {
+      return;
+    }
+    FUN_14022f680(0,"coopSearchStart\n");
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"LoadSaveGames");
+  if (iVar2 == 0) {
+    FUN_14029bc60(0);
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"Loadgame");
+  if (iVar2 == 0) {
+    iVar2 = FUN_14029f170(&DAT_142615951);
+    if (iVar2 < 0) {
+      return;
+    }
+    if ((int)(&DAT_14261553c)[iVar2] < 0) {
+      return;
+    }
+    uVar5 = FUN_1402cb690("loadgame %s\n",
+                          *(undefined8 *)
+                           (&DAT_142609530 + (longlong)(int)(&DAT_14261553c)[iVar2] * 0x60));
+    FUN_14022f680(0,uVar5);
+    FUN_1402ac9c0(&DAT_142605050);
+    return;
+  }
+  iVar2 = FUN_1402ca760(local_1498,"Savegame");
+  uVar4 = (undefined4)((ulonglong)in_stack_ffffffffffffead8 >> 0x20);
+  if (iVar2 == 0) {
+    local_1518[0] = '\0';
+    FUN_1402caa00(local_1518,*(undefined8 *)(DAT_142604fe8 + 0x10),0x20);
+    uVar4 = (undefined4)((ulonglong)in_stack_ffffffffffffead8 >> 0x20);
+    lVar7 = -1;
+    do {
+      lVar6 = lVar7 + 1;
+      lVar9 = lVar7 + 1;
+      lVar7 = lVar6;
+    } while (local_1518[lVar9] != '\0');
+    if (lVar6 == 0) {
+      FUN_1402ad950(&DAT_142605050,"save_name_popmenu");
+      return;
+    }
+    iVar2 = 0;
+    if (0 < DAT_142615530) {
+      piVar12 = &DAT_14261553c;
+      do {
+        iVar3 = FUN_1402ca760(local_1518,*(undefined8 *)(&DAT_142609538 + (longlong)*piVar12 * 0x60)
+                             );
+        uVar4 = (undefined4)((ulonglong)in_stack_ffffffffffffead8 >> 0x20);
+        if (iVar3 == 0) {
+          FUN_1402ad950(&DAT_142605050,"save_overwrite_popmenu");
+          break;
+        }
+        iVar2 = iVar2 + 1;
+        piVar12 = piVar12 + 1;
+      } while (iVar2 < DAT_142615530);
+    }
+    if (iVar2 != DAT_142615530) {
+      return;
+    }
+  }
+  else {
+    iVar2 = FUN_1402ca760(local_1498,"forcesave");
+    if (iVar2 != 0) {
+      iVar2 = FUN_1402ca760(local_1498,"DelSavegame");
+      if (iVar2 == 0) {
+        iVar2 = FUN_14029f170(&DAT_142615951);
+        if (iVar2 < 0) {
+          return;
+        }
+        if ((int)(&DAT_14261553c)[iVar2] < 0) {
+          return;
+        }
+        lVar7 = (longlong)(int)(&DAT_14261553c)[iVar2] * 0x60;
+        FUN_1402403a0(local_1518,0x40,"save/%s.svg",*(undefined8 *)(&DAT_142609530 + lVar7));
+        iVar2 = FUN_1402b3de0(local_1518);
+        if (iVar2 != 0) {
+          FUN_1402403a0(local_1518,0x40,"save/%s.jpg",*(undefined8 *)(&DAT_142609530 + lVar7));
+          FUN_1402b3de0(local_1518);
+          iVar2 = 0;
+          if (0 < DAT_142615530) {
+            piVar12 = &DAT_14261553c;
+            do {
+              iVar3 = FUN_1402ca760(&DAT_142615951,
+                                    *(undefined8 *)(&DAT_142609530 + (longlong)*piVar12 * 0x60));
+              if (iVar3 == 0) {
+                if (-1 < iVar2) {
+                  if (iVar2 < DAT_142615530 + -1) {
+                    iVar2 = iVar2 + 1;
+                  }
+                  else if (iVar2 != 0) {
+                    iVar2 = iVar2 + -1;
+                  }
+                  FUN_14029b290(0,DAT_1403e5608,iVar2);
+                  FUN_1402ac400(&DAT_142605050,0,0xf,iVar2,0);
+                }
+                break;
+              }
+              iVar2 = iVar2 + 1;
+              piVar12 = piVar12 + 1;
+            } while (iVar2 < DAT_142615530);
+          }
+        }
+        FUN_14029f1f0(DAT_142615534,1);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"SavegameSort");
+      if (iVar2 == 0) {
+        iVar2 = FUN_1402b1da0(param_2,local_res20);
+        if (iVar2 == 0) {
+          return;
+        }
+        if (local_res20[0] == DAT_142615534) {
+          DAT_142615538 = (uint)(DAT_142615538 == 0);
+        }
+        FUN_14029f1f0(local_res20[0],1);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"playerstart");
+      if (iVar2 == 0) {
+        FUN_14029ccb0();
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,&DAT_140433b44);
+      if (iVar2 == 0) {
+        FUN_14023e490();
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"Controls");
+      if (iVar2 == 0) {
+        uVar4 = FUN_140083ae0();
+        FUN_1402c5b30("cl_paused",uVar4);
+        FUN_14007f3b0(0,0x10);
+        FUN_1402ac9c0(&DAT_142605050);
+        FUN_1402ad950(&DAT_142605050,"setup_menu2");
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"Leave");
+      if (iVar2 == 0) {
+        FUN_14022f680(0,"disconnect\n");
+        FUN_14007f3b0(0,0x10);
+        FUN_1402ac9c0(&DAT_142605050);
+        FUN_1402ad950(&DAT_142605050,&DAT_14042cbf0);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"closeingame");
+      if (iVar2 == 0) {
+        FUN_14007f310(param_1,0xffffffef);
+        FUN_14007ee90(param_1);
+        FUN_1402c5b30("cl_paused",0);
+        FUN_1402ac9c0(&DAT_142605050);
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"update");
+      if (iVar2 == 0) {
+        iVar2 = FUN_1402af840(param_2,local_1018,0x400);
+        if (iVar2 == 0) {
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_SetName");
+        if (iVar2 == 0) {
+          uVar5 = FUN_1402c3b50("ui_Name");
+          FUN_1402c5e60(&DAT_1403f5b48,uVar5);
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_GetName");
+        if (iVar2 == 0) {
+          uVar5 = FUN_1402c3b50(&DAT_1403f5b48);
+          FUN_1402c5e60("ui_Name",uVar5);
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_mousePitch");
+        if (iVar2 == 0) {
+          cVar1 = FUN_1402c3a30();
+          if (cVar1 == '\0') {
+            FUN_1402c5770("m_pitch",_DAT_1403f5fdc);
+            return;
+          }
+          FUN_1402c5770("m_pitch",DAT_1404340e8);
+          return;
+        }
+        iVar2 = FUN_1402ca760(local_1018,"ui_savegameListAutosave");
+        if (iVar2 != 0) {
+          return;
+        }
+        cVar1 = FUN_1402c3a30(local_1018);
+        if (cVar1 == '\0') {
+          FUN_14029bc60(0);
+          return;
+        }
+        FUN_14029bc60("autosave");
+        return;
+      }
+      iVar2 = FUN_1402ca760(local_1498,"startSingleplayer");
+      if ((iVar2 != 0) && (iVar2 = FUN_1402ca760(local_1498,"startMultiplayer"), iVar2 != 0)) {
+        iVar2 = FUN_1402ca760(local_1498,"getLanguage");
+        if (iVar2 == 0) {
+          uVar4 = FUN_1402c3b10("loc_language");
+          FUN_1402c5b30("ui_language",uVar4);
+        }
+        else {
+          iVar2 = FUN_1402ca760(local_1498,"verifyLanguage");
+          if (iVar2 != 0) {
+            iVar2 = FUN_1402ca760(local_1498,"updateLanguage");
+            if (iVar2 != 0) {
+              iVar2 = FUN_1402ca760(local_1498,"saveComplete");
+              if (iVar2 == 0) {
+                uVar4 = FUN_140009eb0(param_1);
+                FUN_14008b220(uVar4);
+                cVar1 = FUN_14008a5a0();
+                if (cVar1 == '\0') {
+                  cVar1 = FUN_1402ec440();
+                  if (cVar1 == '\0') {
+                    return;
+                  }
+                  FUN_1401f3f10();
+                  return;
+                }
+                cVar1 = FUN_1402ec440();
+                if (cVar1 != '\0') {
+                  DAT_1406e24d8 = 1;
+                  return;
+                }
+                if (DAT_142604f08 != '\0') {
+                  uVar5 = FUN_1402cb690(&DAT_1403f3d44,&DAT_142604e08);
+                  FUN_14022f680(0,uVar5);
+                }
+              }
+              else {
+                iVar2 = FUN_1402ca760(local_1498,"saveRevert");
+                if (iVar2 != 0) {
+                  iVar2 = FUN_1402ca760(local_1498,"openMenuOnDvar");
+                  if ((iVar2 == 0) ||
+                     (iVar2 = FUN_1402ca760(local_1498,"openMenuOnDvarNot"), iVar2 == 0)) {
+                    iVar2 = FUN_1402af840(param_2,local_c18,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_818,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_418,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402ca760(local_1498,"openMenuOnDvar");
+                    lVar7 = thunk_FUN_1402c3890(local_c18);
+                    if (lVar7 == 0) {
+                      return;
+                    }
+                    uVar5 = FUN_1402c3be0(local_c18);
+                    iVar3 = FUN_1402ca760(local_818,uVar5);
+                    if ((iVar3 != 0) == (iVar2 == 0)) {
+                      return;
+                    }
+                    FUN_1402ad950(&DAT_142605050,local_418);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"closeMenuOnDvar");
+                  if ((iVar2 == 0) ||
+                     (iVar2 = FUN_1402ca760(local_1498,"closeMenuOnDvarNot"), iVar2 == 0)) {
+                    iVar2 = FUN_1402af840(param_2,local_c18,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_818,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_418,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402ca760(local_1498,"closeMenuOnDvar");
+                    lVar7 = thunk_FUN_1402c3890(local_c18);
+                    if (lVar7 == 0) {
+                      return;
+                    }
+                    uVar5 = FUN_1402c3be0(local_c18);
+                    iVar3 = FUN_1402ca760(local_818,uVar5);
+                    if ((iVar3 != 0) == (iVar2 == 0)) {
+                      return;
+                    }
+                    FUN_1402acbf0(&DAT_142605050,local_418);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"resetvscroll");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402af840(param_2,local_1018,0x400);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = 0;
+                    lVar7 = FUN_1402aac20(&DAT_142605050,0);
+                    while( true ) {
+                      if (lVar7 == 0) {
+                        return;
+                      }
+                      lVar7 = FUN_1402aa7f0(lVar7,local_1018);
+                      if ((lVar7 != 0) && (*(int *)(lVar7 + 0xc4) == 0x15)) break;
+                      iVar2 = iVar2 + 1;
+                      lVar7 = FUN_1402aac20(&DAT_142605050,iVar2);
+                    }
+                    puVar8 = (undefined4 *)FUN_1402b2150(lVar7);
+                    *puVar8 = DAT_142605058;
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"setRecommended");
+                  if (iVar2 == 0) {
+                    FUN_14023e920(param_1,1);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RefreshLeaderboards");
+                  if (iVar2 == 0) {
+                    FUN_1401ef6b0();
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"ViewGamerCard");
+                  if (iVar2 == 0) {
+                    _guard_check_icall(param_1);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"OpenLeaderboard");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402af840(param_2,local_1518,0x80);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    FUN_1401effd0(local_1518);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"OpenLeaderboardExt");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402af840(param_2,local_1518,0x80);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    iVar2 = FUN_1402af840(param_2,local_1098,0x80);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    lVar7 = FUN_1402c3b50(local_1518);
+                    lVar9 = FUN_1402c3b50(local_1098);
+                    if (lVar7 == 0) {
+                      return;
+                    }
+                    lVar6 = -1;
+                    lVar10 = -1;
+                    do {
+                      lVar10 = lVar10 + 1;
+                    } while (*(char *)(lVar7 + lVar10) != '\0');
+                    if (lVar10 == 0) {
+                      return;
+                    }
+                    if (lVar9 == 0) {
+                      return;
+                    }
+                    do {
+                      lVar6 = lVar6 + 1;
+                    } while (*(char *)(lVar9 + lVar6) != '\0');
+                    if (lVar6 == 0) {
+                      return;
+                    }
+                    FUN_1401efff0(lVar7);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"ClearLeaderboard");
+                  if (iVar2 == 0) {
+                    FUN_1401ef560();
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284470(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140283d30(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140283fe0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284190(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FriendGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    thunk_FUN_140240bd0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140285020(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284b20(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    _guard_check_icall(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerFriendRequest");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284c20(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerShowGroups");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284e50(param_1,uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284d70(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"RecentPlayerInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140284c70(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280d90(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_1402807b0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    _guard_check_icall(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookFriendRequest");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280bb0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookPageRight");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280cf0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookPageLeft");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280c80(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280ae0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"FacebookInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_140280840(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanStoreXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027c260(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanClearXUID");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027bdf0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanGamerCard");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    _guard_check_icall(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanFriendRequest");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027bf40(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanJoin");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027c100(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"EliteClanInvite");
+                  if (iVar2 == 0) {
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_14027bfd0(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"coopPlayerShowGroups");
+                  if (iVar2 == 0) {
+                    iVar2 = FUN_1402b1da0(param_2,local_res20);
+                    if (iVar2 == 0) {
+                      return;
+                    }
+                    FUN_140286ff0(param_1,local_res20[0]);
+                    return;
+                  }
+                  iVar2 = FUN_1402ca760(local_1498,"simulateKeyPress");
+                  if (iVar2 != 0) {
+                    iVar2 = FUN_1402ca760(local_1498,"commerceShowStore");
+                    if (iVar2 != 0) {
+                      return;
+                    }
+                    uVar4 = FUN_140009eb0(param_1);
+                    FUN_1402ecb30(uVar4);
+                    return;
+                  }
+                  iVar2 = FUN_1402b1da0(param_2,local_res20);
+                  if (iVar2 == 0) {
+                    return;
+                  }
+                  FUN_14029baa0(param_1,local_res20[0],1);
+                  FUN_14029baa0(param_1,local_res20[0],0);
+                  return;
+                }
+                cVar1 = FUN_1402ec440();
+                if (cVar1 != '\0') {
+                  FUN_1401f3f10();
+                }
+              }
+              FUN_140390680(&DAT_142604e08,0,0x100);
+              DAT_142604f08 = 0;
+              return;
+            }
+            uVar4 = FUN_1402c3b10("ui_language");
+            FUN_1402c5b30("loc_language",uVar4);
+            FUN_1402a0090();
+            pcVar11 = "vid_restart\n";
+            goto LAB_14029f0ab;
+          }
+        }
+        FUN_1402a0090();
+        return;
+      }
+      pcVar11 = "startMultiplayer\n";
+LAB_14029f0ab:
+      FUN_14022f680(0,pcVar11);
+      return;
+    }
+    lVar7 = -1;
+    do {
+      lVar7 = lVar7 + 1;
+    } while (local_1498[lVar7] != '\0');
+    if (lVar7 == 0) {
+      FUN_1402ad950(&DAT_142605050,"save_name_popmenu");
+      return;
+    }
+  }
+  FUN_1402ac9c0(&DAT_142605050);
+  FUN_14026b6e0(*(undefined8 *)(DAT_142604fe8 + 0x10),&DAT_1403e6bdb,&DAT_1403e6bdb,2,
+                CONCAT44(uVar4,6),0);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14023c970 @ 14023c970
+----------------------------------------------------------------
+
+/* WARNING: Function: __chkstk replaced with injection: alloca_probe */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14023c970(void)
+
+{
+  char cVar1;
+  int iVar2;
+  int iVar3;
+  undefined4 uVar4;
+  longlong lVar5;
+  ulonglong uVar6;
+  ulonglong uVar7;
+  char local_1008 [4088];
+  undefined8 uStack_10;
+  
+  uStack_10 = 0x14023c980;
+  FUN_1401d34d0();
+  FUN_1401d35c0();
+  FUN_1401d3950();
+  FUN_14030fd20();
+  FUN_1401ea480();
+  FUN_1402be080();
+  uVar6 = (ulonglong)_tls_index;
+  if (*(char *)(*(longlong *)((longlong)ThreadLocalStoragePointer + uVar6 * 8) + 0x38) == '\0') {
+    __dyn_tls_on_demand_init();
+  }
+  *(undefined4 *)(*(longlong *)((longlong)ThreadLocalStoragePointer + uVar6 * 8) + 0x24) =
+       0xffffffff;
+  FUN_1401bc430(1);
+  FUN_14022fd80();
+  FUN_1402c5ac0(0);
+  thunk_FUN_14024a790();
+  FUN_1402be6f0();
+  FUN_1402be750();
+  FUN_1402c5b30("cl_paused",0);
+  FUN_1402c3840();
+  FUN_1400de960();
+  FUN_14029a940();
+  FUN_1401f42f0();
+  FUN_140241400();
+  FUN_1402c7580();
+  _guard_check_icall();
+  uVar7 = 0;
+  uVar6 = uVar7;
+  do {
+    cVar1 = (&DAT_141efbec0)[uVar6];
+    local_1008[uVar6] = cVar1;
+    uVar6 = uVar6 + 1;
+  } while (cVar1 != '\0');
+  if (DAT_141efbe88 == 3) {
+    if (DAT_141efbec0 != '\0') {
+      lVar5 = FUN_140289a60(&DAT_141efbec0,"error message",1);
+      if (lVar5 != 0) {
+        FUN_1402caa00(&DAT_141efbec0,lVar5,0x1000);
+      }
+    }
+  }
+  else {
+    FUN_14023e7a0(&DAT_141efbec0);
+  }
+  FUN_140270480();
+  FUN_140278400(DAT_1403e3e6c,0);
+  FUN_1402c9cf0();
+  _guard_check_icall();
+  if (DAT_141efbe88 == 1) {
+    FUN_14022fa70();
+  }
+  iVar3 = FUN_1402f2210();
+  if (iVar3 - _DAT_141efcfd4 < 100) {
+    DAT_141efcfd8 = DAT_141efcfd8 + 1;
+    if (DAT_141efcfd8 < 4) goto LAB_14023caf8;
+    DAT_141efbe88 = 0;
+  }
+  else {
+    DAT_141efcfd8 = 0;
+LAB_14023caf8:
+    uVar7 = (ulonglong)DAT_141efbe88;
+  }
+  iVar2 = (int)uVar7;
+  _DAT_141efcfd4 = iVar3;
+  if (2 < iVar2 - 1U) {
+                    /* WARNING: Subroutine does not return */
+    FUN_1402ee570(&DAT_1403f051c,&DAT_141efbec0);
+  }
+  DAT_1406ef9a0 = 0;
+  if (iVar2 == 2) {
+    FUN_14023f0d0("EXE_DISCONNECTEDFROMOWNLISTENSERVER");
+  }
+  else {
+    if (iVar2 == 1) {
+      if ((DAT_14064fe00 != 0) && (DAT_141efb7f4 == 0)) {
+        FUN_1400797e0();
+        if (DAT_141efbe88 != 1) goto LAB_14023cb74;
+      }
+      FUN_1402c5e60("nextmap",&DAT_1403e6bdb);
+    }
+LAB_14023cb74:
+    FUN_140080400(0);
+    FUN_140082890();
+    FUN_14026b140(local_1008);
+    FUN_1400828f0();
+    FUN_14026ab30();
+    FUN_140246c30();
+    FUN_1402f5830();
+    FUN_1402fdbd0();
+    FUN_140278d20();
+    FUN_1402be6a0();
+    FUN_1402be2d0();
+    FUN_1400a7bc0();
+    _guard_check_icall(0,0,0);
+    DAT_141efb7f4 = 0;
+    FUN_1402fbee0();
+    FUN_1402f5740();
+    FUN_1402469d0();
+    DAT_141efbea4 = 0x3f800000;
+    DAT_141efb7b0 = 0;
+    DAT_141efb7cc = 0;
+    DAT_141efb7c8 = 0x3f800000;
+  }
+  if ((DAT_141efbe88 == 3) || (DAT_14064fe00 == 0)) {
+LAB_14023cc28:
+    if (DAT_141efbe88 != 1) goto LAB_14023cc61;
+  }
+  else if (DAT_141efbe88 != 1) {
+    uVar4 = FUN_1402b0250(0);
+    FUN_14029f3f0(0,uVar4);
+    goto LAB_14023cc28;
+  }
+  FUN_140265ee0();
+  if (DAT_1424ab5a0 != 0) {
+    FUN_1402c5ad0(DAT_1424ab5a0,0);
+  }
+  FUN_1402c52b0(DAT_14252b620,0);
+  FUN_1402c5300("solo_play",0);
+LAB_14023cc61:
+  FUN_140179080();
+  FUN_140179550();
+  DAT_1404defb0 = 0;
+  DAT_141efb7f4 = 0;
+  _guard_check_icall();
+  DAT_141efb7f0 = DAT_141efb7f0 + -1;
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029cc50 @ 14029cc50
+----------------------------------------------------------------
+
+void FUN_14029cc50(ulonglong param_1,int param_2)
+
+{
+  undefined4 uVar1;
+  
+  if (param_2 != 0) {
+    uVar1 = FUN_140083ae0();
+    FUN_1402c5b30("cl_paused",uVar1);
+    FUN_14007f3b0(param_1 & 0xffffffff,0x10);
+    return;
+  }
+  FUN_14007f310(param_1,0xffffffef);
+  FUN_14007ee90(param_1 & 0xffffffff);
+  FUN_1402c5b30("cl_paused",0);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029ccb0 @ 14029ccb0
+----------------------------------------------------------------
+
+void FUN_14029ccb0(void)
+
+{
+  char cVar1;
+  int iVar2;
+  undefined4 uVar3;
+  
+  iVar2 = FUN_1402aa7e0(&DAT_142605050);
+  if (0 < iVar2) {
+    DAT_142615b20 = 0;
+    FUN_14007f310(0,0xffffffef);
+    thunk_FUN_14007eeb0(0);
+    FUN_1402c5b30("cl_paused",0);
+    FUN_1402431b0(0);
+    FUN_1402ac9c0(&DAT_142605050);
+  }
+  cVar1 = FUN_1401a22d0();
+  if (cVar1 == '\0') {
+    FUN_1401a2810();
+  }
+  cVar1 = FUN_1402ec440();
+  if (cVar1 != '\0') {
+    uVar3 = FUN_140083ae0();
+    FUN_1402c5b30("cl_paused",uVar3);
+    FUN_14007f3b0(0,0x10);
+    FUN_1402acbf0(&DAT_142605050,"popup_friends");
+    FUN_1402ad950(&DAT_142605050,"sp_acceptinvite_warning");
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14029baa0 @ 14029baa0
+----------------------------------------------------------------
+
+void FUN_14029baa0(undefined4 param_1,int param_2,int param_3)
+
+{
+  char cVar1;
+  int iVar2;
+  longlong *plVar3;
+  longlong lVar4;
+  
+  iVar2 = FUN_1402aa7e0(&DAT_142605050);
+  if (((iVar2 != 0) && (cVar1 = FUN_14024a250(), cVar1 != '\0')) &&
+     (iVar2 = FUN_1401d3290(), iVar2 == 0)) {
+    plVar3 = (longlong *)FUN_1402aaa80(&DAT_142605050);
+    if (plVar3 != (longlong *)0x0) {
+      if (((param_2 == 0x1b) && (param_3 != 0)) &&
+         ((iVar2 = FUN_1402ac970(&DAT_142605050), iVar2 == 0 && (*(longlong *)(*plVar3 + 0x30) == 0)
+          ))) {
+        FUN_1402ac9c0(&DAT_142605050);
+      }
+      else {
+        FUN_1402aac50(&DAT_142605050,plVar3,param_2,param_3);
+      }
+      lVar4 = FUN_1402aaa80(&DAT_142605050);
+      if (lVar4 != 0) {
+        return;
+      }
+    }
+    FUN_14007f310(param_1,0xffffffef);
+    thunk_FUN_14007eeb0(param_1);
+    iVar2 = 0;
+    do {
+      lVar4 = FUN_1402aaa80(&DAT_142605050);
+      if (lVar4 != 0) {
+        return;
+      }
+      iVar2 = iVar2 + 1;
+    } while (iVar2 < 1);
+    FUN_1402c5b30("cl_paused",0);
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14004a870 @ 14004a870
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14004a870(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  undefined8 in_stack_ffffffffffffff38;
+  undefined4 uVar6;
+  undefined8 uVar4;
+  undefined4 uVar7;
+  undefined4 uVar8;
+  ulonglong uVar5;
+  undefined4 uVar9;
+  undefined4 uVar10;
+  char *pcVar11;
+  ulonglong uVar12;
+  undefined4 uVar14;
+  undefined8 uVar13;
+  
+  uVar6 = (undefined4)((ulonglong)in_stack_ffffffffffffff38 >> 0x20);
+  DAT_14062cde8 = FUN_1402c43f0("cg_drawGun",1,4,"Draw the view model");
+  uVar4 = CONCAT44(uVar6,1);
+  DAT_14062cdf0 =
+       FUN_1402c46d0("cg_cursorHints",3,0,4,uVar4,
+                     "Draw cursor hints where:\n 0: no hints\n\t1:\tsin size pulse\n\t2:\tone way size pulse\n\t3:\talpha pulse\n\t4:\tstatic image"
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cdf8 =
+       FUN_1402c43f0("cg_weaponHintsCoD1Style",1,0x40,
+                     "Draw weapon hints in CoD1 style: with the weapon name, and with the icon below"
+                    );
+  DAT_14062ce00 =
+       FUN_1402c46d0("cg_hintFadeTime",100,0,0x7fffffff,CONCAT44(uVar6,1),
+                     "Time in milliseconds for the cursor hint to fade");
+  uVar7 = DAT_1403ef938;
+  uVar6 = DAT_1403e414c;
+  uVar1 = DAT_1403e3e6c;
+  DAT_14062ce60 =
+       FUN_1402c4650("cg_fov",DAT_1403e414c,DAT_1403e3e6c,DAT_1403ef938,0x44,
+                     "The field of view angle in degrees for client 0");
+  DAT_14062ce68 =
+       FUN_1402c4650("cg_fov1",uVar6,uVar1,uVar7,0x44,
+                     "The field of view angle in degrees for client 1");
+  DAT_14062ce80 =
+       FUN_1402c4650("cg_fovNonVehAdd",0,DAT_1403e8ec8,DAT_1403e4150,0x44,
+                     "The field of view angle added in degrees when not in a vehicle");
+  DAT_14062ce10 =
+       FUN_1402c4650("cg_viewVehicleInfluence",uVar1,0,uVar1,0x44,
+                     "The influence on the view angles from being in a vehicle");
+  DAT_14062cd90 = FUN_1402c43f0("cg_draw2D",1,0,"Draw 2D screen elements");
+  DAT_14062cd70 = FUN_1402c43f0("cg_drawHUD",1,0,"Draw HUD elements");
+  DAT_14062cd78 = FUN_1402c43f0("cg_drawHealth",0,4,"Draw health bar");
+  DAT_14062cd80 = FUN_1402c43f0("cg_drawBreathHint",1,0x40,"Draw a \'hold breath to steady\' hint");
+  DAT_14062cd88 = FUN_1402c43f0("cg_drawMantleHint",1,1,"Draw a \'press key to mantle\' hint");
+  _DAT_14062cc50 = FUN_1402c45d0("cg_drawFPS",&PTR_DAT_1404c0960,0,1,"Draw frames per second");
+  _DAT_14062cc68 = FUN_1402c43f0("cg_drawViewpos",0,1,"Draw viewpos");
+  _DAT_14062cc58 = FUN_1402c43f0("cg_drawEffectNum",0,4,"Draw counts of effects and elements");
+  _DAT_14062cc60 = FUN_1402c43f0("cg_drawFPSLabels",1,1,"Draw FPS Info Labels");
+  _DAT_14062cc70 =
+       FUN_1402c45d0("snd_drawInfo",&PTR_DAT_1404c0920,0,0,"Draw debugging information for sounds");
+  _DAT_14062cc78 = FUN_1402c43f0("cg_drawScriptUsage",0,0,"Draw debugging information for scripts");
+  uVar6 = 1;
+  _DAT_14062cc80 =
+       FUN_1402c45d0("cg_drawMaterial",&PTR_DAT_1404c0990,0,4,
+                     "Draw debugging information for materials");
+  DAT_14062cc90 =
+       FUN_1402c43f0("cg_drawTurretCrosshair",1,1,"Draw a cross hair when using a turret");
+  DAT_14062cda8 = FUN_1402c43f0("cg_drawDamageFlash",0,4,"Draw flash when hit.");
+  DAT_14062cdb0 = FUN_1402c43f0("cg_drawDamageDirection",1,4,"Draw hit direction arrow.");
+  DAT_14062cf30 =
+       FUN_1402c43f0("cg_constantSizeHeadIcons",0,4,
+                     "Head icons are the same size regardless of distance from the player");
+  uVar4 = CONCAT44(uVar6,1);
+  DAT_14062cf38 =
+       FUN_1402c4650("cg_headIconMinScreenRadius",DAT_1403e8e10,0,uVar1,uVar4,
+                     "The minumum radius of a head icon on the screen");
+  uVar3 = DAT_1403e8e6c;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf40 =
+       FUN_1402c4650("cg_scriptIconSize",0,0,DAT_1403e8e6c,uVar4,"Size of Icons defined by script");
+  uVar6 = DAT_1403e4140;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cdb8 =
+       FUN_1402c4650("painVisionLerpInRate",DAT_1403e41f4,0,DAT_1403e4140,uVar4,
+                     "Rate at which pain vision effect lerps in");
+  pcVar11 = "Rate at which pain vision effect lerps out";
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cdc0 =
+       FUN_1402c4650("painVisionLerpOutRate",DAT_1403e5250,0,uVar6,uVar4,
+                     "Rate at which pain vision effect lerps out");
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  _DAT_14062cdc8 =
+       FUN_1402c43f0("cg_drawPlayerPosInFreeMove",1,4,
+                     "Draw a red box at the player\'s pos in noclip/ufo.");
+  uVar4 = CONCAT44(uVar6,uVar1);
+  DAT_14062cc98 =
+       FUN_1402c4440("cg_hudStanceFlash",uVar1,uVar1,uVar1,uVar4,
+                     (ulonglong)pcVar11 & 0xffffffff00000000,
+                     "The background color of the flash when the stance changes");
+  uVar7 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cca0 =
+       FUN_1402c43f0("cg_hudStanceHintPrints",0,1,"Draw helpful text to say how to change stances");
+  uVar2 = DAT_1403ea7b4;
+  uVar6 = DAT_1403e4154;
+  uVar4 = CONCAT44(uVar7,1);
+  DAT_14062cca8 =
+       FUN_1402c4650("cg_hudDamageIconWidth",DAT_1403e4154,0,DAT_1403ea7b4,uVar4,
+                     "The width of the damage icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062ccb0 =
+       FUN_1402c4650("cg_hudDamageIconHeight",DAT_1403e52e4,0,uVar2,uVar4,
+                     "The height of the damage icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062ccb8 =
+       FUN_1402c4650("cg_hudDamageIconOffset",uVar6,0,uVar2,uVar4,
+                     "The offset from the center of the damage icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062ccc0 =
+       FUN_1402c46d0("cg_hudDamageIconTime",6000,0,0x7fffffff,uVar4,
+                     "The amount of time for the damage icon to stay on screen after damage is taken"
+                    );
+  uVar7 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062ccc8 =
+       FUN_1402c43f0("cg_hudDamageIconInScope",0,1,
+                     "Draw damage icons when aiming down the sight of a scoped weapon");
+  uVar6 = DAT_1403e5284;
+  uVar4 = CONCAT44(uVar7,1);
+  DAT_14062ccd8 =
+       FUN_1402c4650("cg_hudGrenadeIconMaxRangeFrag",DAT_1403eba94,0,DAT_1403e5284,uVar4,
+                     "The maximum distance that a grenade can be from a player in order to be shown on the grenade indicator"
+                    );
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cce0 =
+       FUN_1402c4650("cg_hudGrenadeIconMaxRangeFlash",DAT_1403e9e44,0,DAT_1403ef93c,uVar4,
+                     "The maximum distance that a flashbang can be from a player in order to be shown on the grenade indicator"
+                    );
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cce8 =
+       FUN_1402c4650("cg_hudGrenadeIconMaxHeight",DAT_1403ef934,0,uVar6,uVar4,
+                     "The minimum height difference between a player and a grenade for the grenade to be shown on the grenade indicator"
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062ccd0 =
+       FUN_1402c43f0("cg_hudGrenadeIconInScope",1,1,
+                     "Show the grenade indicator when aiming down the sight of a scoped weapon");
+  uVar10 = DAT_1403e9e20;
+  uVar4 = CONCAT44(uVar6,0x40);
+  DAT_14062ccf0 =
+       FUN_1402c4650("cg_hudGrenadeIconOffset",DAT_1403e9e20,0,uVar2,uVar4,
+                     "The offset from the center of the screen for a grenade icon");
+  uVar7 = DAT_1403e9e14;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x40);
+  DAT_14062ccf8 =
+       FUN_1402c4650("cg_hudGrenadeIconHeight",DAT_1403e9e14,0,uVar2,uVar4,
+                     "The height of the grenade indicator icon");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x40);
+  DAT_14062cd00 =
+       FUN_1402c4650("cg_hudGrenadeIconWidth",uVar7,0,uVar2,uVar4,
+                     "The width of the grenade indicator icon");
+  uVar8 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cd08 =
+       FUN_1402c43f0("cg_hudGrenadeIconEnabledFlash",0,1,
+                     "Show the grenade indicator for flash grenades");
+  uVar6 = DAT_1403e5270;
+  uVar4 = CONCAT44(uVar8,0x40);
+  DAT_14062cd10 =
+       FUN_1402c4650("cg_hudGrenadePointerHeight",DAT_1403e5270,0,uVar2,uVar4,
+                     "The height of the grenade indicator pointer");
+  uVar8 = 1;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x40);
+  DAT_14062cd18 =
+       FUN_1402c4650("cg_hudGrenadePointerWidth",uVar7,0,uVar2,uVar4,
+                     "The width of the grenade indicator pointer");
+  uVar14 = 1;
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar2);
+  DAT_14062cd20 =
+       FUN_1402c4c10("cg_hudGrenadePointerPivot",uVar6,DAT_1403ef930,0,uVar5,CONCAT44(uVar8,0x40),
+                     "The pivot point of th grenade indicator pointer");
+  uVar2 = DAT_1403e5268;
+  uVar6 = DAT_1403e5240;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd28 =
+       FUN_1402c4650("cg_hudGrenadePointerPulseFreq",DAT_1403e5268,DAT_1403e5240,uVar10,uVar5,
+                     "The number of times per second that the grenade indicator flashes in Hertz");
+  uVar10 = DAT_1403e5264;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd30 =
+       FUN_1402c4650("cg_hudGrenadePointerPulseMax",DAT_1403e5264,0,uVar2,uVar5,
+                     "The maximum alpha of the grenade indicator pulse. Values higher than 1 will cause the indicator to remain at full brightness for longer"
+                    );
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd38 =
+       FUN_1402c4650("cg_hudGrenadePointerPulseMin",uVar6,DAT_1403e8ea8,uVar1,uVar5,
+                     "The minimum alpha of the grenade indicator pulse. Values lower than 0 will cause the indicator to remain at full transparency for longer"
+                    );
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),1);
+  DAT_14062cd40 =
+       FUN_1402c46d0("cg_weaponCycleDelay",0,0,0x7fffffff,uVar4,
+                     "The delay after cycling to a new weapon to prevent holding down the cycle weapon button from cycling too fast"
+                    );
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cd48 =
+       FUN_1402c4650("cg_crosshairAlpha",uVar1,0,uVar1,uVar4,"The alpha value of the crosshair");
+  uVar7 = DAT_1403e3e68;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),4);
+  DAT_14062cd50 =
+       FUN_1402c4650("cg_crosshairAlphaMin",DAT_1403e3e68,0,uVar1,uVar4,
+                     "The minimum alpha value of the crosshair when it fades in");
+  uVar9 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cd58 = FUN_1402c43f0("cg_crosshairDynamic",0,4,"Crosshair is Dynamic");
+  DAT_14062cd60 =
+       FUN_1402c43f0("cg_crosshairEnemyColor",1,0x44,"The crosshair color when over an enemy");
+  DAT_14062cd68 =
+       FUN_1402c43f0("cg_drawFriendlyFireCrosshair",0,4,
+                     "draw the friendly fire crosshair (friendly move)");
+  DAT_14062cde0 = FUN_1402c43f0("cg_brass",1,1,"Weapons eject brass");
+  uVar8 = DAT_1403e5618;
+  uVar5 = CONCAT44(uVar9,4);
+  DAT_14054e0b8 =
+       FUN_1402c4650("cg_centertime",uVar2,0,DAT_1403e5618,uVar5,
+                     "The time for a center printed message to fade");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cd98 = FUN_1402c4650("cg_errordecay",uVar3,0,uVar8,uVar5,"Decay for predicted error");
+  DAT_14050bde8 =
+       FUN_1402c43f0("cg_cinematicFullscreen",1,0x40,"Draw ingame cinematics full screen");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  _DAT_14062cdd0 = FUN_1402c46d0("cg_showmiss",0,0,2,uVar5,"Show prediction errors");
+  DAT_14062cdd8 = FUN_1402c43f0("cg_footsteps",1,0x44,"Play footstep sounds");
+  DAT_14062ce08 =
+       FUN_1402c43f0("cg_marks_ents_player_only",0,1,
+                     "Marks on entities from player\'s bullets only.");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce18 =
+       FUN_1402c4650("tracer_thermalWidthMult",uVar10,uVar6,uVar8,uVar5,
+                     "The multiplier applied to the base width when viewed in thermal vision");
+  pcVar11 = "The maximum width our OWN tracers can be when looking through our ADS";
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce20 =
+       FUN_1402c4650("tracer_firstPersonMaxWidth",DAT_1403e526c,uVar6,uVar8,uVar5,
+                     "The maximum width our OWN tracers can be when looking through our ADS");
+  DAT_14062ce28 =
+       FUN_1402c43f0("tracer_explosiveOverride",1,0,
+                     "When turned on, will apply an override to the tracer settings when shooting explosive bullets."
+                    );
+  uVar12 = (ulonglong)pcVar11 & 0xffffffff00000000;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce30 =
+       FUN_1402c4dd0("tracer_explosiveColor1",0,0,0,uVar5,uVar12,CONCAT44(uVar14,uVar1),0,
+                     "The 1st color of a bullet tracer when using explosive bullets");
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),uVar1);
+  DAT_14062ce38 =
+       FUN_1402c4dd0("tracer_explosiveColor2",uVar1,uVar1,uVar1,uVar4,uVar12,uVar1,0,
+                     "The 2nd color of a bullet tracer when using explosive bullets");
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062ce40 =
+       FUN_1402c4dd0("tracer_explosiveColor3",uVar1,0,0,uVar4,uVar12,uVar1,0,
+                     "The 3rd color of a bullet tracer when using explosive bullets");
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062ce48 =
+       FUN_1402c4dd0("tracer_explosiveColor4",uVar1,0,0,uVar4,uVar12,uVar1,0,
+                     "The 4th color of a bullet tracer when using explosive bullets");
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062ce50 =
+       FUN_1402c4dd0("tracer_explosiveColor5",uVar1,uVar1,0,uVar5,uVar12 & 0xffffffff00000000,uVar1,
+                     0,"The 5th color of a bullet tracer when using explosive bullets");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce58 =
+       FUN_1402c4650("tracer_explosiveWidth",DAT_1403e8e40,uVar1,uVar8,uVar5,
+                     "The width of a bullet tracer when using explosive bullets");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ce98 = FUN_1402c46d0("cl_paused",0,0,2,uVar5,"Pause the game");
+  DAT_14062cea0 = FUN_1402c43f0("cg_drawpaused",1,0,"Draw paused screen");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cea8 =
+       FUN_1402c46d0("cg_objectiveListWrapCountStandard",0x104,100,0x280,uVar5,
+                     "The amount of on-screen length to wrap an objective in non wide-screen mode");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062ceb0 =
+       FUN_1402c46d0("cg_objectiveListWrapCountWidescreen",0x154,100,0x280,uVar5,
+                     "The amount of on-screen length to wrap an objective in wide-screen mode");
+  uVar5 = uVar5 & 0xffffffff00000000;
+  _DAT_14062cf48 = FUN_1402c46d0("developer",0,0,2,uVar5,"Enable development options");
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),1);
+  DAT_14062cf50 =
+       FUN_1402c4650("cg_subtitleMinTime",uVar2,0,uVar8,uVar4,
+                     "The minimum time that the subtitles are displayed on screen in seconds");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf58 =
+       FUN_1402c46d0("cg_subtitleWidthStandard",0x140,0x82,0x680,uVar4,
+                     "The width of the subtitles in non wide-screen");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf60 =
+       FUN_1402c46d0("cg_subtitleWidthWidescreen",0x140,0x82,0x680,uVar4,
+                     "The width of the subtitles in wide-screen ");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf68 =
+       FUN_1402c46d0("cg_gameMessageWidth",500,0x82,0x680,uVar4,
+                     "The maximum character width of the game messages");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cf70 =
+       FUN_1402c46d0("cg_gameBoldMessageWidth",0x186,0x82,0x680,uVar4,
+                     "The maximum character width of the bold game messages");
+  uVar10 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cf78 = FUN_1402c43f0("cg_blood",1,1,"Show blood effects");
+  DAT_14062cf80 =
+       FUN_1402c43f0("cg_bloodLimit",0,1,
+                     "Limit blood effects (to \'prevent excess blood stacking\')");
+  uVar4 = CONCAT44(uVar10,1);
+  DAT_14062cf88 =
+       FUN_1402c46d0("cg_bloodLimitMsec",0x14a,1,2000,uVar4,
+                     "When limiting blood effects, number of milliseconds between effects.");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  _DAT_14062cf90 =
+       FUN_1402c4650("cg_small_dev_string_fontscale",uVar1,0,uVar8,uVar4,
+                     "Font scale for a small development only display string");
+  uVar2 = DAT_1403e9b14;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cfa8 =
+       FUN_1402c4650("cg_mapLocationSelectionCursorSpeed",DAT_1403e9b14,DAT_1403e3e60,uVar1,uVar4,
+                     "Speed of the cursor when selecting a location on the map");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14050bdc8 =
+       FUN_1402c4650("cg_viewZSmoothingMin",uVar1,0,uVar8,uVar4,
+                     "Threshhold for the minimum smoothing distance it must move to smooth");
+  uVar10 = DAT_1403e560c;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14050bdd0 =
+       FUN_1402c4650("cg_viewZSmoothingMax",DAT_1403e560c,0,uVar8,uVar4,
+                     "Threshhold for the maximum smoothing distance we\'ll do");
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14050bdd8 =
+       FUN_1402c4650("cg_viewZSmoothingTime",uVar6,0,uVar8,uVar5,
+                     "Amount of time to spread the smoothing over");
+  DAT_14062cfb0 =
+       FUN_1402c43f0("overrideNVGModelWithKnife",0,0x40,
+                     "When true, nightvision animations will attach the weapDef\'s knife model instead of the night vision goggles."
+                    );
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cfb8 =
+       FUN_1402c4650("cg_weapHitCullAngle",DAT_1403e4148,0,DAT_1403e5280,uVar5,
+                     "Angle of cone within which to cull back facing weapon hit effects");
+  uVar6 = (undefined4)(uVar5 >> 0x20);
+  DAT_14062cfc0 =
+       FUN_1402c43f0("cg_weapHitCullEnable",1,0,"When true, cull back facing weapon hit fx.");
+  uVar4 = CONCAT44(uVar6,0x44);
+  DAT_14062cfd0 =
+       FUN_1402c4650("objectiveAlpha",uVar2,0,uVar8,uVar4,"Alpha value for objective waypoints.");
+  uVar9 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cfd8 =
+       FUN_1402c43f0("objectiveAlphaEnabled",0,0x40,
+                     "When true, dvar \"objectiveAlpha\" takes effect.");
+  uVar6 = DAT_1403e9b10;
+  uVar5 = CONCAT44(uVar9,0x40);
+  DAT_14062cfe0 =
+       FUN_1402c4650("objectiveArrowWidth",DAT_1403ea250,DAT_1403e9b10,uVar8,uVar5,
+                     "Width of the objective pointer.");
+  uVar9 = 1;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cfe8 =
+       FUN_1402c4650("objectiveArrowHeight",uVar10,uVar6,uVar8,uVar5,
+                     "Height of the objective pointer.");
+  uVar14 = 1;
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),uVar1);
+  DAT_14062cff8 =
+       FUN_1402c4d40("objectiveColor",uVar1,uVar1,uVar1,uVar4,CONCAT44(uVar9,0x40),
+                     "Color of the objective pointer and text.");
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  DAT_14062cff0 =
+       FUN_1402c43f0("objectiveHideIcon",0,0x44,
+                     "When true, hides the objective pointer\'s icon, but will still show the arrow."
+                    );
+  uVar4 = CONCAT44(uVar6,0x44);
+  DAT_14062cfc8 =
+       FUN_1402c4650("sv_znear",0,0,DAT_1403e8e9c,uVar4,
+                     "Things closer than this aren\'t drawn.  Reducing this increases z-fighting in the distance.  Set to 0 to not specify."
+                    );
+  uVar6 = (undefined4)((ulonglong)uVar4 >> 0x20);
+  FUN_14006abc0();
+  FUN_1402d9b80();
+  FUN_1400b7350();
+  FUN_140077e50();
+  FUN_140037060();
+  FUN_1400307e0();
+  FUN_140068480();
+  FUN_14006c150();
+  FUN_140045f40();
+  FUN_14006a410();
+  FUN_1400490c0();
+  FUN_140072770();
+  FUN_14000dba0();
+  FUN_14028ba50();
+  FUN_14004ec50();
+  FUN_140003d60();
+  uVar4 = CONCAT44(uVar6,1);
+  DAT_14062cf98 =
+       FUN_1402c46d0("cg_invalidCmdHintDuration",0x708,0,0x7fffffff,uVar4,
+                     "Duration of an invalid command hint");
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),1);
+  DAT_14062cfa0 =
+       FUN_1402c46d0("cg_invalidCmdHintBlinkInterval",600,1,0x7fffffff,uVar4,
+                     "Blink rate of an invalid command hint");
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),0x44);
+  DAT_14062ceb8 =
+       FUN_1402c4650("vehHelicopterFreeLookReleaseSpeed",0,0,uVar8,uVar5,
+                     "The rate that the player\'s view moves back to center when freelook is released"
+                    );
+  DAT_14062cec0 =
+       FUN_1402c43f0("hud_showStance",1,0x40,"When true, allow player\'s stance indicator to draw.")
+  ;
+  DAT_14062cec8 =
+       FUN_1402c43f0("hud_drawHUD",1,0x40,"Draw HUD elements. Controlled from non-UI script");
+  DAT_14062ced0 =
+       FUN_1402c43f0("hud_missionFailed",0,0x40,
+                     "Intended to be set by script and referenced by hud.menu elements.");
+  DAT_14062ced8 =
+       FUN_1402c43f0("friendlyNameFontObjective",1,0,"Use the objective font for friendly prints.");
+  uVar6 = DAT_1403e3e64;
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cee0 =
+       FUN_1402c4650("friendlyNameFontSize",DAT_1403e5250,DAT_1403e3e64,uVar3,uVar5,
+                     "Fontsize of the popup friendly names.");
+  pcVar11 = "Fontsize of the popup friendly names, in splitscreen.";
+  uVar5 = uVar5 & 0xffffffff00000000;
+  _DAT_14062cee8 =
+       FUN_1402c4650("friendlyNameFontSizeSplitscreen",uVar7,uVar6,uVar3,uVar5,
+                     "Fontsize of the popup friendly names, in splitscreen.");
+  uVar8 = DAT_1403e9e5c;
+  uVar10 = DAT_1403e8e2c;
+  uVar13 = CONCAT44(uVar14,uVar1);
+  uVar12 = (ulonglong)pcVar11 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)(uVar5 >> 0x20),DAT_1403e8e2c);
+  DAT_14062cef0 =
+       FUN_1402c4dd0("friendlyNameFontColor",DAT_1403e9e5c,uVar1,DAT_1403e9e5c,uVar4,uVar12,uVar13,0
+                     ,&DAT_1403e6bdb);
+  uVar13 = CONCAT44((int)((ulonglong)uVar13 >> 0x20),uVar1);
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062cef8 =
+       FUN_1402c4dd0("friendlyNameFontGlowColor",0,DAT_1403e5250,0,uVar4,uVar12,uVar13,0,
+                     &DAT_1403e6bdb);
+  uVar13 = CONCAT44((int)((ulonglong)uVar13 >> 0x20),uVar1);
+  uVar12 = uVar12 & 0xffffffff00000000;
+  uVar4 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar10);
+  DAT_14062cf00 =
+       FUN_1402c4dd0("hostileNameFontColor",uVar1,uVar8,uVar8,uVar4,uVar12,uVar13,0,&DAT_1403e6bdb);
+  uVar13 = CONCAT44((int)((ulonglong)uVar13 >> 0x20),uVar1);
+  uVar5 = CONCAT44((int)((ulonglong)uVar4 >> 0x20),uVar1);
+  DAT_14062cf08 =
+       FUN_1402c4dd0("hostileNameFontGlowColor",uVar2,0,0,uVar5,uVar12 & 0xffffffff00000000,uVar13,0
+                     ,&DAT_1403e6bdb);
+  uVar10 = (undefined4)((ulonglong)uVar13 >> 0x20);
+  uVar5 = uVar5 & 0xffffffff00000000;
+  DAT_14062cf10 =
+       FUN_1402c4650("coopNameFontSize",uVar7,uVar6,uVar3,uVar5,
+                     "Fontsize of the coop friendly names.");
+  pcVar11 = "Fontsize of the coop friendly names.";
+  _DAT_14062cf18 =
+       FUN_1402c4650("coopNameFontSizeSplitscreen",uVar1,uVar6,uVar3,uVar5 & 0xffffffff00000000,
+                     "Fontsize of the coop friendly names.");
+  uVar5 = (ulonglong)pcVar11 & 0xffffffff00000000;
+  DAT_14062cf20 =
+       FUN_1402c4dd0("cg_ColorBlind_EnemyTeam",uVar1,uVar7,0,uVar1,uVar5,CONCAT44(uVar10,uVar1),0,
+                     "Enemy team color for color blind people");
+  DAT_14062cf28 =
+       FUN_1402c4dd0("cg_ColorBlind_MyTeam",DAT_1403e9dec,uVar1,uVar1,uVar1,
+                     uVar5 & 0xffffffff00000000,uVar1,0,"Player team color for color blind people");
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402a1020 @ 1402a1020
+----------------------------------------------------------------
+
+void FUN_1402a1020(longlong param_1,undefined8 param_2,longlong *param_3)
+
+{
+  int iVar1;
+  int iVar2;
+  char *pcVar3;
+  char *pcVar4;
+  longlong *plVar5;
+  undefined1 local_408 [1024];
+  
+  pcVar3 = (char *)FUN_1402c9c50(param_3);
+  if (*param_3 != 0) {
+    if ((*pcVar3 != '@') || (pcVar4 = (char *)FUN_14028a680(pcVar3 + 1), pcVar4 == (char *)0x0)) {
+      pcVar4 = pcVar3;
+    }
+    FUN_1402caa00(local_408,pcVar4,0x400);
+    iVar1 = FUN_1402c3b10("cl_paused");
+    if ((iVar1 != 0) && (iVar1 = 0, 0 < *(int *)(param_1 + 0x1438))) {
+      plVar5 = (longlong *)(param_1 + 0x38);
+      do {
+        iVar2 = FUN_1402ca760(*(undefined8 *)(*plVar5 + 8),local_408);
+        if (iVar2 == 0) {
+          if (*(longlong *)(param_1 + 0x38 + (longlong)iVar1 * 8) == 0) {
+            return;
+          }
+          FUN_1402acc20(param_1);
+          return;
+        }
+        iVar1 = iVar1 + 1;
+        plVar5 = plVar5 + 1;
+      } while (iVar1 < *(int *)(param_1 + 0x1438));
+    }
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1402a0f50 @ 1402a0f50
+----------------------------------------------------------------
+
+void FUN_1402a0f50(longlong param_1,undefined8 param_2,longlong *param_3)
+
+{
+  longlong lVar1;
+  int iVar2;
+  int iVar3;
+  char *pcVar4;
+  char *pcVar5;
+  longlong *plVar6;
+  undefined1 local_408 [1024];
+  
+  pcVar4 = (char *)FUN_1402c9c50(param_3);
+  if (*param_3 != 0) {
+    if ((*pcVar4 != '@') || (pcVar5 = (char *)FUN_14028a680(pcVar4 + 1), pcVar5 == (char *)0x0)) {
+      pcVar5 = pcVar4;
+    }
+    FUN_1402caa00(local_408,pcVar5,0x400);
+    iVar2 = FUN_1402c3b10("cl_paused");
+    if ((iVar2 != 0) && (iVar2 = 0, 0 < *(int *)(param_1 + 0x1438))) {
+      plVar6 = (longlong *)(param_1 + 0x38);
+      do {
+        iVar3 = FUN_1402ca760(*(undefined8 *)(*plVar6 + 8),local_408);
+        if (iVar3 == 0) {
+          lVar1 = *(longlong *)(param_1 + 0x38 + (longlong)iVar2 * 8);
+          if (lVar1 == 0) {
+            return;
+          }
+          FUN_1402ad560(param_1,lVar1,0);
+          return;
+        }
+        iVar2 = iVar2 + 1;
+        plVar6 = plVar6 + 1;
+      } while (iVar2 < *(int *)(param_1 + 0x1438));
+    }
+  }
+  return;
+}
+
+
+

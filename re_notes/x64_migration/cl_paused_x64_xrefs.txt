@@ -1,0 +1,18 @@
+STRING @ 1403ee240: "cl_paused"
+  REF #1: from 14029fa2f in FUN_14029fa20 @ 14029fa20
+  REF #2: from 14029f6f5 in FUN_14029f3f0 @ 14029f3f0
+  REF #3: from 14029f66e in FUN_14029f3f0 @ 14029f3f0
+  REF #4: from 14029f45e in FUN_14029f3f0 @ 14029f3f0
+  REF #5: from 14023da0d in FUN_14023d890 @ 14023d890
+  REF #6: from 14029e47a in FUN_14029dfd0 @ 14029dfd0
+  REF #7: from 14029e52d in FUN_14029dfd0 @ 14029dfd0
+  REF #8: from 14023ca04 in FUN_14023c970 @ 14023c970
+  REF #9: from 14029cc63 in FUN_14029cc50 @ 14029cc50
+  REF #10: from 14029cc93 in FUN_14029cc50 @ 14029cc50
+  REF #11: from 14029cce3 in FUN_14029ccb0 @ 14029ccb0
+  REF #12: from 14029cd20 in FUN_14029ccb0 @ 14029ccb0
+  REF #13: from 14029bb8a in FUN_14029baa0 @ 14029baa0
+  REF #14: from 14004b5de in FUN_14004a870 @ 14004a870
+  REF #15: from 1402a1076 in FUN_1402a1020 @ 1402a1020
+  REF #16: from 1402a0fa6 in FUN_1402a0f50 @ 1402a0f50
+
