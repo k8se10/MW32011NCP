@@ -1034,29 +1034,33 @@ struct ModConfig
     // existing at all.
     bool pluginsEnabled = false;
 
-    // [Experimental] SkipRedundantShadowActivationX64 (2026-09-26, issue #4's
-    // render-view-activator regression -- known_issues_x64.md). STRICTLY
-    // OPT-IN, OFF by default. x86 gates its own per-light shadow-activation
-    // call (FUN_0049bf50, reached from FUN_00698f10) behind a real hardware-
-    // capability probe (DAT_021d35f4, confirmed to be the classic D3D9 "NULL
-    // render-target" hardware shadow-map trick, true on virtually any real
-    // modern GPU) -- x64's exact structural counterpart (FUN_140196ad0)
-    // calls the activator (FUN_1401dfd80) UNCONDITIONALLY, no gate at all.
-    // Live-captured data confirmed this specific call site produces the
-    // dominant 6/7-alternating transition storm during the worst observed
-    // frames. This toggle replicates x86's own capability check once at
-    // device-creation (the exact same read-only probe already shipped as
-    // [null-rt-shadow-cap-diag] in Hook_CreateDevice) and, when both the
-    // check reports "capable" AND this toggle is on, skips forwarding this
-    // ONE specific activator call (identified via its own known, signature-
-    // scanned return address -- every other caller of the activator is
-    // completely unaffected). NOT yet live-tested -- this changes real
-    // native rendering behavior (skips a per-light shadow-view reactivation)
-    // rather than just adding a diagnostic, so it ships off by default until
-    // a real playtest confirms shadows still render correctly with it on.
-    // See Hook_RenderViewSelectDiag's own comment (analog_input_hooks_x64.cpp)
-    // for the full mechanism.
-    bool skipRedundantShadowActivationX64 = false;
+    // [Video] SkipRedundantShadowActivation (2026-09-26, issue #4's real
+    // render-view-activator regression -- known_issues_x64.md). GRADUATED
+    // FROM [Experimental] the same day, now ON by default -- x86 gates its
+    // own per-light shadow-activation call (FUN_0049bf50, reached from
+    // FUN_00698f10) behind a real hardware-capability probe (DAT_021d35f4,
+    // confirmed to be the classic D3D9 "NULL render-target" hardware
+    // shadow-map trick, true on virtually any real modern GPU) -- x64's
+    // exact structural counterpart (FUN_140196ad0) calls the activator
+    // (FUN_1401dfd80) UNCONDITIONALLY, no gate at all. This toggle
+    // replicates x86's own capability check once at device-creation (the
+    // same read-only probe shipped as [null-rt-shadow-cap-diag] in
+    // Hook_CreateDevice) and, when the check reports "capable," skips
+    // forwarding this ONE specific activator call (identified via its own
+    // known, signature-scanned return address -- every other one of the
+    // activator's real callers is completely unaffected). LIVE-CONFIRMED
+    // the same day, real playtest: 30->40fps on an intensive repro mission
+    // (200% render scale, full visual-enhancement suite), 17->27fps on the
+    // pause menu itself (zero simulation running -- rules out a content-
+    // cost explanation), and direct confirmation shadows still render
+    // correctly ("visuals looked better if anything, shadows looked
+    // better"). Still real, native rendering-behavior-changing code -- kept
+    // a config toggle (not made unconditional/removed) rather than treated
+    // as fully proven, since it's only been confirmed on one machine across
+    // two scenarios so far; a player who ever suspects a shadow regression
+    // can turn this off without a recompile. See Hook_RenderViewSelectDiag's
+    // own comment (analog_input_hooks_x64.cpp) for the full mechanism.
+    bool skipRedundantShadowActivationX64 = true;
 
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton

@@ -1360,7 +1360,6 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "BindResolverGlyphSubstitution", g_modConfig.bindResolverGlyphSubstitution);
     ReadBool(path, "Experimental", "HudFontIdLogging", g_modConfig.hudFontIdLogging);
     ReadBool(path, "Experimental", "HudFontIdLoggingX64", g_modConfig.hudFontIdLoggingX64);
-    ReadBool(path, "Experimental", "SkipRedundantShadowActivationX64", g_modConfig.skipRedundantShadowActivationX64);
     ReadBool(path, "Experimental", "UnboundedDevLog", g_modConfig.unboundedDevLog);
     ReadBool(path, "Experimental", "HudGlyphPositionLogging", g_modConfig.hudGlyphPositionLogging);
     ReadBool(path, "Experimental", "ListItemPositionLogging", g_modConfig.listItemPositionLogging);
@@ -1408,6 +1407,7 @@ void LoadModConfig()
         g_modConfig.projectionMatrixJitterProbeCandidateIndex = v;
     }
     ReadBool(path, "Video", "ProjectionJitterEnabled", g_modConfig.projectionJitterEnabled);
+    ReadBool(path, "Video", "SkipRedundantShadowActivation", g_modConfig.skipRedundantShadowActivationX64);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
