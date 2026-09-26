@@ -576,11 +576,10 @@ Campaign/Survival only.
 
 ### Support policy
 
-| | Status |
-|---|---|
-| **Distribution channel** | Steam retail only. This project has never distributed or supported any other channel, and — now that all 4 tracked netcode vulnerabilities are confirmed resolved (see [Security](#security-netcode-vulnerability-patches)) — there's no remaining reason to reconsider that, so expect this to stay Steam-only going forward. |
-| **`-x86` (32-bit) line** | Fully discontinued (2026-09-03) and **not distributed** — every prior GitHub Release and the Nexus page are archived, not just marked unsupported. This project will not rebuild, re-release, or resurrect the `-x86` line under any name, branch, or "legacy support" framing. `legacy-x86-docs/` is reference material for how it worked, not an offer to bring it back. |
-| **Cracked / pirated copies** | **Never supported, under any circumstances**, on either architecture. This project requires a legitimate Steam copy of the game — see [Installation](#installation). Reports against a non-Steam or cracked install will not be investigated. |
+Steam retail only, `-x86` permanently discontinued (not just unsupported —
+it will not be rebuilt or re-released under any name or framing), and
+cracked/pirated copies are never supported on either architecture. Full
+statement, kept current in one place: [`LTS_POLICY.md`](LTS_POLICY.md#support-scope).
 
 ## Installation
 

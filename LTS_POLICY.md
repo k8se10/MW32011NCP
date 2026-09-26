@@ -15,6 +15,30 @@ x86→x64 recompile — see [`README.md`](README.md) and
 record. The process below governs the `-x64` line going forward, starting
 fresh from its first shipped release.
 
+## Support scope
+
+This is the authoritative statement of what this project does and does not
+support — every other doc (`README.md` included) should point here rather
+than restate it, so there's one place to keep current.
+
+- **Distribution channel: Steam retail only.** This project has never
+  distributed or supported any other channel. Netcode security was part of
+  the original case for eventually considering broader distribution, but
+  with all 4 tracked vulnerabilities now confirmed resolved (see
+  [`security/`](security/)), that reason no longer applies — expect this
+  project to stay Steam-only for the foreseeable future, not just today.
+- **The `-x86` (32-bit) line is permanently discontinued, not just
+  unsupported.** Every prior GitHub Release and the Nexus page are archived,
+  not merely marked legacy. This project will not rebuild, re-release, or
+  bring the `-x86` line back under any name, branch, or "legacy support"
+  framing — `legacy-x86-docs/` exists as a historical record of how it
+  worked, not as an offer to revive it.
+- **Cracked or pirated copies of the game are never supported, under any
+  circumstances, on either architecture.** A legitimate Steam copy is
+  required to use this project at all — see `README.md`'s Installation
+  section. Reports against a non-Steam or cracked install are not
+  investigated.
+
 ## Why an LTS line exists at all
 
 Most releases in this project's `0.x` line are still active development —
