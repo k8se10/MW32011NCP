@@ -6275,6 +6275,23 @@ constexpr int kPerLightShadowDispatchCallOffset = 0x29; // offset of the CALL op
 constexpr int kPerLightShadowDispatchCallLen = 5;       // E8 + rel32
 void* g_perLightShadowDispatchReturnAddr = nullptr;     // resolved once at startup; nullptr = unresolved/unknown, never matches
 
+// MW32011NCP, 2026-09-26: issue #4 "point (b)" -- see
+// skipRedundantMasterSequencerReactivationX64's own comment in mod_config.h
+// for the full context. Anchors FUN_14018a240's own specific
+// FUN_1401dfd80(pass=1) call site (confirmed via decompile + FindCallersAt.java
+// to be the real, single, exact call at runtime address 0x14018a437; return
+// address = match address + 0x1B, the signature's own total length, since
+// the signature is built to end exactly at the CALL instruction's own last
+// byte). Only the RIP-relative MOVUPS load (real address-dependent) and the
+// CALL's own rel32 are wildcarded -- the MOV EDX,1 immediate and the two
+// RSP-relative instructions (LEA/MOVAPS) are literal, not address-dependent
+// (same established false-positive class this file's own DumpSigBytes.java
+// comments already document).
+constexpr const char* kMasterSequencerReactivationSignature =
+    "0F 10 05 ?? ?? ?? ?? BA 01 00 00 00 48 8D 4C 24 20 0F 29 44 24 20 E8 ?? ?? ?? ??";
+constexpr int kMasterSequencerReactivationSigLen = 27; // return addr = match + this
+void* g_masterSequencerReactivationReturnAddr = nullptr; // resolved once at startup; nullptr = unresolved, never matches
+
 // Real per-frame fire-SEQUENCE tracking, 2026-09-25 -- CONFIRMED, real,
 // quantitative result from the plain-count version of this diagnostic
 // (317 real samples): 100+fps frames averaged 19.1 fires/frame, 0-19fps
@@ -6331,6 +6348,27 @@ void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
             }
             return; // deliberately does NOT call g_origRenderViewSelect -- this is the fix itself
         }
+    }
+
+    // [Experimental] SkipRedundantMasterSequencerReactivation -- see its own
+    // comment above kMasterSequencerReactivationSignature and mod_config.h.
+    // Unlike the shadow-activation skip above, this call has no x86-side
+    // capability check to replicate -- x86's structurally identical
+    // counterpart position never calls the activator here at all, so this
+    // is an unconditional skip whenever the toggle is on and the return
+    // address genuinely matches this one specific site.
+    if (g_modConfig.skipRedundantMasterSequencerReactivationX64 &&
+        g_masterSequencerReactivationReturnAddr != nullptr &&
+        _ReturnAddress() == g_masterSequencerReactivationReturnAddr) {
+        static long long s_seqSkipCount = 0;
+        ++s_seqSkipCount;
+        if (s_seqSkipCount <= 5 || (s_seqSkipCount % 500) == 0) {
+            char skipBuf[160];
+            sprintf_s(skipBuf, "[x64-seq-reactivation-skip] skipped redundant master-sequencer "
+                "pass-1 reactivation (view=%d, skip #%lld)", param_2, s_seqSkipCount);
+            LogFromController(skipBuf);
+        }
+        return; // deliberately does NOT call g_origRenderViewSelect -- this is the fix itself
     }
 
     g_origRenderViewSelect(param_1, param_2);
@@ -9624,6 +9662,28 @@ void InstallAnalogInputHooksX64()
                 static_cast<unsigned long long>(r.address),
                 reinterpret_cast<unsigned long long>(g_perLightShadowDispatchReturnAddr),
                 g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+    {
+        // Resolve FUN_14018a240's own known call site into the activator, once,
+        // for SkipRedundantMasterSequencerReactivationX64's own gate above --
+        // same non-hooking resolve-only pattern as the shadow-activation block
+        // directly above. Never fatal if this doesn't resolve.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMasterSequencerReactivationSignature);
+        if (!r.found) {
+            LogFromController("[x64-seq-reactivation-skip] FATAL: FUN_14018a240 call-site signature did not "
+                "resolve -- SkipRedundantMasterSequencerReactivationX64 will have no effect this session "
+                "even if enabled");
+        } else {
+            g_masterSequencerReactivationReturnAddr = reinterpret_cast<void*>(
+                r.address + kMasterSequencerReactivationSigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-seq-reactivation-skip] FUN_14018a240 call site resolved @ 0x%llX, expected "
+                "return addr 0x%llX (SkipRedundantMasterSequencerReactivationX64=%d)",
+                static_cast<unsigned long long>(r.address),
+                reinterpret_cast<unsigned long long>(g_masterSequencerReactivationReturnAddr),
+                g_modConfig.skipRedundantMasterSequencerReactivationX64 ? 1 : 0);
             LogFromController(buf);
         }
     }

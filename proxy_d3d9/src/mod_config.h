@@ -1144,6 +1144,32 @@ struct ModConfig
     // touches memory the real function wouldn't have touched anyway).
     bool skipRedundantConsoleFontInitX64 = true;
 
+    // [Experimental] SkipRedundantMasterSequencerReactivation (2026-09-26,
+    // issue #4's "point (b)" finding -- known_issues_x64.md). x64's master
+    // per-frame sequencer (FUN_14018a240) re-activates render view/pass 1
+    // via a full FUN_1401dfd80(pass=1) activator call at a specific
+    // structural position (right before the final overlay-list walk and
+    // EndScene) -- confirmed, via a full x86 chain trace, to be a genuine,
+    // UNCONDITIONAL extra call: x86's structurally identical counterpart at
+    // this exact position (FUN_004e0ab0, called from the same place in the
+    // same chain) only refreshes the already-bound view's viewport rect and
+    // NEVER re-invokes the activator there at all. Not gated behind
+    // anything on x86 -- there's no capability check to replicate here
+    // (unlike SkipRedundantShadowActivation above), this call simply
+    // doesn't exist in x86's equivalent position, full stop. Fix: the
+    // shared render-view-activator hook (Hook_RenderViewSelectDiag) also
+    // checks the caller's real return address against this exact call
+    // site's own signature-resolved address (0x14018a437's own return
+    // point, +0x1B into a 27-byte anchor signature) and skips forwarding
+    // ONLY there when this toggle is on -- every other one of the
+    // activator's 40 real call sites, including the already-separately-
+    // gated per-light one, is completely unaffected. Experimental / OFF by
+    // default -- a real native-behavior change, not yet live-tested; the
+    // player needs to explicitly opt in and confirm no visual regression
+    // (a stale view/pass-1 state) during the same repro this whole
+    // investigation has used.
+    bool skipRedundantMasterSequencerReactivationX64 = false;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
