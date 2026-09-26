@@ -376,6 +376,56 @@ void __fastcall Hook_SunShadowDispatch(long long param1)
     g_realSunShadowDispatch(param1);
 }
 
+// MW32011NCP, 2026-09-26: real x64 console/UI font-init function
+// (FUN_14008191a in the reference Ghidra project -- loads "fonts/consoleFont",
+// matches x86's own FUN_0041f060 logic-for-logic exactly, SAME string). Found
+// as one of the two distinct real caller chains behind issue #4's render-
+// thread main-thread-fallback diagnostic (both captures of this specific
+// chain landed in frames saturated with glyph/HUD-hint overlay activity --
+// [manual-glyph-diag]/[menuhint-trace]/[x64-readyup] all firing the same
+// frame, one occurrence on the main menu itself at 6fps). Direct user
+// correction/confirmation: "console font is surely the way the game is
+// supposed to build glyphs and DID NOT exist on x86" -- static diff confirmed
+// the function and its string DO exist on x86 (FUN_0041f060, identical
+// logic), but x86 reaches it via 5 real, ordinary, statically-visible direct
+// calls (UNCONDITIONAL_CALL) -- x64 has ZERO static references anywhere
+// (no direct CALL, no LEA, no qword-table entry -- FindQwordValueOccurrences
+// came back empty across every section), despite being LIVE-CONFIRMED to
+// actually execute via this exact hook's own future captures. This is real,
+// concrete evidence x64 reaches this function through some indirect
+// mechanism (a computed/multi-hop function pointer, plausibly the per-frame
+// opcode/command-dispatch table this project's own renderer_architecture_map.md
+// already mapped) rather than x86's plain direct-call graph -- a genuine
+// structural difference in HOW this gets invoked, not just where. THIS IS A
+// READ-ONLY DIAGNOSTIC HOOK (log-and-call-through, zero behavior change) --
+// captures the real caller via _ReturnAddress() at hook entry (safe
+// regardless of the hooked function's own internal stack usage, since
+// MinHook's trampoline runs after the return address is already on the
+// stack) since static analysis couldn't find the call site at all.
+constexpr const char* kConsoleFontInitSignature =
+    "83 3D ?? ?? ?? ?? 00 74 ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? "
+    "BA 03 00 00 00 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? "
+    "BA 03 00 00 00 48 89 05 ?? ?? ?? ??";
+
+using ConsoleFontInitFn = void(__fastcall*)();
+ConsoleFontInitFn g_realConsoleFontInit = nullptr;
+long long g_consoleFontInitFireCount = 0;
+
+uintptr_t ToGhidraAddressX64(void* runtimeAddr); // defined below, used here first
+
+void __fastcall Hook_ConsoleFontInit()
+{
+    ++g_consoleFontInitFireCount;
+    uintptr_t callerRuntime = reinterpret_cast<uintptr_t>(_ReturnAddress());
+    uintptr_t callerGhidra = ToGhidraAddressX64(reinterpret_cast<void*>(callerRuntime));
+    char buf[192];
+    sprintf_s(buf, "[x64-consolefont-diag] fire #%lld: real caller=0x%llX tick=%llu",
+               g_consoleFontInitFireCount, static_cast<unsigned long long>(callerGhidra),
+               static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    g_realConsoleFontInit();
+}
+
 // MW32011NCP, 2026-09-24: the real x64 projection-matrix-build function
 // (FUN_1401e13e0 in the reference Ghidra project) -- the jitter-injection
 // hook point the DLSS/Streamline and FSR 3.1 roadmaps both need (see
@@ -8395,6 +8445,43 @@ void InstallAnalogInputHooksX64()
                             "'[x64-sunshadow-diag] dispatch fire' on a sun-ray map to see which path "
                             "(fast/slow) native code is actually taking, and how often this fires.");
                     }
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: console/UI font-init caller diagnostic, see
+        // kConsoleFontInitSignature's own comment above for the full context
+        // (the render-thread-fallback caller-chain investigation, issue #4).
+        // Read-only, log-and-call-through, zero behavior change. Captures the
+        // real caller via _ReturnAddress() since static analysis found zero
+        // references to this function anywhere in the binary.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kConsoleFontInitSignature);
+        if (!r.found) {
+            LogFromController("[x64-consolefont-diag] FATAL: console-font-init signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ConsoleFontInit),
+                                                    reinterpret_cast<void**>(&g_realConsoleFontInit));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-consolefont-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-consolefont-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-consolefont-diag] console-font-init caller diagnostic hook "
+                        "installed and enabled -- log-and-call-through only, zero behavior change. Watch the "
+                        "log for '[x64-consolefont-diag] fire' to see the real native caller address, since "
+                        "static analysis found zero references to this function anywhere in the binary.");
                 }
             }
         }
