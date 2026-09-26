@@ -11502,3 +11502,45 @@ Build-verified (x64 Release, 0 errors, `d3d9.dll` timestamp confirmed changed: 2
 Dome does **~2.4x the real render-pass transitions per frame** Underground does -- and `realTransitions` specifically counts genuine work, not redundant no-ops (the activator's own dedup, confirmed earlier this session, already filters same-pass repeats before this counter increments). The ~3.2x FPS gap tracks closely with the ~2.4x genuine-workload gap -- a real, direct, content-driven correlation.
 
 **Conclusion**: this is a fresh, live-tagged confirmation of a finding this project already made much earlier in this same issue -- real per-light/shadow-caster transition volume tracks frametime almost linearly. Dome (open, sunnier, more simultaneously-active lights) genuinely demands more real per-pass rendering work than Underground (enclosed, fewer active lights), and render scale then multiplies that already-heavier baseline further, producing the disproportionate cost at higher scale specifically on content-heavy maps. Not this project's own hook (the render-res override fires once, confirmed earlier), not the consumer fan-out of the scaled-resolution globals (confirmed near-identical to x86), not occlusion/LOD screen-coverage (confirmed no measurable effect) -- genuine, content-driven native engine cost. This closes the "is it a mod-side bug" branch of this investigation with a real, quantified answer rather than leaving it as an open question.
+
+### "THE 67 BUG" -- the real source of the dominant view=6/7 alternation found and traced to a render-scale-coupled iterative blur/downsample loop, then independently confirmed to also explain the pause-fps penalty
+
+**Status: Real mechanism found and named ("the 67 bug," user's own naming). Root cause confirmed genuine and render-scale-coupled; a further, independent live confirmation ties the same mechanism to the pause-fps finding. Not yet fixed -- fix work begins next.** Direct user instinct, after the occlusion/LOD experiment came back negative: "im thinking its mod side, the way we scale the window matchs very clsoe to what x86 did but the binary for x64 dooes it SO differently, maybe we need to hook in later as the point were hooking at is potentially upscaling all 40 viewports not just the original x86 version." Then, once the raw per-frame view-index sequences (`[x64-renderview-seq]`, already-existing diagnostic infrastructure) were read directly: two view indices, `6` and `7`, dominate completely -- 11,563 and 10,167 occurrences respectively across 610 captured slow frames on Dome alone (avg ~19 and ~17 per frame), alternating in long unbroken chains. Direct user framing once the pattern was seen: "no way activision trolled everyone with the broken '67 meme' code" / "im naming this regression the 67 bug."
+
+**Ruled out first**: the already-shipped `SkipRedundantShadowActivation` fix (this issue's own earlier "6→7→6→7 alternation" finding, 2026-09-15) turned out, on live re-inspection, to only ever skip `view=10`/`11` in practice (13 total skips this session, all 10 or 11) -- a real, previously-uncaught mismatch between that entry's own prose description and what the shipped fix actually targets. The dominant `6`/`7` volume was never covered by it at all.
+
+**Real source, traced via exhaustive examination of all 40 real static call sites into the render-view activator** (`FUN_1401dfd80`) -- literal-value search alone missed it (the value is computed, not a hardcoded constant at its own call site) until every site's actual argument expression was read directly:
+
+```c
+// FUN_14018eec0 -- a real do{}while loop, trip count *param_1 set by its caller
+do {
+    if (uVar7 == 0) { /* first iteration: use the "main" pass, param_1[0x484] */ }
+    if (uVar7 == *param_1 - 1U) { iVar5 = param_1[0x484]; }   // last iteration: main pass again
+    else { iVar5 = (uVar7 & 1) + 6; }                          // EVERY MIDDLE iteration: 6 or 7, alternating
+    FUN_1401dfd80(&local_58, iVar5);
+    ...
+} while ((int)uVar7 < iVar5);
+```
+
+`iVar5 = (uVar7 & 1) + 6` is the literal source -- a strict per-iteration parity alternation between pass 6 and pass 7, for every iteration except the first and last. The trip count itself (`*param_1`) is computed by the caller, `FUN_14018f190`, as a real "how many blur sub-steps are needed" value:
+
+```c
+local_1228[0] = FUN_14018f710(
+    ((float)DAT_141888674 * param_1) / DAT_1403eba20) * _DAT_14188869c, ...);
+FUN_14018eec0(local_1228, param_4);   // trip count = local_1228[0]
+```
+
+**`DAT_141888674` is `reqH` -- the exact unclamped requested-height global this project's own `InternalRenderScalePercent` override (`Hook_RenderResCompute`) writes into.** This is a genuine, direct, multiplicative coupling between render scale and the blur/downsample sub-pass count: a real "effective blur radius in pixels" calculation that scales with the requested render resolution, driving a real iterative separable-blur chain whose step count grows with render scale by design -- not a bug in the classic sense, but a real, load-bearing driver of exactly the disproportionate cost reported. This is a genuinely different mechanism from the already-ruled-out occlusion/LOD screen-coverage theory. The same blur-substep utility (`FUN_14018eec0`/`FUN_14018f190`) is shared by at least two distinct real effects: SSAO's downsample chain (`FUN_140196f50`, params 12/13) and the cascade-shadow softening pass (`FUN_1401949c0`, params 9/8) -- a generic, reused primitive, not something narrowly scoped to one feature.
+
+**Independent live confirmation, same day, that this also explains the "pause runs measurably worse than live gameplay" finding**: direct user connection -- "also colud esplain pause fps." First attempt used the existing `cl_paused` dvar read and found it always `0` even during a real, visible pause -- direct user report: "cl paused flag doesnt work on this build." Root cause: `cl_paused` genuinely is never set by this game's co-op/Survival mode (consistent with real CoD design -- one player pausing can't be allowed to freeze the world for every other player in the party, and this appears to hold even in solo Survival since it shares the same underlying game-mode code), not a broken read. Swapped the diagnostic to the already-established, more reliable `IsMenuActiveX64_Exported()` (the real native "any menu is open" bit, already used to gate FSR/motion blur elsewhere in this project) -- renamed the log field from `clPaused` to `menuActive` to match.
+
+**Real, quantified, four-way cross-tab** (map x pause state, same session, both maps at the same render scale):
+
+| | Live (`menuActive=0`) | Paused (`menuActive=1`) |
+|---|---|---|
+| Underground | 73.5 fps, 14.5 real transitions/frame (n=95) | 26.3 fps, 43.9 real transitions/frame (n=162) |
+| Dome | 23.3 fps, 47.2 real transitions/frame (n=574) | 15.6 fps, 75.4 real transitions/frame (n=138) |
+
+Two real, independent, compounding cost drivers, both now confirmed with hard numbers from the same session: (1) map content (already established -- Dome does ~3.25x Underground's real transitions live, ~1.7x while paused), and (2) pause itself -- pausing roughly **triples** Underground's real transition count (14.5 -> 43.9) and pushes Dome's up **~1.6x** (47.2 -> 75.4), a genuine, independent cost stacking on top of the content-driven one. Underground's proportionally larger pause penalty is consistent with Dome's live baseline already being heavy enough that the same fixed pause-overhead is a smaller relative fraction on top of it. This is a fresh, cross-map, quantified confirmation of this issue's own earlier, single-map "pause reruns part of the shadow-dispatch loop redundantly" finding -- now shown to be broader than just that one mechanism, and directly tied to the same render-view-activator system driving the render-scale cost.
+
+**Real next step, fix work begins**: trace `FUN_14018f710` (the actual "compute step count from radius" function) to determine whether its formula is a reasonable, native-standard blur-quality/step-count tradeoff, or whether it's more conservative (more steps than the visual result actually needs) than necessary -- a genuine fix candidate if so. Separately, understand why the SAME blur/downsample chain runs MORE while paused (matching but likely not limited to the already-documented "shadow dispatch reruns twice during pause" mechanism) -- a second, real, independently fixable angle.
