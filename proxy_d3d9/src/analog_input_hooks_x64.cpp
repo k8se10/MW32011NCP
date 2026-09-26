@@ -6295,6 +6295,53 @@ void __fastcall Hook_OcclusionScreenArea(long long param_1)
     }
 }
 
+// MW32011NCP, 2026-09-26: "the 67 bug" pause-blur-step-cap fix, issue #4.
+// Direct user insight: "in the pause menu its laregly redundant there
+// already is a gaussian blur in the menu over the dimmed viewport." The
+// real iterative separable-blur/downsample loop (`FUN_14018eec0`) behind
+// SSAO's downsample chain (`FUN_140196f50`) and the cascade-shadow
+// softening pass (`FUN_1401949c0`) has its real trip count computed by a
+// formula that scales with the render-scale-driven requested resolution
+// (`FUN_14018f190`/`FUN_14018f710` -- see this project's own known_issues_x64.md
+// "the 67 bug" entry for the full trace). Its own output already sits
+// underneath the pause menu's own separate blur+dim overlay, so reducing
+// its quality specifically while paused should be effectively invisible.
+// `param_1` here is the caller's own transient stack local holding the
+// real trip count -- capping it in place needs no restore afterward (it's
+// never read again once this call returns), unlike the reverb-wet-scale
+// experiment's shared-global case above. THIS IS A REAL, BEHAVIOR-
+// CHANGING EXPERIMENT (reduces real blur/SSAO/shadow-softening quality
+// while paused), not a read-only diagnostic -- gated behind
+// `pauseBlurStepCapX64` (0 = disabled, default) AND
+// `IsMenuActiveX64_Exported()`, so live gameplay is never affected
+// regardless of this value.
+constexpr const char* kBlurLoopSignature =
+    "40 56 48 81 EC 80 00 00 00 83 3D ?? ?? ?? ?? 00 48 8B F1 48 89 6C 24 78 "
+    "4C 89 64 24 68 4C 89 74 24 58 4C 8B F2";
+
+using BlurLoopFn = void(__fastcall*)(int*, long long);
+BlurLoopFn g_realBlurLoop = nullptr;
+
+extern "C" bool IsMenuActiveX64_Exported(); // defined later in this file
+
+void __fastcall Hook_PauseBlurStepCap(int* param1, long long param2)
+{
+    if (g_modConfig.pauseBlurStepCapX64 > 0 && param1 != nullptr) {
+#ifdef _WIN32
+        __try {
+            if (*param1 > g_modConfig.pauseBlurStepCapX64 && IsMenuActiveX64_Exported()) {
+                *param1 = g_modConfig.pauseBlurStepCapX64;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Nothing to do -- if this read/write faults, just fall through
+            // and call the real function with whatever it already had.
+        }
+#endif
+    }
+    g_realBlurLoop(param1, param2);
+}
+
 // ---- Motion blur's real x64 TRIGGER (2026-09-13) -- FUN_14018def0, the x64
 // equivalent of x86's FUN_00693ff0 ------------------------------------------------
 //
@@ -9150,6 +9197,44 @@ void InstallOcclusionLodScaleFixX64()
     LogFromController(buf);
 }
 
+// MW32011NCP, 2026-09-26: install for the "67 bug" pause-blur-step-cap
+// experiment, see Hook_PauseBlurStepCap's own comment above for the full
+// context. Function-start signature -- hook target is the match address
+// directly.
+void InstallPauseBlurStepCapX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kBlurLoopSignature);
+    if (!r.found) {
+        LogFromController("[x64-blur-cap] FATAL: blur-loop signature did not resolve -- "
+            "PauseBlurStepCap will have no effect this session");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_PauseBlurStepCap),
+                                            reinterpret_cast<void**>(&g_realBlurLoop));
+    if (createStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-blur-cap] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-blur-cap] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    char buf2[280];
+    sprintf_s(buf2, "[x64-blur-cap] PauseBlurStepCap hook installed and enabled (FUN_14018eec0) -- "
+        "cap=%d (0=disabled). When active AND the pause menu is open, caps the real blur/SSAO/"
+        "shadow-softening substep count -- never affects live gameplay.",
+        g_modConfig.pauseBlurStepCapX64);
+    LogFromController(buf2);
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -10292,6 +10377,12 @@ void InstallAnalogInputHooksX64()
     // gate at call time" convention) so flipping the config toggle live
     // doesn't require a relaunch.
     InstallOcclusionLodScaleFixX64();
+
+    // "The 67 bug" pause-blur-step-cap experiment -- see
+    // Hook_PauseBlurStepCap's own comment for the full context. OFF by
+    // default (pauseBlurStepCapX64=0); installed unconditionally so
+    // setting it live doesn't need a relaunch.
+    InstallPauseBlurStepCapX64();
 
     // In-level time-delta flag -- resolves g_inLevelFlag (one of FSR RCAS/motion
     // blur's two real safety gates on x64; the third, menu-active, is already

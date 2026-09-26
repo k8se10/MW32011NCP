@@ -1424,6 +1424,11 @@ void LoadModConfig()
     if (g_modConfig.reverbWetScaleX64 < 0.0f) g_modConfig.reverbWetScaleX64 = 0.0f;
     if (g_modConfig.reverbWetScaleX64 > 1.0f) g_modConfig.reverbWetScaleX64 = 1.0f;
     ReadBool(path, "Experimental", "OcclusionLodScaleFix", g_modConfig.occlusionLodScaleFixX64);
+    {
+        int v = GetPrivateProfileIntA("Experimental", "PauseBlurStepCap", g_modConfig.pauseBlurStepCapX64, path);
+        if (v < 0) v = 0;
+        g_modConfig.pauseBlurStepCapX64 = v;
+    }
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1454,7 +1459,7 @@ void LoadModConfig()
         "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d skipRedundantShadowActivationX64=%d "
         "skipRedundantConsoleFontInitX64=%d skipRedundantMasterSequencerReactivationX64=%d "
         "skipRedundantOrchestratorExtraCallsX64=%d skipRedundantScenePostfxGuaranteedCallsX64=%d "
-        "reverbWetScaleX64=%g occlusionLodScaleFixX64=%d",
+        "reverbWetScaleX64=%g occlusionLodScaleFixX64=%d pauseBlurStepCapX64=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1500,7 +1505,8 @@ void LoadModConfig()
         g_modConfig.skipRedundantOrchestratorExtraCallsX64 ? 1 : 0,
         g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64 ? 1 : 0,
         g_modConfig.reverbWetScaleX64,
-        g_modConfig.occlusionLodScaleFixX64 ? 1 : 0);
+        g_modConfig.occlusionLodScaleFixX64 ? 1 : 0,
+        g_modConfig.pauseBlurStepCapX64);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

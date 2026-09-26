@@ -1297,6 +1297,26 @@ struct ModConfig
     // theory is wrong). See known_issues_x64.md issue #4's newest round.
     bool occlusionLodScaleFixX64 = false;
 
+    // MW32011NCP, 2026-09-26: "the 67 bug" (issue #4) -- direct user
+    // insight: "in the pause menu its laregly redundant there already is a
+    // gaussian blur in the menu over the dimmed viewport." The real
+    // iterative separable-blur/downsample loop behind SSAO's downsample
+    // chain and the cascade-shadow softening pass (`FUN_14018eec0`, its
+    // real trip count computed from a formula that scales with the
+    // render-scale-driven requested resolution -- see
+    // Hook_PauseBlurStepCap's own comment in analog_input_hooks_x64.cpp)
+    // is genuinely wasted work while the pause menu is open: its real
+    // output already sits underneath the menu's own separate blur+dim
+    // overlay, so reducing its quality there is expected to be invisible.
+    // This caps the real trip count to this value ONLY while
+    // `IsMenuActiveX64_Exported()` is true -- live gameplay is completely
+    // unaffected regardless of this value. 0 = disabled (no cap, default).
+    // A real, positive value (e.g. 2) keeps the loop's own bookkeeping/
+    // state-tracking intact (still runs, just fewer iterations) rather
+    // than skipping the call outright, avoiding any risk of stale/
+    // uninitialized state for whatever later code might read from it.
+    int pauseBlurStepCapX64 = 0;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
