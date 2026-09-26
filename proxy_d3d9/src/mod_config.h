@@ -1170,6 +1170,47 @@ struct ModConfig
     // investigation has used.
     bool skipRedundantMasterSequencerReactivationX64 = false;
 
+    // [Experimental] SkipRedundantOrchestratorExtraCalls (2026-09-26, issue
+    // #4's "point (a)" finding -- known_issues_x64.md). x64's per-frame
+    // orchestrator (FUN_14018e0d0) makes 3-4 direct activator calls where
+    // x86's structurally identical counterpart (FUN_006942e0) makes exactly
+    // 2 -- confirmed via full decompile: the first two calls (a hardcoded
+    // pass-5 call, and a dynamic-pass call) match x86's own baseline
+    // exactly, but x64 has a real THIRD call (gated by
+    // `*(char*)(param_1+0x1b5)!=0`, no x86 equivalent found in FUN_006942e0's
+    // own body) and a FOURTH (gated by `*(int*)(lVar4+0x41a7c)!=0`, same).
+    // Both extra call sites' exact runtime addresses were confirmed via
+    // FindCallersAt.java + direct disassembly (0x14018e4b8 and 0x14018e637).
+    // Fix: extends the same shared activator hook the two toggles above
+    // already use, matching these two additional known return addresses and
+    // skipping forwarding only there. Experimental / OFF by default -- a
+    // real native-behavior change, not yet live-tested.
+    bool skipRedundantOrchestratorExtraCallsX64 = false;
+
+    // [Experimental] SkipRedundantScenePostfxGuaranteedCalls (2026-09-26,
+    // issue #4's "point (c)" finding -- known_issues_x64.md). x64's
+    // scene-wide post-effect function (FUN_1401939f0) makes exactly 2
+    // GUARANTEED, unconditional activator calls per invocation -- one at
+    // the very top of the function (before any content branch), one
+    // immediately before it returns -- confirmed via full decompile. Two
+    // independently-found x86 chains doing the equivalent visual work (a
+    // material-rebind path and a full DOF/color-grade/fog/lens-flare-
+    // equivalent postfx-setup batch, all 6 functions individually
+    // decompiled and confirmed) never call the activator at all for this
+    // work -- x86 achieves it via direct struct writes. This is the single
+    // largest confirmed real contributor of the three points found this
+    // session, since it fires unconditionally on every real invocation
+    // (present whether paused or live, independent of content). Both exact
+    // call sites' runtime addresses were confirmed via direct disassembly
+    // from the function's own real entry point (0x1401939f0, first call)
+    // and its real epilogue-adjacent block (0x14019410c, last call). Fix:
+    // extends the same shared activator hook. Experimental / OFF by
+    // default -- a real native-behavior change, not yet live-tested; this
+    // is the biggest remaining lever of the three, so extra care testing
+    // for visual regressions (bloom/glow/lens-flare/DOF-adjacent effects)
+    // is warranted before considering graduation.
+    bool skipRedundantScenePostfxGuaranteedCallsX64 = false;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real

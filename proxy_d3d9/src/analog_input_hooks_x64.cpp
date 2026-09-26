@@ -6292,6 +6292,55 @@ constexpr const char* kMasterSequencerReactivationSignature =
 constexpr int kMasterSequencerReactivationSigLen = 27; // return addr = match + this
 void* g_masterSequencerReactivationReturnAddr = nullptr; // resolved once at startup; nullptr = unresolved, never matches
 
+// MW32011NCP, 2026-09-26: issue #4 "point (a)" -- see
+// skipRedundantOrchestratorExtraCallsX64's own comment in mod_config.h for
+// the full context. Two exact call sites inside FUN_14018e0d0 (the per-
+// frame orchestrator), confirmed real via decompile + FindCallersAt.java +
+// direct disassembly. Anchored on real, distinct preceding context each
+// (a real struct-offset CMP for the first; a real 3-call preamble for the
+// second) so the two signatures can't collide with each other despite
+// sharing an identical final "MOVUPS/MOV EDX/LEA/MOVAPS/CALL" tail shape.
+constexpr const char* kOrchestratorExtraCallASignature =
+    "80 BE B5 01 00 00 00 74 47 8B 96 D0 09 00 00 48 8D 0D ?? ?? ?? ?? "
+    "E8 ?? ?? ?? ?? 0F 10 05 ?? ?? ?? ?? 8B 96 D0 09 00 00 48 8D 4D D0 "
+    "0F 29 45 D0 E8 ?? ?? ?? ??";
+constexpr int kOrchestratorExtraCallASigLen = 53; // return addr = match + this
+void* g_orchestratorExtraCallAReturnAddr = nullptr;
+
+constexpr const char* kOrchestratorExtraCallBSignature =
+    "E8 ?? ?? ?? ?? 4C 8B C6 48 8D 96 80 01 00 00 48 8D 0D ?? ?? ?? ?? "
+    "E8 ?? ?? ?? ?? 48 8D 96 50 01 00 00 48 8D 0D ?? ?? ?? ?? "
+    "E8 ?? ?? ?? ?? 0F 10 05 ?? ?? ?? ?? 8B 96 D0 09 00 00 48 8D 4D D0 "
+    "0F 29 45 D0 E8 ?? ?? ?? ??";
+constexpr int kOrchestratorExtraCallBSigLen = 72; // return addr = match + this
+void* g_orchestratorExtraCallBReturnAddr = nullptr;
+
+// MW32011NCP, 2026-09-26: issue #4 "point (c)" -- see
+// skipRedundantScenePostfxGuaranteedCallsX64's own comment in mod_config.h
+// for the full context. Two exact call sites inside FUN_1401939f0 (the
+// scene-wide post-effect function): the first is anchored at the function's
+// own real, unique entry-point prologue (guaranteed globally unique); the
+// second is anchored on a real struct-offset CMP a few instructions before
+// its own call, near the function's real epilogue.
+constexpr const char* kScenePostfxFirstCallSignature =
+    "48 8B C4 55 56 57 48 83 EC 70 0F 29 70 D8 0F B6 EA 48 89 58 10 "
+    "48 8D 91 40 03 00 00 4C 89 70 18 48 8B F9 0F 29 78 C8 48 8D 0D ?? ?? ?? ?? "
+    "45 33 C0 44 0F 29 40 B8 E8 ?? ?? ?? ?? 33 D2 48 8D 0D ?? ?? ?? ?? "
+    "41 B8 00 0A 00 00 E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? BA 01 00 00 00 "
+    "E8 ?? ?? ?? ?? 0F 10 05 ?? ?? ?? ?? BA 01 00 00 00 48 8D 4C 24 30 "
+    "0F 29 44 24 30 E8 ?? ?? ?? ??";
+constexpr int kScenePostfxFirstCallSigLen = 123; // return addr = match + this
+void* g_scenePostfxFirstCallReturnAddr = nullptr;
+
+constexpr const char* kScenePostfxLastCallSignature =
+    "80 BF F1 09 00 00 00 74 26 48 8B 0D ?? ?? ?? ?? 48 85 C9 74 1A "
+    "44 0F B6 8F DC 09 00 00 44 0F B6 C5 48 8B D6 F3 0F 11 74 24 20 "
+    "E8 ?? ?? ?? ?? BA 01 00 00 00 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? "
+    "0F 10 05 ?? ?? ?? ?? BA 01 00 00 00 48 8D 4C 24 30 0F 29 44 24 30 "
+    "E8 ?? ?? ?? ??";
+constexpr int kScenePostfxLastCallSigLen = 91; // return addr = match + this
+void* g_scenePostfxLastCallReturnAddr = nullptr;
+
 // Real per-frame fire-SEQUENCE tracking, 2026-09-25 -- CONFIRMED, real,
 // quantitative result from the plain-count version of this diagnostic
 // (317 real samples): 100+fps frames averaged 19.1 fires/frame, 0-19fps
@@ -6369,6 +6418,51 @@ void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
             LogFromController(skipBuf);
         }
         return; // deliberately does NOT call g_origRenderViewSelect -- this is the fix itself
+    }
+
+    // [Experimental] SkipRedundantOrchestratorExtraCalls -- issue #4 "point
+    // (a)". Two known return addresses, same unconditional-skip shape as
+    // the master-sequencer check above (no x86-side capability check to
+    // replicate -- x86's equivalent orchestrator simply never makes these
+    // two extra calls at all).
+    if (g_modConfig.skipRedundantOrchestratorExtraCallsX64) {
+        void* ra = _ReturnAddress();
+        bool isA = (g_orchestratorExtraCallAReturnAddr != nullptr && ra == g_orchestratorExtraCallAReturnAddr);
+        bool isB = (g_orchestratorExtraCallBReturnAddr != nullptr && ra == g_orchestratorExtraCallBReturnAddr);
+        if (isA || isB) {
+            static long long s_orchSkipCount = 0;
+            ++s_orchSkipCount;
+            if (s_orchSkipCount <= 5 || (s_orchSkipCount % 500) == 0) {
+                char skipBuf[160];
+                sprintf_s(skipBuf, "[x64-orch-extra-skip] skipped redundant orchestrator call %s "
+                    "(view=%d, skip #%lld)", isA ? "A" : "B", param_2, s_orchSkipCount);
+                LogFromController(skipBuf);
+            }
+            return;
+        }
+    }
+
+    // [Experimental] SkipRedundantScenePostfxGuaranteedCalls -- issue #4
+    // "point (c)". Same unconditional-skip shape, two known return
+    // addresses (the scene-postfx function's own guaranteed first/last
+    // activator calls) -- x86's structurally equivalent visual work never
+    // touches the activator at all, confirmed via two independent full
+    // chain traces.
+    if (g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64) {
+        void* ra = _ReturnAddress();
+        bool isFirst = (g_scenePostfxFirstCallReturnAddr != nullptr && ra == g_scenePostfxFirstCallReturnAddr);
+        bool isLast = (g_scenePostfxLastCallReturnAddr != nullptr && ra == g_scenePostfxLastCallReturnAddr);
+        if (isFirst || isLast) {
+            static long long s_postfxSkipCount = 0;
+            ++s_postfxSkipCount;
+            if (s_postfxSkipCount <= 5 || (s_postfxSkipCount % 500) == 0) {
+                char skipBuf[160];
+                sprintf_s(skipBuf, "[x64-postfx-skip] skipped redundant scene-postfx %s call "
+                    "(view=%d, skip #%lld)", isFirst ? "FIRST" : "LAST", param_2, s_postfxSkipCount);
+                LogFromController(skipBuf);
+            }
+            return;
+        }
     }
 
     g_origRenderViewSelect(param_1, param_2);
@@ -9684,6 +9778,67 @@ void InstallAnalogInputHooksX64()
                 static_cast<unsigned long long>(r.address),
                 reinterpret_cast<unsigned long long>(g_masterSequencerReactivationReturnAddr),
                 g_modConfig.skipRedundantMasterSequencerReactivationX64 ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+    {
+        // Resolve issue #4 "point (a)"'s two known call sites, once, for
+        // SkipRedundantOrchestratorExtraCallsX64's own gate above. Same
+        // resolve-only pattern, never fatal if either fails to resolve.
+        SigScan::Result rA = SigScan::FindPatternInMainModule(kOrchestratorExtraCallASignature);
+        if (!rA.found) {
+            LogFromController("[x64-orch-extra-skip] FATAL: call-site A signature did not resolve -- "
+                "that half of SkipRedundantOrchestratorExtraCallsX64 will have no effect this session");
+        } else {
+            g_orchestratorExtraCallAReturnAddr = reinterpret_cast<void*>(rA.address + kOrchestratorExtraCallASigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-orch-extra-skip] call site A resolved @ 0x%llX, expected return addr 0x%llX",
+                static_cast<unsigned long long>(rA.address),
+                reinterpret_cast<unsigned long long>(g_orchestratorExtraCallAReturnAddr));
+            LogFromController(buf);
+        }
+        SigScan::Result rB = SigScan::FindPatternInMainModule(kOrchestratorExtraCallBSignature);
+        if (!rB.found) {
+            LogFromController("[x64-orch-extra-skip] FATAL: call-site B signature did not resolve -- "
+                "that half of SkipRedundantOrchestratorExtraCallsX64 will have no effect this session");
+        } else {
+            g_orchestratorExtraCallBReturnAddr = reinterpret_cast<void*>(rB.address + kOrchestratorExtraCallBSigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-orch-extra-skip] call site B resolved @ 0x%llX, expected return addr 0x%llX "
+                "(SkipRedundantOrchestratorExtraCallsX64=%d)",
+                static_cast<unsigned long long>(rB.address),
+                reinterpret_cast<unsigned long long>(g_orchestratorExtraCallBReturnAddr),
+                g_modConfig.skipRedundantOrchestratorExtraCallsX64 ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+    {
+        // Resolve issue #4 "point (c)"'s two known call sites, once, for
+        // SkipRedundantScenePostfxGuaranteedCallsX64's own gate above.
+        SigScan::Result rF = SigScan::FindPatternInMainModule(kScenePostfxFirstCallSignature);
+        if (!rF.found) {
+            LogFromController("[x64-postfx-skip] FATAL: FIRST call-site signature did not resolve -- "
+                "that half of SkipRedundantScenePostfxGuaranteedCallsX64 will have no effect this session");
+        } else {
+            g_scenePostfxFirstCallReturnAddr = reinterpret_cast<void*>(rF.address + kScenePostfxFirstCallSigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-postfx-skip] FIRST call site resolved @ 0x%llX, expected return addr 0x%llX",
+                static_cast<unsigned long long>(rF.address),
+                reinterpret_cast<unsigned long long>(g_scenePostfxFirstCallReturnAddr));
+            LogFromController(buf);
+        }
+        SigScan::Result rL = SigScan::FindPatternInMainModule(kScenePostfxLastCallSignature);
+        if (!rL.found) {
+            LogFromController("[x64-postfx-skip] FATAL: LAST call-site signature did not resolve -- "
+                "that half of SkipRedundantScenePostfxGuaranteedCallsX64 will have no effect this session");
+        } else {
+            g_scenePostfxLastCallReturnAddr = reinterpret_cast<void*>(rL.address + kScenePostfxLastCallSigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-postfx-skip] LAST call site resolved @ 0x%llX, expected return addr 0x%llX "
+                "(SkipRedundantScenePostfxGuaranteedCallsX64=%d)",
+                static_cast<unsigned long long>(rL.address),
+                reinterpret_cast<unsigned long long>(g_scenePostfxLastCallReturnAddr),
+                g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64 ? 1 : 0);
             LogFromController(buf);
         }
     }
