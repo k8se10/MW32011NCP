@@ -464,6 +464,53 @@ void __fastcall Hook_ConsoleFontInit()
     LogFromController(buf);
 }
 
+// MW32011NCP, 2026-09-26: real x64 console-shutdown/reset functions --
+// FUN_140082890 (resets DAT_14064fdf4 only if currently set, real
+// "if (DAT_14064fdf4 != 0) { reset... }" gate) and FUN_140082a50 (resets
+// unconditionally). Both explicitly zero DAT_14064fdf4 -- the flag
+// SkipRedundantConsoleFontInit's own skip logic reads -- on real
+// console-shutdown/vid_restart/language-change events, per the prior
+// round's own decompile. Diagnostic hooks added specifically to answer a
+// direct question: were the 3 real console-font-init fires captured in a
+// clean test session each preceded by a genuine reset (meaning they were
+// legitimately necessary, not redundant, and the skip logic correctly did
+// nothing), or did the skip logic simply fail to engage despite the flag
+// staying set? Read-only, log-and-call-through, zero behavior change,
+// uncapped (dev-only diagnostic).
+constexpr const char* kConsoleShutdownASignature =
+    "48 83 EC 28 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? "
+    "33 C0 33 C9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? "
+    "48 83 C4 28 ?? ?? ?? ?? ?? 48 83 C4 28 C3";
+constexpr const char* kConsoleShutdownBSignature =
+    "48 83 EC 28 ?? ?? ?? ?? ?? 33 C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? "
+    "8D 48 01 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 83 C4 28 ?? ?? ?? ?? ??";
+
+using ConsoleShutdownFn = void(__fastcall*)();
+ConsoleShutdownFn g_realConsoleShutdownA = nullptr;
+ConsoleShutdownFn g_realConsoleShutdownB = nullptr;
+long long g_consoleShutdownAFireCount = 0;
+long long g_consoleShutdownBFireCount = 0;
+
+void __fastcall Hook_ConsoleShutdownA()
+{
+    ++g_consoleShutdownAFireCount;
+    char buf[128];
+    sprintf_s(buf, "[x64-consoleshutdown-diag] A (conditional reset) fire #%lld tick=%llu",
+               g_consoleShutdownAFireCount, static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    g_realConsoleShutdownA();
+}
+
+void __fastcall Hook_ConsoleShutdownB()
+{
+    ++g_consoleShutdownBFireCount;
+    char buf[128];
+    sprintf_s(buf, "[x64-consoleshutdown-diag] B (unconditional reset) fire #%lld tick=%llu",
+               g_consoleShutdownBFireCount, static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    g_realConsoleShutdownB();
+}
+
 // MW32011NCP, 2026-09-26: real x64 zone/localization-reload primitive
 // (FUN_1401bc4f0 in the reference Ghidra project) -- the actual, concrete
 // target this session's whole render-thread-fallback/console-font-init
@@ -8662,6 +8709,39 @@ void InstallAnalogInputHooksX64()
                             " (FAILED TO RESOLVE -- skip logic inert, behaves as pure diagnostic this session)" : "");
                     LogFromController(buf);
                 }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: console-shutdown/reset diagnostics, see
+        // kConsoleShutdownASignature/kConsoleShutdownBSignature's own
+        // comment above for the full context. Read-only, log-and-call-
+        // through, zero behavior change.
+        SigScan::Result rA = SigScan::FindPatternInMainModule(kConsoleShutdownASignature);
+        if (!rA.found) {
+            LogFromController("[x64-consoleshutdown-diag] FATAL: shutdown-A signature did not resolve");
+        } else {
+            void* targetA = reinterpret_cast<void*>(rA.address);
+            if (MH_CreateHook(targetA, reinterpret_cast<void*>(&Hook_ConsoleShutdownA),
+                               reinterpret_cast<void**>(&g_realConsoleShutdownA)) == MH_OK) {
+                MH_EnableHook(targetA);
+                LogFromController("[x64-consoleshutdown-diag] shutdown-A hook installed and enabled.");
+            } else {
+                LogFromController("[x64-consoleshutdown-diag] FATAL: shutdown-A MH_CreateHook failed");
+            }
+        }
+        SigScan::Result rB = SigScan::FindPatternInMainModule(kConsoleShutdownBSignature);
+        if (!rB.found) {
+            LogFromController("[x64-consoleshutdown-diag] FATAL: shutdown-B signature did not resolve");
+        } else {
+            void* targetB = reinterpret_cast<void*>(rB.address);
+            if (MH_CreateHook(targetB, reinterpret_cast<void*>(&Hook_ConsoleShutdownB),
+                               reinterpret_cast<void**>(&g_realConsoleShutdownB)) == MH_OK) {
+                MH_EnableHook(targetB);
+                LogFromController("[x64-consoleshutdown-diag] shutdown-B hook installed and enabled.");
+            } else {
+                LogFromController("[x64-consoleshutdown-diag] FATAL: shutdown-B MH_CreateHook failed");
             }
         }
     }
