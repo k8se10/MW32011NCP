@@ -9124,7 +9124,14 @@ void InstallOcclusionLodScaleFixX64()
         LogFromController(buf);
         return;
     }
-    char buf[220];
+    // 2026-09-26 CRASH FIX: this literal text is ~240 chars before any
+    // substitution -- buf[220] was too small and this UCRT fails fast
+    // (0xc0000409/FAST_FAIL_INVALID_ARG) rather than truncating, crashing
+    // EVERY launch reaching this line (confirmed via a live crash dump,
+    // iw5sp.exe.24224.dmp) -- the same recurring bug class this project has
+    // hit multiple times before. Widened generously above the real worst
+    // case, per this project's own established fix convention.
+    char buf[384];
     sprintf_s(buf, "[x64-occlusion-fix] OcclusionLodScaleFix hook installed and enabled "
         "(FUN_140195cb0) -- enabled=%d. When on, temporarily corrects the two clamped-resolution "
         "globals for the duration of each real call, restoring them immediately after.",
