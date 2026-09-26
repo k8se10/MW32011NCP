@@ -497,6 +497,61 @@ void __fastcall Hook_ZoneReloadPrimitiveTiming(void* descriptor)
     LogFromController(buf);
 }
 
+// MW32011NCP, 2026-09-26: real x64 font-asset-load thunk (FUN_1401b7cb0 in
+// the reference Ghidra project) -- the leading candidate for console-font-
+// init's own confirmed ~90-100ms-per-call cost (Hook_ConsoleFontInit's own
+// timing wrap, this same session). Called as FUN_1401b7cb0("fonts/
+// consoleFont", 3) from inside console-font-init -- a real, tiny 18-byte
+// thunk (sets up R8D=1/RDX=RCX/ECX=R8+0x17, then TAIL-JUMPS into
+// 0x1400a5a20, the real shared implementation) confirmed via
+// DumpSigBytes.java, not a mid-function fragment (this one genuinely has
+// no unwind info at all -- a real, valid leaf-thunk shape UnwindInfoLookup.java
+// correctly reports as "no RUNTIME_FUNCTION entry" rather than falsely
+// flagging as unsafe; Ghidra's own function manager independently agrees
+// this is a real, named call target). Hooking the THUNK specifically
+// (rather than the shared underlying resolver at 0x1400a5a20, which other,
+// unrelated callers across the engine also reach) isolates this timing to
+// the console-font call path only. Same tail-jump-timing property as the
+// zone-reload primitive: the wrap captures the full cost including the
+// real implementation, invisible tail call included. THIS IS A READ-ONLY
+// DIAGNOSTIC HOOK (log-and-call-through, zero behavior change).
+constexpr const char* kFontAssetLoadThunkSignature =
+    "41 B8 01 00 00 00 48 8B D1 41 8D 48 17 ?? ?? ?? ?? ??";
+
+using FontAssetLoadThunkFn = void*(__fastcall*)(const char* name, int type);
+FontAssetLoadThunkFn g_realFontAssetLoadThunk = nullptr;
+long long g_fontAssetLoadThunkFireCount = 0;
+
+void __fastcall Hook_FontAssetLoadThunkTiming(const char* name, int type)
+{
+    long long fireIndex = ++g_fontAssetLoadThunkFireCount;
+    LARGE_INTEGER freq{}, t0{}, t1{};
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+    void* result = g_realFontAssetLoadThunk(name, type);
+    QueryPerformanceCounter(&t1);
+    double ms = (freq.QuadPart > 0)
+        ? static_cast<double>(t1.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart)
+        : 0.0;
+
+    static double s_maxMs = 0.0;
+    if (ms > s_maxMs) s_maxMs = ms;
+    char nameBuf[64] = "<unreadable>";
+#ifdef _WIN32
+    __try {
+        if (name != nullptr) sprintf_s(nameBuf, "%.48s", name);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        sprintf_s(nameBuf, "<fault reading name>");
+    }
+#endif
+    char buf[224];
+    sprintf_s(buf, "[x64-fontload-timing] fire #%lld: name=\"%s\" took %.3fms (session max %.3fms) tick=%llu",
+               fireIndex, nameBuf, ms, s_maxMs, static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    (void)result;
+}
+
 // MW32011NCP, 2026-09-24: the real x64 projection-matrix-build function
 // (FUN_1401e13e0 in the reference Ghidra project) -- the jitter-injection
 // hook point the DLSS/Streamline and FSR 3.1 roadmaps both need (see
@@ -8599,6 +8654,42 @@ void InstallAnalogInputHooksX64()
                         "'[x64-zonereload-timing] fire' to see how long this call (including its tail-jumped "
                         "continuation) actually takes -- this is the concrete test of last night's own "
                         "synchronous-I/O theory (commit 275044951).");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: font-asset-load thunk timing diagnostic,
+        // see kFontAssetLoadThunkSignature's own comment above for the full
+        // context -- the leading candidate for console-font-init's own
+        // confirmed ~90-100ms-per-call cost. Read-only, log-and-call-through,
+        // zero behavior change.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kFontAssetLoadThunkSignature);
+        if (!r.found) {
+            LogFromController("[x64-fontload-timing] FATAL: font-asset-load thunk signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_FontAssetLoadThunkTiming),
+                                                    reinterpret_cast<void**>(&g_realFontAssetLoadThunk));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-fontload-timing] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-fontload-timing] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-fontload-timing] font-asset-load thunk timing hook installed and "
+                        "enabled -- log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-fontload-timing] fire' to see whether this specific call is the real ~90-100ms "
+                        "cost console-font-init's own timing already confirmed.");
                 }
             }
         }

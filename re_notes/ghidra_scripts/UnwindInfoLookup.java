@@ -76,7 +76,7 @@ public class UnwindInfoLookup extends GhidraScript {
                 long entrySize = 12;
                 boolean found = false;
 
-                for (Address cursor = pdataStart; cursor.compareTo(pdataEnd) < 0;
+                for (Address cursor = pdataStart; cursor.add(entrySize - 1).compareTo(pdataEnd) < 0;
                      cursor = cursor.add(entrySize)) {
                     long beginRva = Integer.toUnsignedLong(mem.getInt(cursor));
                     long endRva = Integer.toUnsignedLong(mem.getInt(cursor.add(4)));
