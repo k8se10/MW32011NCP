@@ -8450,13 +8450,26 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    {
+    if (false) {
         // MW32011NCP, 2026-09-26: console/UI font-init caller diagnostic, see
         // kConsoleFontInitSignature's own comment above for the full context
         // (the render-thread-fallback caller-chain investigation, issue #4).
-        // Read-only, log-and-call-through, zero behavior change. Captures the
-        // real caller via _ReturnAddress() since static analysis found zero
-        // references to this function anywhere in the binary.
+        // DISABLED same day, live crash: FUN_14008191a has no visible SUB RSP
+        // of its own (no normal stack-frame prologue), meaning it's very
+        // likely entered via something other than an ordinary CALL -- MinHook's
+        // trampoline assumes normal call/ret semantics, and hooking this exact
+        // address corrupted the stack, crashing every launch inside the hook's
+        // own sprintf_s call chain (real crash dump analysis, iw5sp.exe.20608.dmp:
+        // Hook_ConsoleFontInit -> sprintf_s<192> -> AV reading 0xFFFFFFFFFFFFFFFF,
+        // with a garbage "return address" of exactly the module base 0x140000000
+        // on the stack -- a clear stack-corruption signature, not a genuine
+        // buffer-size bug despite crashing inside sprintf_s). Left in place,
+        // disabled via `if (false)`, rather than deleted -- the real finding
+        // (x64 reaches this function through a non-standard invocation this
+        // hook was never actually going to observe correctly) stands on its
+        // own; re-enabling needs a different technique (e.g. hooking a real
+        // CALLER further up a chain that DOES have a normal prologue) before
+        // ever being tried live again.
         SigScan::Result r = SigScan::FindPatternInMainModule(kConsoleFontInitSignature);
         if (!r.found) {
             LogFromController("[x64-consolefont-diag] FATAL: console-font-init signature did not resolve -- "
