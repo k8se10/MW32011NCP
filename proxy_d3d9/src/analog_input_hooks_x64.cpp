@@ -258,6 +258,45 @@ constexpr const char* kVmNotifySignature =
 using VmNotifyFn = void(__fastcall*)(unsigned int notifyListOwnerId, unsigned int stringValue, void* top);
 VmNotifyFn g_realVmNotify = nullptr;
 
+// MW32011NCP, 2026-09-26: real x64 sound-alias play/blend function
+// (FUN_140274100 in the reference Ghidra project), found via a string-xref
+// search for the real internal warning "attempted to play spatialized alias
+// '%s' while there is no active listener..." -- this function is the actual
+// native voice-trigger the game's own sound engine calls to start (or
+// chain-blend into, via secondaryAliasName/chainAliasName) a real
+// snd_alias_t entry. Direct instruction, 2026-09-26 ("NOT NCP SIDE... in the
+// x64 gME ITSELF"): the user reports duplicated/echoing audio during combat
+// on this specific x64 build and believes the recompile's own audio
+// remaster (their own claim, not yet independently verified by this
+// project) is the real cause -- this is a READ-ONLY diagnostic hook
+// (log-and-call-through, zero behavior change) to get real, live data on
+// every native play/blend call (alias name + a real recursion-depth arg,
+// param_13 in the decompile -- 0 for a fresh top-level play, >0 for a
+// chained/secondary-alias blend, capped at 11 by FUN_140273ec0's own
+// `param_11 < 0xb` check) rather than guessing. `asset` (param_1) is a
+// `snd_alias_t*`-shaped pointer whose first qword is the alias's own name
+// string (confirmed directly from the decompile: the warning above passes
+// `*param_1` for its `%s`) -- read defensively (SEH-guarded, same pattern
+// this file already uses for GSC/game-owned memory) since this hook fires
+// on arbitrary live asset data, not something this project allocated.
+// Per this project's own repeated sprintf_s-overflow lesson
+// (known_issues_x64.md, four prior incidents), the printed name is bounded
+// via a fixed-width %.48s regardless of the real string's length -- never
+// assume a "should be short" field can't someday be longer.
+constexpr const char* kPlaySoundAliasSignature =
+    "48 8B C4 48 89 58 08 48 89 70 18 48 89 78 20 48 89 50 10 "
+    "55 41 54 41 55 41 56 41 57 48 8D A8 08 FF FF FF 48 81 EC D0 01 00 00 "
+    "80 3D ?? ?? ?? ?? 00 48 8B F2 44 0F 29 50 88 4C 8B E1 44 0F 29 98 78 FF FF FF "
+    "41 BE FF FF FF FF 44 0F 29 A0 68 FF FF FF 44 0F 28 DA 44 0F 29 A8 58 FF FF FF "
+    "44 0F 28 EB 44 0F 29 B0 48 FF FF FF 0F 84 ?? ?? ?? ??";
+
+using PlaySoundAliasFn = unsigned int(__fastcall*)(
+    void* asset, void* listener, float param3, float param4, float param5, unsigned int channel,
+    float* origin, unsigned int* voiceOut, unsigned int param9, char param10, float param11,
+    unsigned int param12, int recursionDepth);
+PlaySoundAliasFn g_realPlaySoundAlias = nullptr;
+long long g_playSoundAliasFireCount = 0;
+
 // MW32011NCP, 2026-09-24: the real x64 projection-matrix-build function
 // (FUN_1401e13e0 in the reference Ghidra project) -- the jitter-injection
 // hook point the DLSS/Streamline and FSR 3.1 roadmaps both need (see
@@ -1076,6 +1115,55 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
         }
     }
     g_realVmNotify(notifyListOwnerId, stringValue, top);
+}
+
+// MW32011NCP, 2026-09-26: real-play/blend diagnostic for the 2026-09-26
+// native-audio-duplication investigation -- see kPlaySoundAliasSignature's
+// own comment above for the full context. Logs the first 200 fires
+// unconditionally (a real combat burst of duplicate/echoing plays needs to
+// be caught whole, not truncated by an early rate-limit window), then falls
+// back to this file's own standard ~250ms floor to avoid a long session
+// flooding the log (the exact issue #87 lesson this file already documents
+// elsewhere). Per-fire: alias name (SEH-guarded read, bounded print),
+// channel, and recursionDepth -- a real run of rapid repeats for the SAME
+// alias name at recursionDepth==0 (a fresh top-level play, not a legitimate
+// chained/secondary-alias blend) within a tight time window is the concrete
+// signature that would confirm the user's own duplicate-playback theory;
+// anything chained (recursionDepth>0) is expected, normal alias-blend
+// behavior per FUN_140273ec0's own real depth cap and should not be
+// mistaken for the bug being hunted.
+unsigned int __fastcall Hook_PlaySoundAlias(
+    void* asset, void* listener, float param3, float param4, float param5, unsigned int channel,
+    float* origin, unsigned int* voiceOut, unsigned int param9, char param10, float param11,
+    unsigned int param12, int recursionDepth)
+{
+    long long fireIndex = ++g_playSoundAliasFireCount;
+    long long nowMs = static_cast<long long>(GetTickCount64());
+    static long long s_lastLogMs = 0;
+    bool shouldLog = (fireIndex <= 200) || (nowMs - s_lastLogMs >= 250);
+    if (shouldLog) {
+        s_lastLogMs = nowMs;
+        char nameBuf[64] = "<unreadable>";
+#ifdef _WIN32
+        __try {
+            if (asset != nullptr) {
+                const char* namePtr = *reinterpret_cast<const char* const*>(asset);
+                if (namePtr != nullptr) {
+                    sprintf_s(nameBuf, "%.48s", namePtr);
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            sprintf_s(nameBuf, "<fault reading name>");
+        }
+#endif
+        char buf[192];
+        sprintf_s(buf, "[x64-sound-diag] PlaySoundAlias fire #%lld: alias=\"%s\" channel=%u depth=%d tick=%lld",
+                   fireIndex, nameBuf, channel, recursionDepth, nowMs);
+        LogFromController(buf);
+    }
+    return g_realPlaySoundAlias(asset, listener, param3, param4, param5, channel, origin, voiceOut,
+                                 param9, param10, param11, param12, recursionDepth);
 }
 
 // Rate-limited on purpose -- this function fires on every Pmove sub-step (potentially
@@ -8132,6 +8220,43 @@ void InstallAnalogInputHooksX64()
                         "'[x64-gsc-notify] VM_Notify fired' during play to see real, live notify traffic "
                         "(owner ID + interned string ID) -- the first real live GSC-VM read access this "
                         "project has ever had.");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: real sound-alias play/blend diagnostic hook,
+        // see kPlaySoundAliasSignature's own comment above for the full
+        // context (the 2026-09-26 native-audio-duplication investigation).
+        // Read-only, log-and-call-through, zero behavior change.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kPlaySoundAliasSignature);
+        if (!r.found) {
+            LogFromController("[x64-sound-diag] FATAL: PlaySoundAlias signature did not resolve -- "
+                "native sound-duplication diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_PlaySoundAlias),
+                                                    reinterpret_cast<void**>(&g_realPlaySoundAlias));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-sound-diag] FATAL: MH_CreateHook failed for PlaySoundAlias @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-sound-diag] FATAL: MH_EnableHook failed for PlaySoundAlias @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-sound-diag] PlaySoundAlias diagnostic hook installed and enabled -- "
+                        "log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-sound-diag] PlaySoundAlias fire' during a real combat sequence to check for "
+                        "rapid repeated plays of the same alias at depth=0 (the signature of a real "
+                        "duplicate-playback bug, as opposed to depth>0 which is a normal chained/"
+                        "secondary-alias blend).");
                 }
             }
         }
