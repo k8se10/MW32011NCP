@@ -7798,10 +7798,25 @@ HRESULT WINAPI Hook_EndScene(void* device)
         }
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
-            int clPaused = static_cast<int>(GetDvarFloatX64_Exported("cl_paused"));
+            // 2026-09-26: direct user report -- "cl paused flag doesnt work
+            // on this build." Real, confirmed reason: `cl_paused` is a
+            // genuine dvar, but this game's co-op/Survival mode (matching
+            // real CoD design -- one player pausing can't be allowed to
+            // freeze the world for everyone else) never actually sets it
+            // even when the pause menu is visibly open in solo Survival --
+            // the dvar read itself was never broken, the game just doesn't
+            // use it here. Swapped to the already-established, more
+            // reliable `IsMenuActiveX64_Exported()` (the real native
+            // "any menu is currently active" bit, already used to gate
+            // FSR/motion-blur elsewhere in this file) -- this reflects the
+            // pause OVERLAY being open regardless of whether world
+            // simulation itself is frozen, which is the real thing this
+            // diagnostic needs to correlate against for the "pause runs
+            // measurably worse than live gameplay" investigation.
+            int menuActive = IsMenuActiveX64_Exported() ? 1 : 0;
             char buf[320];
-            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d clPaused=%d map=\"%s\"",
-                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions, clPaused,
+            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d menuActive=%d map=\"%s\"",
+                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions, menuActive,
                 s_lastMapName);
             LogFromController(buf);
 
