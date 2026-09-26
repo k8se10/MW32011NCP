@@ -1317,6 +1317,21 @@ struct ModConfig
     // uninitialized state for whatever later code might read from it.
     int pauseBlurStepCapX64 = 0;
 
+    // MW32011NCP, 2026-09-26: LIVE-GAMEPLAY counterpart to
+    // pauseBlurStepCapX64 above -- direct instruction after the pause-only
+    // version was live-confirmed a real, massive win on Dome (24fps ->
+    // over 80fps while paused, little to no visual change): "we need to
+    // test this in gameplay." Unlike the pause case, this substep count's
+    // real output IS directly visible during live gameplay (no menu
+    // blur/dim masking it), so this is a genuine quality-vs-performance
+    // trade the player has to judge for themselves -- 0 = disabled
+    // (default, no cap during live gameplay). Applies whenever
+    // `IsMenuActiveX64_Exported()` is false; the pause-only cap above
+    // keeps applying independently while it's true, so both can be tuned
+    // separately (e.g. a conservative live cap, an aggressive pause-only
+    // one) rather than sharing one value.
+    int liveBlurStepCapX64 = 0;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real

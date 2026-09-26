@@ -6326,11 +6326,22 @@ extern "C" bool IsMenuActiveX64_Exported(); // defined later in this file
 
 void __fastcall Hook_PauseBlurStepCap(int* param1, long long param2)
 {
-    if (g_modConfig.pauseBlurStepCapX64 > 0 && param1 != nullptr) {
+    // MW32011NCP, 2026-09-26: LIVE-CONFIRMED "biggest fix of the mod so
+    // far" (direct user words) -- the pause-only cap alone took Dome from
+    // 24fps to over 80fps while paused, little to no visual change.
+    // Direct follow-up instruction: "we need to test this in gameplay" --
+    // added liveBlurStepCapX64 as a SEPARATE, independently-tunable value
+    // (see its own comment in mod_config.h) since its output IS visible
+    // during live gameplay, unlike the pause case where it's masked by
+    // the menu's own blur/dim overlay -- a real quality/performance trade
+    // the player judges for themselves, not an always-safe no-op.
+    if (param1 != nullptr) {
 #ifdef _WIN32
         __try {
-            if (*param1 > g_modConfig.pauseBlurStepCapX64 && IsMenuActiveX64_Exported()) {
-                *param1 = g_modConfig.pauseBlurStepCapX64;
+            bool menuActive = IsMenuActiveX64_Exported();
+            int cap = menuActive ? g_modConfig.pauseBlurStepCapX64 : g_modConfig.liveBlurStepCapX64;
+            if (cap > 0 && *param1 > cap) {
+                *param1 = cap;
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -9227,11 +9238,11 @@ void InstallPauseBlurStepCapX64()
         LogFromController(buf);
         return;
     }
-    char buf2[280];
-    sprintf_s(buf2, "[x64-blur-cap] PauseBlurStepCap hook installed and enabled (FUN_14018eec0) -- "
-        "cap=%d (0=disabled). When active AND the pause menu is open, caps the real blur/SSAO/"
-        "shadow-softening substep count -- never affects live gameplay.",
-        g_modConfig.pauseBlurStepCapX64);
+    char buf2[320];
+    sprintf_s(buf2, "[x64-blur-cap] Blur-substep-cap hook installed and enabled (FUN_14018eec0) -- "
+        "pauseCap=%d liveCap=%d (0=disabled each). Caps the real blur/SSAO/shadow-softening "
+        "substep count, using pauseCap while the menu is open and liveCap otherwise.",
+        g_modConfig.pauseBlurStepCapX64, g_modConfig.liveBlurStepCapX64);
     LogFromController(buf2);
 }
 
