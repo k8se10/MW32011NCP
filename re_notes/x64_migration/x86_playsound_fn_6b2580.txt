@@ -1,0 +1,47 @@
+================================================================
+Function: FUN_006b2580 @ 006b2580
+----------------------------------------------------------------
+
+undefined4 __fastcall FUN_006b2580(undefined4 param_1,int *param_2)
+
+{
+  int iVar1;
+  char cVar2;
+  undefined4 uVar3;
+  undefined4 *extraout_ECX;
+  undefined4 extraout_EDX;
+  undefined4 *unaff_ESI;
+  undefined1 local_80 [128];
+  
+  iVar1 = *param_2;
+  if (*(char *)(*(int *)(iVar1 + 0x14) + 1) == '\0') {
+    FUN_004ed450(iVar1,local_80,0x80);
+    if (unaff_ESI != (undefined4 *)0x0) {
+      *unaff_ESI = 0xffffffff;
+    }
+  }
+  else if ((&DAT_02816998)[(*(int *)(iVar1 + 0x3c) >> 9 & 0x3fU) * 0x54] == '\0') {
+    if (*(char *)(DAT_0280b744 + 0xc) != '\0') {
+      uVar3 = FUN_004a9e60(param_2);
+      return uVar3;
+    }
+  }
+  else if (*(char *)(DAT_02809f34 + 0xc) != '\0') {
+    cVar2 = FUN_0040f0c0();
+    if (cVar2 == '\0') {
+      FUN_00425540(1,
+                   "attempted to play spatialized alias \'%s\' while there is no active listener. Most likely this means you tried to play a spatialized sound while not in a level.\n"
+                   ,*extraout_ECX);
+      return 0xffffffff;
+    }
+    uVar3 = FUN_00531610(extraout_EDX);
+    return uVar3;
+  }
+  return 0xffffffff;
+}
+
+
+---- CALLERS of FUN_006b2580 ----
+  CALLER #1: from 006b304d in FUN_006b2e00 @ 006b2e00 refType=UNCONDITIONAL_CALL
+Total callers: 1
+

@@ -1,0 +1,25 @@
+Signature-byte dump of FUN_140079351 @ 140079351
+(byte offsets relative to function entry point)
+
++0x00  E8 4A 97 00 00                 CALL 0x140082aa0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  48 8B CB                       MOV RCX,RBX                              
++0x08  E8 52 91 00 00                 CALL 0x1400824b0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0D  E8 7D 09 22 00                 CALL 0x140299ce0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x12  33 C9                          XOR ECX,ECX                              
++0x14  E8 D6 4B 01 00                 CALL 0x14008df40                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x19  84 C0                          TEST AL,AL                               
++0x1B  74 14                          JZ 0x140079382                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1D  48 8B 05 A3 22 4B 02           MOV RAX,qword ptr [0x14252b618]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24  80 78 10 00                    CMP byte ptr [RAX + 0x10],0x0            
++0x28  74 07                          JZ 0x140079382                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2A  33 C9                          XOR ECX,ECX                              
++0x2C  E8 9E 77 1C 00                 CALL 0x140240b20                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x31  48 8B 0D 1F 24 E8 01           MOV RCX,qword ptr [0x141efb7a8]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x38  BA 01 00 00 00                 MOV EDX,0x1                              
++0x3D  48 83 C4 20                    ADD RSP,0x20                             
+
+Raw bytes (65 total): E8 4A 97 00 00 48 8B CB E8 52 91 00 00 E8 7D 09 22 00 33 C9 E8 D6 4B 01 00 84 C0 74 14 48 8B 05 A3 22 4B 02 80 78 10 00 74 07 33 C9 E8 9E 77 1C 00 48 8B 0D 1F 24 E8 01 BA 01 00 00 00 48 83 C4 20
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? 48 8B CB ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 33 C9 ?? ?? ?? ?? ?? 84 C0 ?? ?? ?? ?? ?? ?? ?? ?? ?? 80 78 10 00 ?? ?? 33 C9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? BA 01 00 00 00 48 83 C4 20

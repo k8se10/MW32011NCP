@@ -1,0 +1,87 @@
+================================================================
+Function: FUN_1401dc140 @ 1401dc140
+----------------------------------------------------------------
+
+void FUN_1401dc140(void)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  
+  DAT_141c556b0 =
+       FUN_1402c49e0("r_sunsprite_shader",&DAT_1404215cc,0,
+                     "name for static sprite; can be any material");
+  DAT_141c556b8 =
+       FUN_1402c4650("r_sunsprite_size",DAT_1403e560c,0,DAT_1403e5284,0,
+                     "diameter in pixels at 640x480 and 80 fov");
+  DAT_141c556c0 =
+       FUN_1402c49e0("r_sunflare_shader","sun_flare",0,"name for flare effect; can be any material")
+  ;
+  DAT_141c556c8 =
+       FUN_1402c4650("r_sunflare_min_size",0,0,DAT_1403e8e9c,0,
+                     "smallest size of flare effect in pixels at 640x480");
+  uVar1 = DAT_1403e4150;
+  DAT_141c556d0 =
+       FUN_1402c4650("r_sunflare_min_angle",DAT_1403e4148,0,DAT_1403e4150,0,
+                     "angle from sun in degrees outside which effect is 0");
+  DAT_141c556d8 =
+       FUN_1402c4650("r_sunflare_max_size",DAT_1404006d0,0,DAT_1403e8e9c,0,
+                     "largest size of flare effect in pixels at 640x480");
+  DAT_141c556e0 =
+       FUN_1402c4650("r_sunflare_max_angle",DAT_1403e5264,0,uVar1,0,
+                     "angle from sun in degrees inside which effect is max");
+  uVar3 = DAT_1403e3e6c;
+  DAT_141c556e8 =
+       FUN_1402c4650("r_sunflare_max_alpha",DAT_1403e3e6c,0,DAT_1403e3e6c,0,
+                     "0-1 vertex color and alpha of sun at max effect");
+  uVar2 = DAT_1403e5614;
+  DAT_141c556f0 =
+       FUN_1402c4650("r_sunflare_fadein",uVar3,0,DAT_1403e5614,0,
+                     "time in seconds to fade alpha from 0% to 100%");
+  DAT_141c556f8 =
+       FUN_1402c4650("r_sunflare_fadeout",uVar3,0,uVar2,0,
+                     "time in seconds to fade alpha from 100% to 0%");
+  DAT_141c55700 =
+       FUN_1402c4650("r_sunblind_min_angle",DAT_1403e4140,0,uVar1,0,
+                     "angle from sun in degrees outside which blinding is 0");
+  DAT_141c55708 =
+       FUN_1402c4650("r_sunblind_max_angle",DAT_1403e8e3c,0,uVar1,0,
+                     "angle from sun in degrees inside which blinding is max");
+  DAT_141c55710 =
+       FUN_1402c4650("r_sunblind_max_darken",DAT_1403e413c,0,uVar3,0,
+                     "0-1 fraction for how black the world is at max blind");
+  DAT_141c55718 =
+       FUN_1402c4650("r_sunblind_fadein",DAT_1403e3e68,0,uVar2,0,
+                     "time in seconds to fade blind from 0% to 100%");
+  DAT_141c55720 =
+       FUN_1402c4650("r_sunblind_fadeout",DAT_1403e5268,0,uVar2,0,
+                     "time in seconds to fade blind from 100% to 0%");
+  DAT_141c55728 =
+       FUN_1402c4650("r_sunglare_min_angle",DAT_1403e4140,0,uVar1,0,
+                     "angle from sun in degrees inside which glare is maximum");
+  DAT_141c55730 =
+       FUN_1402c4650("r_sunglare_max_angle",DAT_1403e8e3c,0,uVar1,0,
+                     "angle from sun in degrees inside which glare is minimum");
+  DAT_141c55738 =
+       FUN_1402c4650("r_sunglare_max_lighten",DAT_1403e413c,0,uVar3,0,
+                     "0-1 fraction for how white the world is at max glare");
+  DAT_141c55740 =
+       FUN_1402c4650("r_sunglare_fadein",DAT_1403e3e68,0,uVar2,0,
+                     "time in seconds to fade glare from 0% to 100%");
+  uVar3 = 1;
+  DAT_141c55748 =
+       FUN_1402c4650("r_sunglare_fadeout",DAT_1403e5268,0,uVar2,0,
+                     "time in seconds to fade glare from 100% to 0%");
+  DAT_141c556a0 =
+       FUN_1402c4ca0("r_sun_fx_position",0,0,0,DAT_1403fba24,CONCAT44(uVar3,DAT_1403e4168),0,
+                     "Position in degrees of the sun effect");
+  return;
+}
+
+
+---- CALLERS of FUN_1401dc140 ----
+  CALLER #1: from 144450bd0 in <none/data> refType=DATA
+  CALLER #2: from 1401b5124 in FUN_1401b50e0 @ 1401b50e0 refType=UNCONDITIONAL_CALL
+Total callers: 2
+

@@ -1,0 +1,88 @@
+================================================================
+Function: FUN_140273fd0 @ 140273fd0
+----------------------------------------------------------------
+
+undefined8
+FUN_140273fd0(longlong param_1,undefined4 param_2,undefined8 param_3,undefined4 param_4,
+             undefined4 param_5)
+
+{
+  undefined8 uVar1;
+  
+  if (param_1 == 0) {
+    return 0xffffffff;
+  }
+  uVar1 = FUN_140274100(param_1,param_1,0,DAT_1403e3e6c,DAT_1403e3e6c,param_2,param_3,0,param_4,0,
+                        DAT_1403e3e6c,param_5,0);
+  return uVar1;
+}
+
+
+
+================================================================
+Function: FUN_140274090 @ 140274090
+----------------------------------------------------------------
+
+undefined8
+FUN_140274090(longlong param_1,undefined4 param_2,undefined4 param_3,undefined8 param_4,
+             undefined4 param_5,undefined4 param_6)
+
+{
+  undefined8 uVar1;
+  
+  if (param_1 == 0) {
+    return 0xffffffff;
+  }
+  uVar1 = FUN_140274100(param_1,param_1,0,DAT_1403e3e6c,param_2,param_3,param_4,0,param_5,0,
+                        DAT_1403e3e6c,param_6,0);
+  return uVar1;
+}
+
+
+
+================================================================
+Function: FUN_140273bc0 @ 140273bc0
+----------------------------------------------------------------
+
+void FUN_140273bc0(int param_1,undefined8 param_2,undefined4 param_3)
+
+{
+  FUN_140274100(param_2,param_2,0,param_2,DAT_1403e3e6c,0,&DAT_1425be4b8 + (longlong)param_1 * 0xf,0
+                ,0,0,DAT_1403e3e6c,param_3,0);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140273ec0 @ 140273ec0
+----------------------------------------------------------------
+
+void FUN_140273ec0(longlong param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  undefined4 param_5,undefined8 param_6,undefined4 param_7,undefined1 param_8,
+                  undefined4 param_9,undefined4 param_10,int param_11)
+
+{
+  char cVar1;
+  longlong lVar2;
+  
+  if ((*(longlong *)(param_1 + 0x10) != 0) && (lVar2 = FUN_1402bff70(), lVar2 != 0)) {
+    if ((*(byte *)(param_1 + 0x54) & 1) == 0) {
+      if ((*(byte *)(lVar2 + 0x54) & 1) != 0) {
+        return;
+      }
+    }
+    else if (((*(byte *)(lVar2 + 0x54) & 1) != 0) &&
+            (cVar1 = FUN_1402bfdf0(*(undefined8 *)(param_1 + 0x10)), cVar1 == '\0')) {
+      return;
+    }
+    if (param_11 < 0xb) {
+      FUN_140274100(lVar2,lVar2,param_2,param_3,param_4,param_5,param_6,0,param_7,param_8,param_9,
+                    param_10,param_11);
+    }
+  }
+  return;
+}
+
+
+

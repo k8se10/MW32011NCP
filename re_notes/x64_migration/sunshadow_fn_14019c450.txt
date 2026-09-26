@@ -1,0 +1,45 @@
+================================================================
+Function: FUN_14019c450 @ 14019c450
+----------------------------------------------------------------
+
+void FUN_14019c450(longlong param_1)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  code *pcVar3;
+  undefined8 local_38;
+  undefined8 local_30;
+  undefined4 local_28 [2];
+  longlong local_20;
+  undefined4 local_18;
+  longlong local_10;
+  
+  local_30 = *(undefined8 *)(DAT_141888648 + 0x98);
+  uVar1 = *(undefined4 *)(DAT_141888648 + 0xc);
+  uVar2 = *(undefined4 *)(DAT_141888648 + 0x28);
+  if ((*(int *)(DAT_141896b80 + 0x41a5c) != 0) ||
+     (pcVar3 = FUN_14019b520, *(char *)(DAT_141884f50 + 0x10) == '\0')) {
+    pcVar3 = FUN_14019b960;
+  }
+  local_38 = *(undefined8 *)(DAT_141888648 + 0x58);
+  local_20 = param_1 + 0xd48;
+  local_28[0] = 0x1800;
+  local_10 = param_1 + 0xd58;
+  local_18 = 0x400;
+  (*pcVar3)(&local_38,uVar1,uVar2,local_28);
+  local_38 = *(undefined8 *)(DAT_141888648 + 0x60);
+  local_20 = param_1 + 0xe58;
+  local_10 = param_1 + 0xe68;
+  local_28[0] = 0x3000;
+  local_18 = 0x800;
+  (*pcVar3)(&local_38,uVar1,uVar2,local_28);
+  return;
+}
+
+
+---- CALLERS of FUN_14019c450 ----
+  CALLER #1: from 14444de88 in <none/data> refType=DATA
+  CALLER #2: from 1401d72bb in FUN_1401d6ed0 @ 1401d6ed0 refType=UNCONDITIONAL_CALL
+Total callers: 2
+

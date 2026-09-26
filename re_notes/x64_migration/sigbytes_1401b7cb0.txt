@@ -1,0 +1,13 @@
+Signature-byte dump of FUN_1401b7cb0 @ 1401b7cb0
+(byte offsets relative to function entry point)
+
++0x00  41 B8 01 00 00 00              MOV R8D,0x1                              
++0x06  48 8B D1                       MOV RDX,RCX                              
++0x09  41 8D 48 17                    LEA ECX,[R8 + 0x17]                      
++0x0D  E9 5E DD EE FF                 JMP 0x1400a5a20                          [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (18 total): 41 B8 01 00 00 00 48 8B D1 41 8D 48 17 E9 5E DD EE FF
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+41 B8 01 00 00 00 48 8B D1 41 8D 48 17 ?? ?? ?? ?? ??

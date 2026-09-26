@@ -1,0 +1,29 @@
+Signature-byte dump of FUN_14008191a @ 14008191a
+(byte offsets relative to function entry point)
+
++0x00  83 3D D3 E4 5C 00 00           CMP dword ptr [0x14064fdf4],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x07  74 0A                          JZ 0x14008192d                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x09  E8 D8 C3 00 00                 CALL 0x14008dd00                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0E  E8 03 C1 00 00                 CALL 0x14008da30                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x13  BA 03 00 00 00                 MOV EDX,0x3                              
++0x18  48 8D 0D B3 DE 36 00           LEA RCX,[0x1403ef7ec]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1F  E8 62 32 14 00                 CALL 0x1401c4ba0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x24  BA 03 00 00 00                 MOV EDX,0x3                              
++0x29  48 89 05 3E E5 5C 00           MOV qword ptr [0x14064fe88],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30  48 8D 0D 77 39 37 00           LEA RCX,[0x1403f52c8]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x37  E8 4A 32 14 00                 CALL 0x1401c4ba0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3C  BA 03 00 00 00                 MOV EDX,0x3                              
++0x41  48 89 05 2E E5 5C 00           MOV qword ptr [0x14064fe90],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x48  48 8D 0D 67 39 37 00           LEA RCX,[0x1403f52d0]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4F  E8 42 63 13 00                 CALL 0x1401b7cb0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x54  48 89 05 C3 E4 5C 00           MOV qword ptr [0x14064fe38],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x5B  8B 05 D1 E4 5C 00              MOV EAX,dword ptr [0x14064fe4c]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x61  83 C0 D0                       ADD EAX,-0x30                            
++0x64  89 05 78 F2 43 00              MOV dword ptr [0x1404c0bfc],EAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x6A  48 83 C4 28                    ADD RSP,0x28                             
+
+Raw bytes (110 total): 83 3D D3 E4 5C 00 00 74 0A E8 D8 C3 00 00 E8 03 C1 00 00 BA 03 00 00 00 48 8D 0D B3 DE 36 00 E8 62 32 14 00 BA 03 00 00 00 48 89 05 3E E5 5C 00 48 8D 0D 77 39 37 00 E8 4A 32 14 00 BA 03 00 00 00 48 89 05 2E E5 5C 00 48 8D 0D 67 39 37 00 E8 42 63 13 00 48 89 05 C3 E4 5C 00 8B 05 D1 E4 5C 00 83 C0 D0 89 05 78 F2 43 00 48 83 C4 28
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? BA 03 00 00 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? BA 03 00 00 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? BA 03 00 00 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 83 C0 D0 ?? ?? ?? ?? ?? ?? 48 83 C4 28

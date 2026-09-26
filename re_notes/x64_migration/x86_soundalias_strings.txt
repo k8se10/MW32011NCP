@@ -1,0 +1,4 @@
+STRING @ 00826238: "attempted to play spatialized alias '%s' while there is no active listener. Most likely this means you tried to play a spatialized sound while not in a level.\n"
+  REF #1: from 006b25e4 in FUN_006b2580 @ 006b2580
+  REF #2: from 006b2716 in FUN_006b2630 @ 006b2630
+

@@ -1,0 +1,72 @@
+================================================================
+Function: FUN_1401dc640 @ 1401dc640
+----------------------------------------------------------------
+
+void FUN_1401dc640(undefined1 *param_1)
+
+{
+  char *pcVar1;
+  float fVar2;
+  float fVar3;
+  float fVar4;
+  undefined8 uVar5;
+  undefined8 uVar6;
+  double dVar7;
+  
+  uVar6 = 0;
+  pcVar1 = *(char **)(DAT_141c556b0 + 0x10);
+  uVar5 = uVar6;
+  if ((pcVar1 != (char *)0x0) && (*pcVar1 != '\0')) {
+    uVar5 = FUN_1401c4ba0(pcVar1,6);
+  }
+  *(undefined8 *)(param_1 + 8) = uVar5;
+  *(undefined4 *)(param_1 + 0x18) = *(undefined4 *)(DAT_141c556b8 + 0x10);
+  pcVar1 = *(char **)(DAT_141c556c0 + 0x10);
+  if ((pcVar1 != (char *)0x0) && (*pcVar1 != '\0')) {
+    uVar6 = FUN_1401c4ba0(pcVar1,6);
+  }
+  *(undefined8 *)(param_1 + 0x10) = uVar6;
+  fVar3 = DAT_1403e4138;
+  fVar2 = DAT_1403e3e68;
+  *(float *)(param_1 + 0x1c) = *(float *)(DAT_141c556c8 + 0x10) * DAT_1403e3e68;
+  dVar7 = (double)FUN_14039ca20((double)(*(float *)(DAT_141c556d0 + 0x10) * fVar3));
+  *(float *)(param_1 + 0x20) = (float)dVar7;
+  *(float *)(param_1 + 0x24) = *(float *)(DAT_141c556d8 + 0x10) * fVar2;
+  dVar7 = (double)FUN_14039ca20((double)(*(float *)(DAT_141c556e0 + 0x10) * fVar3));
+  fVar4 = DAT_1403e5284;
+  *(float *)(param_1 + 0x28) = (float)dVar7;
+  *(undefined4 *)(param_1 + 0x2c) = *(undefined4 *)(DAT_141c556e8 + 0x10);
+  dVar7 = floor((double)(*(float *)(DAT_141c556f0 + 0x10) * fVar4 + fVar2));
+  *(int *)(param_1 + 0x30) = (int)dVar7;
+  dVar7 = floor((double)(*(float *)(DAT_141c556f8 + 0x10) * fVar4 + fVar2));
+  *(int *)(param_1 + 0x34) = (int)dVar7;
+  dVar7 = (double)FUN_14039ca20((double)(*(float *)(DAT_141c55700 + 0x10) * fVar3));
+  *(float *)(param_1 + 0x38) = (float)dVar7;
+  dVar7 = (double)FUN_14039ca20((double)(*(float *)(DAT_141c55708 + 0x10) * fVar3));
+  *(float *)(param_1 + 0x3c) = (float)dVar7;
+  *(undefined4 *)(param_1 + 0x40) = *(undefined4 *)(DAT_141c55710 + 0x10);
+  dVar7 = floor((double)(*(float *)(DAT_141c55718 + 0x10) * fVar4 + fVar2));
+  *(int *)(param_1 + 0x44) = (int)dVar7;
+  dVar7 = floor((double)(*(float *)(DAT_141c55720 + 0x10) * fVar4 + fVar2));
+  *(int *)(param_1 + 0x48) = (int)dVar7;
+  dVar7 = (double)FUN_14039ca20((double)(*(float *)(DAT_141c55728 + 0x10) * fVar3));
+  *(float *)(param_1 + 0x4c) = (float)dVar7;
+  dVar7 = (double)FUN_14039ca20((double)(*(float *)(DAT_141c55730 + 0x10) * fVar3));
+  *(float *)(param_1 + 0x50) = (float)dVar7;
+  *(undefined4 *)(param_1 + 0x54) = *(undefined4 *)(DAT_141c55738 + 0x10);
+  dVar7 = floor((double)(*(float *)(DAT_141c55740 + 0x10) * fVar4 + fVar2));
+  *(int *)(param_1 + 0x58) = (int)dVar7;
+  dVar7 = floor((double)(*(float *)(DAT_141c55748 + 0x10) * fVar4 + fVar2));
+  *(int *)(param_1 + 0x5c) = (int)dVar7;
+  FUN_1402bcfe0(DAT_141c556a0 + 0x10,param_1 + 0x60,0,0);
+  *param_1 = 1;
+  return;
+}
+
+
+---- CALLERS of FUN_1401dc640 ----
+  CALLER #1: from 144450c00 in <none/data> refType=DATA
+  CALLER #2: from 1401d3d5f in FUN_1401d3d30 @ 1401d3d30 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 1401dc070 in FUN_1401dbfc0 @ 1401dbfc0 refType=UNCONDITIONAL_CALL
+Total callers: 3
+

@@ -1,0 +1,32 @@
+================================================================
+Queried address: 0x1401b7cb0
+No RUNTIME_FUNCTION entry covers this address -- either it's outside any unwind-tracked range (leaf-function-with-no-frame territory, rare on x64 but possible), or it's genuinely not real code.
+
+================================================================
+Queried address: 0x1401bbea0
+RUNTIME_FUNCTION @ pdata offset 0x17490
+  BeginAddress = 0x1401bbea0  <-- queried address IS the real function start
+  EndAddress   = 0x1401bbff2 (range size 338 bytes)
+  UNWIND_INFO @ 0x14047fa58
+    Version=1 Flags=0x0
+    SizeOfProlog=6
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+
+================================================================
+Queried address: 0x14007ad40
+RUNTIME_FUNCTION @ pdata offset 0x6174
+  BeginAddress = 0x14007ad40  <-- queried address IS the real function start
+  EndAddress   = 0x14007ae6d (range size 301 bytes)
+  UNWIND_INFO @ 0x14047fa58
+    Version=1 Flags=0x0
+    SizeOfProlog=6
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+
+================================================================
+Queried address: 0x1401c4ba0
+No RUNTIME_FUNCTION entry covers this address -- either it's outside any unwind-tracked range (leaf-function-with-no-frame territory, rare on x64 but possible), or it's genuinely not real code.
+

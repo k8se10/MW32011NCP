@@ -1,0 +1,18 @@
+STRING @ 1404126f8: "sm_sunShadowCenter"
+  REF #1: from 1401b68b1 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412758: "sm_sunShadowCenterMode"
+  REF #1: from 1401b6901 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412790: "sm_sunShadowScale"
+  REF #1: from 1401b6918 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412810: "sm_fastSunShadow"
+  REF #1: from 1401b699b in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412828: "Lock usage of sm_sunShadowScale at 1"
+  REF #1: from 1401b69b2 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412850: "sm_sunShadowScaleLocked"
+  REF #1: from 1401b69b9 in FUN_1401b50e0 @ 1401b50e0
+

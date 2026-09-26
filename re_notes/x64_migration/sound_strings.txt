@@ -1,0 +1,340 @@
+STRING @ 1403e5688: "Sound blend"
+  REF #1: from 1404c0430 in <none/data>
+
+STRING @ 1403e5770: "EV_FOLIAGE_SOUND"
+  REF #1: from 1404bfcc8 in <none/data>
+
+STRING @ 1403e5788: "EV_STOP_WEAPON_SOUND"
+  REF #1: from 1404bfcd0 in <none/data>
+
+STRING @ 1403e57a0: "EV_SOUND_ALIAS"
+  REF #1: from 1404bfcd8 in <none/data>
+
+STRING @ 1403e57b0: "EV_SOUND_ALIAS_AS_MASTER"
+  REF #1: from 1404bfce0 in <none/data>
+
+STRING @ 1403e57d0: "EV_SOUND_ALIAS_AT_VIEWHEIGHT"
+  REF #1: from 1404bfce8 in <none/data>
+
+STRING @ 1403e57f0: "EV_PREFETCH_SOUND_ALIAS"
+  REF #1: from 1404bfcf0 in <none/data>
+
+STRING @ 1403e5808: "EV_SOUND_ALIAS_SCALE_PITCH"
+  REF #1: from 1404bfcf8 in <none/data>
+
+STRING @ 1403e5828: "EV_SOUND_ALIAS_SET_PITCH"
+  REF #1: from 1404bfd00 in <none/data>
+
+STRING @ 1403e5848: "EV_SOUND_ALIAS_SET_VOLUME"
+  REF #1: from 1404bfd08 in <none/data>
+
+STRING @ 1403e5868: "EV_SOUND_ALIAS_SCALE_VOLUME"
+  REF #1: from 1404bfd10 in <none/data>
+
+STRING @ 1403e5888: "EV_STOPSOUNDS"
+  REF #1: from 1404bfd18 in <none/data>
+
+STRING @ 1403e6850: "bg_shock_soundLoop"
+  REF #1: from 14000e812 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000d5b2 in FUN_14000d4e0 @ 14000d4e0
+  REF #3: from 1404c0360 in <none/data>
+
+STRING @ 1403e6868: "bg_shock_soundLoopSilent"
+  REF #1: from 14000e839 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000d5b9 in FUN_14000d4e0 @ 14000d4e0
+  REF #3: from 1404c0368 in <none/data>
+
+STRING @ 1403e6888: "bg_shock_soundEnd"
+  REF #1: from 14000e860 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000d5c1 in FUN_14000d4e0 @ 14000d4e0
+  REF #3: from 14000d5bd in FUN_14000d4e0 @ 14000d4e0
+  REF #4: from 1404c0370 in <none/data>
+
+STRING @ 1403e68a0: "bg_shock_soundEndAbort"
+  REF #1: from 14000e887 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c0378 in <none/data>
+
+STRING @ 1403e68b8: "bg_shock_sound"
+  REF #1: from 14000ea45 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c0380 in <none/data>
+
+STRING @ 1403e68c8: "bg_shock_soundFadeInTime"
+  REF #1: from 14000ea78 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c0388 in <none/data>
+
+STRING @ 1403e68e8: "bg_shock_soundFadeOutTime"
+  REF #1: from 14000ea8c in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c0390 in <none/data>
+
+STRING @ 1403e6908: "bg_shock_soundLoopFadeTime"
+  REF #1: from 14000eac0 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c0398 in <none/data>
+
+STRING @ 1403e6928: "bg_shock_soundLoopEndDelay"
+  REF #1: from 14000eaf3 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c03a0 in <none/data>
+
+STRING @ 1403e6948: "bg_shock_soundRoomType"
+  REF #1: from 14000eb4c in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c03a8 in <none/data>
+
+STRING @ 1403e6960: "bg_shock_soundDryLevel"
+  REF #1: from 14000eb5f in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c03b0 in <none/data>
+
+STRING @ 1403e6978: "bg_shock_soundWetLevel"
+  REF #1: from 14000eb91 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c03b8 in <none/data>
+
+STRING @ 1403e6990: "bg_shock_soundModEndDelay"
+  REF #1: from 14000ebc4 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 1404c03c0 in <none/data>
+
+STRING @ 1403e7178: "The time between each foliage sound when moving slowly"
+  REF #1: from 14000df6d in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000df7a in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e71d0: "The time between each foliage sound when moving quickly"
+  REF #1: from 14000dfa2 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000dfaf in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e7230: "The time interval before foliage sounds are reset after the player has stopped moving"
+  REF #1: from 14000dfd7 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000dfe4 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e7bf0: "The interpolation rate for the player hold breath sound"
+  REF #1: from 14000e532 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000e53c in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e7c40: "The delay before playing the breathe in sound"
+  REF #1: from 14000e560 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000e56b in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8120: "The sound that gets blended with the shellshock loop alias"
+  REF #1: from 14000e81e in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8178: "Shellshock end sound alias"
+  REF #1: from 14000e845 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e81a8: "Shellshock aborted end sound alias"
+  REF #1: from 14000e86c in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e83d8: "Play shell shock sound"
+  REF #1: from 14000ea31 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e83f0: "Shell shock sound fade in time in seconds"
+  REF #1: from 14000ea5d in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000ea67 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8420: "Shell shock sound fade out time in seconds"
+  REF #1: from 14000ea9d in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000eaa7 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8450: "Shell shock sound loop fade time in seconds"
+  REF #1: from 14000eac7 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000ead1 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8480: "Sound loop end offset time from the end of the shellshock in seconds"
+  REF #1: from 14000eb10 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000eb17 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e84c8: "Shell shock sound room type"
+  REF #1: from 14000eb37 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000eb47 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e84e8: "Shell shock sound dry level"
+  REF #1: from 14000eb66 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000eb71 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8508: "Shell shock sound wet level"
+  REF #1: from 14000eb98 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000eba3 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403e8530: "The delay from the end of the shell shock to the end of the sound modification"
+  REF #1: from 14000ebd5 in FUN_14000dba0 @ 14000dba0
+  REF #2: from 14000ebe0 in FUN_14000dba0 @ 14000dba0
+
+STRING @ 1403ea960: "The time in seconds for the sound overlay on the compass to fade"
+  REF #1: from 1400371c6 in FUN_140037060 @ 140037060
+  REF #2: from 1400371cd in FUN_140037060 @ 140037060
+
+STRING @ 1403ea9a8: "compassSoundPingFadeTime"
+  REF #1: from 14003719a in FUN_140037060 @ 140037060
+
+STRING @ 1403ed030: "Draw debugging information for sounds"
+  REF #1: from 14004ab81 in FUN_14004a870 @ 14004a870
+  REF #2: from 14004ab8e in FUN_14004a870 @ 14004a870
+
+STRING @ 1403ede58: "Play footstep sounds"
+  REF #1: from 14004b385 in FUN_14004a870 @ 14004a870
+
+STRING @ 1403efb70: "The pitch of the motion tracker sound for a distant enemy"
+  REF #1: from 14004d827 in FUN_14004d6b0 @ 14004d6b0
+  REF #2: from 14004d831 in FUN_14004d6b0 @ 14004d6b0
+
+STRING @ 1403efbd0: "The pitch of the motion tracker sound for a nearby enemy"
+  REF #1: from 14004d861 in FUN_14004d6b0 @ 14004d6b0
+  REF #2: from 14004d868 in FUN_14004d6b0 @ 14004d6b0
+
+STRING @ 1403f0d60: "checksound"
+  REF #1: from 14005af8c in FUN_1400595c0 @ 1400595c0
+
+STRING @ 1403f1aa8: "soundtables/mp_common_zone.csv"
+  REF #1: from 140062e43 in FUN_140062e00 @ 140062e00
+
+STRING @ 1403f1ac8: "soundtables/mp_common_occlusion.csv"
+  REF #1: from 140062e53 in FUN_140062e00 @ 140062e00
+
+STRING @ 1403f1af0: "soundtables/mp_common_filter.csv"
+  REF #1: from 140062e63 in FUN_140062e00 @ 140062e00
+
+STRING @ 1403f1b18: "soundtables/mp_common_reverb.csv"
+  REF #1: from 140062e73 in FUN_140062e00 @ 140062e00
+
+STRING @ 1403f2a20: "RemoteCameraSounds_RoomType"
+  REF #1: from 14006ac33 in FUN_14006abc0 @ 14006abc0
+
+STRING @ 1403f2a40: "RemoteCameraSounds_DryLevel"
+  REF #1: from 14006ac4b in FUN_14006abc0 @ 14006abc0
+
+STRING @ 1403f2a60: "RemoteCameraSounds_WetLevel"
+  REF #1: from 14006ac79 in FUN_14006abc0 @ 14006abc0
+
+STRING @ 1403f611c: "sound"
+  REF #1: from 1404c2368 in <none/data>
+  REF #2: from 1404c2488 in <none/data>
+
+STRING @ 1403f8010: "loaded_sound"
+  REF #1: from 1404c2498 in <none/data>
+
+STRING @ 1404060b0: "checksound %d %d"
+  REF #1: from 140138612 in FUN_140138590 @ 140138590
+
+STRING @ 140406800: "If a missile explodes deeper under water than this, they explosion effect/sound will not play."
+  REF #1: from 14013c14b in FUN_14013bd60 @ 14013bd60
+  REF #2: from 14013c155 in FUN_14013bd60 @ 14013bd60
+
+STRING @ 14040b260: "sound_blend"
+  REF #1: from 14017ac3d in FUN_1401795b0 @ 1401795b0
+  REF #2: from 14040b0e0 in <none/data>
+
+STRING @ 14040b4f0: "ET_SOUND_BLEND"
+  REF #1: from 1404c7910 in <none/data>
+
+STRING @ 14042b770: "Enable culling of sounds on the server thread"
+  REF #1: from 14026ce54 in FUN_14026ce50 @ 14026ce50
+
+STRING @ 14042b7a0: "serverCulledSounds"
+  REF #1: from 14026ce63 in FUN_14026ce50 @ 14026ce50
+
+STRING @ 14042b950: "attempted to play spatialized alias '%s' while there is no active listener. Most likely this means you tried to play a spatialized sound while not in a level.\n"
+  REF #1: from 140274735 in FUN_140274100 @ 140274100
+  REF #2: from 140279351 in FUN_140278ff0 @ 140278ff0
+
+STRING @ 14042b9f1: "tried to blend between sound aliases '%s' and '%s', but they don't use the same sound file\n"
+
+STRING @ 14042ba51: "tried to blend between sound aliases '%s' and '%s', but they do not have the same velocity min.\n"
+
+STRING @ 14042bac1: "tried to blend between sound aliases '%s' and '%s', but they do not have the same volume falloff curve\n"
+
+STRING @ 14042bb31: "tried to blend between sound aliases '%s' and '%s', but they do not have the same looping status\n"
+
+STRING @ 14042bba1: "tried to blend between sound aliases '%s' and '%s', but they are not both loaded or both streamed\n"
+
+STRING @ 14042bc11: "tried to blend between sound aliases '%s' and '%s', but they don't use the same channel\n"
+
+STRING @ 14042bc71: "tried to blend between sound aliases '%s' and '%s', but they don't use the same fulldrylevel setting\n"
+
+STRING @ 14042bce1: "tried to blend between sound aliases '%s' and '%s', but they don't use the same nowetlevel setting\n"
+
+STRING @ 14042bd51: "tried to blend between sound aliases '%s' and '%s', but they do not have the same master priority\n"
+
+STRING @ 14042bdc1: "tried to blend between sound aliases '%s' and '%s', but they do not have the same master percentages.\n"
+
+STRING @ 14042be31: "tried to blend between sound aliases '%s' and '%s', but they do not have the same slave percentages.\n"
+
+STRING @ 14042bea1: "tried to blend between sound aliases '%s' and '%s', but they do not have the same start delay.\n"
+
+STRING @ 14042bf11: "tried to blend between sound aliases '%s' and '%s', but they are looping and at least one of them has a random pitch\n"
+
+STRING @ 14042bf91: "tried to blend between sound aliases '%s' and '%s', but they are looping and at least one of them has a random volume\n"
+
+STRING @ 14042c011: "tried to blend between sound aliases '%s' and '%s', but one or both has a secondary alias.\n"
+
+STRING @ 14042c071: "alias %s sound %s played as an ambient / music track uses a 3D channel type; should probably be channel 'local'\n"
+
+STRING @ 14042c0f1: "alias %s sound %s played as an ambient / music track is not streamed; type must be 'streamed'\n"
+
+STRING @ 14042c190: "soundaliases/volumemodgroups.svmod"
+  REF #1: from 1402731a6 in FUN_140273190 @ 140273190
+  REF #2: from 1402731b0 in FUN_140273190 @ 140273190
+  REF #3: from 140273211 in FUN_140273190 @ 140273190
+  REF #4: from 1402732b8 in FUN_140273190 @ 140273190
+  REF #5: from 14027326a in FUN_140273190 @ 140273190
+  REF #6: from 1402716bb in FUN_140271240 @ 140271240
+  REF #7: from 1402716d2 in FUN_140271240 @ 140271240
+
+STRING @ 14042c290: "soundaliases/channels.def"
+  REF #1: from 140272bed in FUN_140272be0 @ 140272be0
+  REF #2: from 140272bf6 in FUN_140272be0 @ 140272be0
+  REF #3: from 140272c8a in FUN_140272be0 @ 140272be0
+  REF #4: from 14027161c in FUN_140271240 @ 140271240
+  REF #5: from 140271633 in FUN_140271240 @ 140271240
+
+STRING @ 14042c3b8: "Cause a Com_Error if a sound file is missing."
+  REF #1: from 140271259 in FUN_140271240 @ 140271240
+
+STRING @ 14042c400: "Game sound master volume"
+  REF #1: from 140271291 in FUN_140271240 @ 140271240
+  REF #2: from 140271298 in FUN_140271240 @ 140271240
+
+STRING @ 14042c480: "The amount of time in milliseconds for a 'slave' sound\nto fade its volumes when a master sound starts or stops"
+  REF #1: from 1402712ef in FUN_140271240 @ 140271240
+  REF #2: from 1402712fc in FUN_140271240 @ 140271240
+
+STRING @ 14042c508: "Enable 2D sounds"
+  REF #1: from 140271312 in FUN_140271240 @ 140271240
+
+STRING @ 14042c530: "Enable 3D sounds"
+  REF #1: from 140271331 in FUN_140271240 @ 140271240
+
+STRING @ 14042c558: "Enable streamed sounds"
+  REF #1: from 140271350 in FUN_140271240 @ 140271240
+
+STRING @ 14042c588: "Enable sound reverberation"
+  REF #1: from 14027136f in FUN_140271240 @ 140271240
+
+STRING @ 14042c5f0: "Draw the position and info of world sounds"
+  REF #1: from 1402713c0 in FUN_140271240 @ 140271240
+  REF #2: from 1402713cd in FUN_140271240 @ 140271240
+
+STRING @ 14042c6f0: "Modifier for the player weapon sound levels. Value used at the game init."
+  REF #1: from 14027146c in FUN_140271240 @ 140271240
+  REF #2: from 140271473 in FUN_140271240 @ 140271240
+
+STRING @ 14042c808: "Check whether stream sound files exist while loading"
+  REF #1: from 14027150b in FUN_140271240 @ 140271240
+
+STRING @ 14042c8f8: "soundtables/common_occlusion.csv"
+  REF #1: from 1402787ab in FUN_140278770 @ 140278770
+
+STRING @ 140438830: "SND_GetAliasWithOffset: could not find sound alias '%s' with offset %d"
+  REF #1: from 1402c03fb in FUN_1402c0370 @ 1402c0370
+
+STRING @ 140440638: "sound\\%s%s"
+  REF #1: from 14030e3df in FUN_14030e310 @ 14030e310
+
+STRING @ 140440648: "Sound output configuration"
+  REF #1: from 14030dcbd in FUN_14030dcb0 @ 14030dcb0
+  REF #2: from 14030dccd in FUN_14030dcb0 @ 14030dcb0
+
+STRING @ 1404406c0: "Percentage of sound volume that is 'directionless'"
+  REF #1: from 14030b66e in FUN_14030b450 @ 14030b450
+  REF #2: from 14030b675 in FUN_14030b450 @ 14030b450
+
+STRING @ 14044073f: "?Failed to create sound thread"
+
+STRING @ 1404bd39c: "BinkSetSoundTrack"
+
+STRING @ 1404bd3c0: "BinkSetSoundSystem"
+

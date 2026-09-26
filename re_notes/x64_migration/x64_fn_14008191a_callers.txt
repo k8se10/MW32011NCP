@@ -1,0 +1,25 @@
+================================================================
+Function: FUN_14008191a @ 14008191a
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_14008191a(void)
+
+{
+  if (DAT_14064fdf4 != 0) {
+    FUN_14008dd00();
+    FUN_14008da30();
+  }
+  _DAT_14064fe88 = FUN_1401c4ba0("white",3);
+  _DAT_14064fe90 = FUN_1401c4ba0("console",3);
+  DAT_14064fe38 = FUN_1401b7cb0("fonts/consoleFont",3);
+  DAT_1404c0bfc = DAT_14064fe4c + -0x30;
+  FUN_14007ad40();
+  return;
+}
+
+
+---- CALLERS of FUN_14008191a ----
+Total callers: 0
+

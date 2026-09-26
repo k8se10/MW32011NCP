@@ -1,0 +1,482 @@
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=0000000030238BDD
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=0000000030238BDD
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517ED99C1C
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=0000000030238BDD
+[snd-diag] Load_snd_alias_t: aliasName resolved=000002517ED99C1C
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=0
+[snd-diag] Load_SoundFile enter atStreamStart=1 sizeof(SoundFile)=24
+[snd-diag] Load_SoundFile after fill type=1 exists=1
+[snd-diag] Load_SoundFileRef enter atStreamStart=0 sizeof(SoundFileRef)=16 type=1
+[snd-diag] Load_SoundFileRef: SAT_LOADED branch, loadSnd=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name raw=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name resolved=000002517EDC7D90
+[loadedsound-diag] Load_MssSound: format=0 data_len=0 rate=0 bits=0 channels=0 samples=0 block_size=0 data(raw)=0000000000000000
+[loadedsound-diag] Load_MssSound: done
+[snd-diag] Load_SoundFileRef done
+[snd-diag] Load_SoundFile done
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=FFFFFFFFFFFFFFFF
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=FFFFFFFFFFFFFFFF
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=0
+[sndcurve-diag] Load_SndCurve enter atStreamStart=1 sizeof(SndCurve)=144
+[sndcurve-diag] Load_SndCurve after fill: filename(raw)=FFFFFFFFFFFFFFFF knotCount=0 knots[0]=[0.000000,0.000000] knots[1]=[0.000000,0.000000] knots[15]=[0.000000,0.000000]
+[sndcurve-diag] Load_SndCurve after LoadXString: filename resolved=000002517EDC7DBD (',helicopter1')
+[sndcurve-diag] Load_SndCurve done
+[snd-diag] Load_snd_alias_t: speakerMap ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=0
+[snd-diag] Load_SpeakerMap: isDefault=1 name=000002517ED9BB60
+[snd-diag] Load_SpeakerMap: speaker=2 levels(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_SpeakerMap: read 4 floats for speaker=2
+[snd-diag] Load_SpeakerMap: speaker=6 levels(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_SpeakerMap: read 12 floats for speaker=6
+[snd-diag] Load_SpeakerMap: speaker=4 levels(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_SpeakerMap: read 8 floats for speaker=4
+[snd-diag] Load_SpeakerMap: speaker=12 levels(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_SpeakerMap: read 24 floats for speaker=12
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0AB8 *pAsset=000002517F14CB20
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517EF34330 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14C7C0, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517ED99C1C
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517ED99C1C, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=0000000030238BBD
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=0000000030238BBD
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517ED99BFC
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=0000000030238BBD
+[snd-diag] Load_snd_alias_t: aliasName resolved=000002517ED99BFC
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=0000000030266D39
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=2
+[snd-diag] Load_snd_alias_t: soundFile calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: soundFile lookup resolved=000002517F14CCC0
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0AC8 *pAsset=000002517F14C780
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517F055910 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14CA00, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517ED99BFC
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517ED99BFC, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC7EA4
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=0000000030266F25
+[snd-diag] Load_snd_alias_t: aliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=0000000030266D39
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=2
+[snd-diag] Load_snd_alias_t: soundFile calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: soundFile lookup resolved=000002517F14CCC0
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0AD8 *pAsset=000002517F14C660
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517F0559B0 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14C6A0, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517EDC7EA4
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517EDC7EA4, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC7F58
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=0000000030266FD9
+[snd-diag] Load_snd_alias_t: aliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=0000000030266D39
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=2
+[snd-diag] Load_snd_alias_t: soundFile calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: soundFile lookup resolved=000002517F14CCC0
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0AE8 *pAsset=000002517F14CCA0
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517EF1E700 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14CA20, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517EDC7F58
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517EDC7F58, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC800C
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=000000003026708D
+[snd-diag] Load_snd_alias_t: aliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=0
+[snd-diag] Load_SoundFile enter atStreamStart=1 sizeof(SoundFile)=24
+[snd-diag] Load_SoundFile after fill type=1 exists=1
+[snd-diag] Load_SoundFileRef enter atStreamStart=0 sizeof(SoundFileRef)=16 type=1
+[snd-diag] Load_SoundFileRef: SAT_LOADED branch, loadSnd=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name raw=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name resolved=000002517EDC80D8
+[loadedsound-diag] Load_MssSound: format=0 data_len=0 rate=0 bits=0 channels=0 samples=0 block_size=0 data(raw)=0000000000000000
+[loadedsound-diag] Load_MssSound: done
+[snd-diag] Load_SoundFileRef done
+[snd-diag] Load_SoundFile done
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0AF8 *pAsset=000002517F14C9C0
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517EF1E7A0 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14C8E0, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517EDC800C
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517EDC800C, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC8106
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=0000000030267187
+[snd-diag] Load_snd_alias_t: aliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=0
+[snd-diag] Load_SoundFile enter atStreamStart=1 sizeof(SoundFile)=24
+[snd-diag] Load_SoundFile after fill type=1 exists=1
+[snd-diag] Load_SoundFileRef enter atStreamStart=0 sizeof(SoundFileRef)=16 type=1
+[snd-diag] Load_SoundFileRef: SAT_LOADED branch, loadSnd=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name raw=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name resolved=000002517EDC81D0
+[loadedsound-diag] Load_MssSound: format=0 data_len=0 rate=0 bits=0 channels=0 samples=0 block_size=0 data(raw)=0000000000000000
+[loadedsound-diag] Load_MssSound: done
+[snd-diag] Load_SoundFileRef done
+[snd-diag] Load_SoundFile done
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=0000000030266D19
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0B08 *pAsset=000002517F14C980
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517EFE7DB0 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14CAA0, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517EDC8106
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517EDC8106, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC81FE
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=000000003026727F
+[snd-diag] Load_snd_alias_t: aliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=0
+[snd-diag] Load_SoundFile enter atStreamStart=1 sizeof(SoundFile)=24
+[snd-diag] Load_SoundFile after fill type=1 exists=1
+[snd-diag] Load_SoundFileRef enter atStreamStart=0 sizeof(SoundFileRef)=16 type=1
+[snd-diag] Load_SoundFileRef: SAT_LOADED branch, loadSnd=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name raw=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name resolved=000002517EDC82C8
+[loadedsound-diag] Load_MssSound: format=0 data_len=0 rate=0 bits=0 channels=0 samples=0 block_size=0 data(raw)=0000000000000000
+[loadedsound-diag] Load_MssSound: done
+[snd-diag] Load_SoundFileRef done
+[snd-diag] Load_SoundFile done
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=FFFFFFFFFFFFFFFF
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=FFFFFFFFFFFFFFFF
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=0
+[sndcurve-diag] Load_SndCurve enter atStreamStart=1 sizeof(SndCurve)=144
+[sndcurve-diag] Load_SndCurve after fill: filename(raw)=FFFFFFFFFFFFFFFF knotCount=0 knots[0]=[0.000000,0.000000] knots[1]=[0.000000,0.000000] knots[15]=[0.000000,0.000000]
+[sndcurve-diag] Load_SndCurve after LoadXString: filename resolved=000002517EDC82F8 (',weapon2')
+[sndcurve-diag] Load_SndCurve done
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0B18 *pAsset=000002517F14CA40
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517F02F7F0 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14C5C0, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517EDC81FE
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517EDC81FE, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=1 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC8301
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=1
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=1
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/1
+[snd-diag] Load_snd_alias_t: aliasName raw=0000000030267382
+[snd-diag] Load_snd_alias_t: aliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=000002517EDC83B8
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=0
+[snd-diag] Load_SoundFile enter atStreamStart=1 sizeof(SoundFile)=24
+[snd-diag] Load_SoundFile after fill type=1 exists=1
+[snd-diag] Load_SoundFileRef enter atStreamStart=0 sizeof(SoundFileRef)=16 type=1
+[snd-diag] Load_SoundFileRef: SAT_LOADED branch, loadSnd=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name raw=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name resolved=000002517EDC83F4
+[loadedsound-diag] Load_MssSound: format=0 data_len=0 rate=0 bits=0 channels=0 samples=0 block_size=0 data(raw)=0000000000000000
+[loadedsound-diag] Load_MssSound: done
+[snd-diag] Load_SoundFileRef done
+[snd-diag] Load_SoundFile done
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=FFFFFFFFFFFFFFFF
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=FFFFFFFFFFFFFFFF
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=0
+[sndcurve-diag] Load_SndCurve enter atStreamStart=1 sizeof(SndCurve)=144
+[sndcurve-diag] Load_SndCurve after fill: filename(raw)=FFFFFFFFFFFFFFFF knotCount=0 knots[0]=[0.000000,0.000000] knots[1]=[0.000000,0.000000] knots[15]=[0.000000,0.000000]
+[sndcurve-diag] Load_SndCurve after LoadXString: filename resolved=000002517EDC8419 (',$default')
+[sndcurve-diag] Load_SndCurve done
+[snd-diag] Load_snd_alias_t: speakerMap ptr=0000000030266D8D
+[snd-diag] Load_snd_alias_t: speakerMap zonePtrType=2
+[snd-diag] Load_snd_alias_t: speakerMap calling ConvertOffsetToPointerLookup
+[snd-diag] Load_snd_alias_t: speakerMap lookup resolved=000002517F0D7370
+[snd-diag] Load_snd_alias_t: element fully done
+[snd-diag] LoadArray_snd_alias_t all elements done
+[snd-diag] Load_snd_alias_list_t: about to PopBlock
+[snd-diag] Load_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: Load_snd_alias_list_t returned, about to call LoadAsset_snd_alias_list_t
+[snd-diag] LoadAsset_snd_alias_list_t enter pAsset=000002517EEE0B28 *pAsset=000002517F14C680
+[snd-diag] LoadAsset_snd_alias_list_t: about to Mark, (*pAsset)->head=000002517F02F570 (*pAsset)->count=1
+[snd-diag] LoadAsset_snd_alias_list_t: Mark done
+[snd-diag] LoadAsset_snd_alias_list_t: Alloc done reallocatedAsset=000002517F14CC00, about to memcpy sizeof=24
+[snd-diag] LoadAsset_snd_alias_list_t: memcpy done, about to AssetName
+[snd-diag] LoadAsset_snd_alias_list_t: about to call AssetName, (*pAsset)->aliasName=000002517EDC8301
+[snd-diag] LoadAsset_snd_alias_list_t: AssetName resolved name=000002517EDC8301, about to LinkAsset
+[snd-diag] LoadAsset_snd_alias_list_t: LinkAsset done
+[snd-diag] LoadAsset_snd_alias_list_t: done
+[snd-diag] LoadPtr_snd_alias_list_t: LoadAsset_snd_alias_list_t returned
+[snd-diag] LoadPtr_snd_alias_list_t: about to call Load_snd_alias_list_t(true)
+[snd-diag] Load_snd_alias_list_t enter atStreamStart=1 count=0 head=0000000000000000
+[snd-diag] Load_snd_alias_list_t after fill count=3 head=FFFFFFFFFFFFFFFF aliasName(raw)=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: about to LoadXString(aliasName), raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: LoadXString(aliasName) done, resolved=000002517EDC8423
+[snd-diag] Load_snd_alias_list_t: head branch, head=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_list_t: head zonePtrType=0
+[snd-diag] Load_snd_alias_list_t: calling LoadArray_snd_alias_t with count=3
+[snd-diag] LoadArray_snd_alias_t enter atStreamStart=1 count=3
+[snd-diag] LoadArray_snd_alias_t fill done, starting per-element Load
+[snd-diag] LoadArray_snd_alias_t element index=0/3
+[snd-diag] Load_snd_alias_t: aliasName raw=00000000302674A4
+[snd-diag] Load_snd_alias_t: aliasName resolved=000002517EDC84E3
+[snd-diag] Load_snd_alias_t: subtitle raw=0000000000000000
+[snd-diag] Load_snd_alias_t: subtitle resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: secondaryAliasName raw=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: secondaryAliasName resolved=000002517EDC8610
+[snd-diag] Load_snd_alias_t: chainAliasName raw=0000000000000000
+[snd-diag] Load_snd_alias_t: chainAliasName resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup raw=0000000000000000
+[snd-diag] Load_snd_alias_t: mixerGroup resolved=0000000000000000
+[snd-diag] Load_snd_alias_t: soundFile ptr=FFFFFFFFFFFFFFFF
+[snd-diag] Load_snd_alias_t: soundFile zonePtrType=0
+[snd-diag] Load_SoundFile enter atStreamStart=1 sizeof(SoundFile)=24
+[snd-diag] Load_SoundFile after fill type=1 exists=1
+[snd-diag] Load_SoundFileRef enter atStreamStart=0 sizeof(SoundFileRef)=16 type=1
+[snd-diag] Load_SoundFileRef: SAT_LOADED branch, loadSnd=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name raw=FFFFFFFFFFFFFFFF
+[loadedsound-diag] Load_LoadedSound: name resolved=000002517EDC864C
+[loadedsound-diag] Load_MssSound: format=0 data_len=0 rate=0 bits=0 channels=0 samples=0 block_size=0 data(raw)=0000000000000000
+[loadedsound-diag] Load_MssSound: done
+[snd-diag] Load_SoundFileRef done
+[snd-diag] Load_SoundFile done
+[snd-diag] Load_snd_alias_t: volumeFalloffCurve ptr=0000000030267419
+[sndcurve-diag] LoadPtr_SndCurve enter *varSndCurvePtr=0000000030267419
+[sndcurve-diag] LoadPtr_SndCurve zonePtrType=2
+Loaded search path "D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3"
+WARN: Zone referenced offset 2518820 of block XFILE_BLOCK_VIRTUAL which has not been written yet (forward reference) -- leaving the string reference null and continuing.
+WARN: Zone referenced offset 2519000 of block XFILE_BLOCK_VIRTUAL which has not been written yet (forward reference) -- leaving the string reference null and continuing.
+WARN: Zone referenced offset 2519180 of block XFILE_BLOCK_VIRTUAL which has not been written yet (forward reference) -- leaving the string reference null and continuing.
+WARN: Zone referenced offset 2519430 of block XFILE_BLOCK_VIRTUAL which has not been written yet (forward reference) -- leaving the string reference null and continuing.
+WARN: Zone referenced offset 2519678 of block XFILE_BLOCK_VIRTUAL which has not been written yet (forward reference) -- leaving the string reference null and continuing.
+WARN: Zone referenced offset 2519937 of block XFILE_BLOCK_VIRTUAL which has not been written yet (forward reference) -- leaving the string reference null and continuing.
+ERROR: Loading fastfile failed: Zone referenced offset 2520088 of block XFILE_BLOCK_VIRTUAL which is larger than its size 2645421
+ERROR: Failed to load zone "D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3\zone\english\so_survival_mp_dome.ff": Loading zone failed.
+Unloaded search path "D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3"
+Failed with 6 warnings, 2 errors

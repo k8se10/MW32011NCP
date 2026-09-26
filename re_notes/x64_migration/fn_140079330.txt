@@ -1,0 +1,32 @@
+================================================================
+Function: FUN_140079330 @ 140079330
+----------------------------------------------------------------
+
+void FUN_140079330(undefined8 param_1)
+
+{
+  char cVar1;
+  
+  if (DAT_1406e24c4 != '\0') {
+    FUN_1402753c0();
+    FUN_140274dc0();
+    FUN_140081900();
+    FUN_140082aa0();
+    FUN_1400824b0(param_1);
+    FUN_140299ce0();
+    cVar1 = FUN_14008df40(0);
+    if ((cVar1 != '\0') && (*(char *)(DAT_14252b618 + 0x10) != '\0')) {
+      FUN_140240b20(0);
+    }
+    FUN_1402c5ad0(DAT_141efb7a8,1);
+    return;
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_140079330 ----
+  CALLER #1: from 14443dfe8 in <none/data> refType=DATA
+  CALLER #2: from 14026b3e9 in FUN_14026b220 @ 14026b220 refType=UNCONDITIONAL_CALL
+Total callers: 2
+

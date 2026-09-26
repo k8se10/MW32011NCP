@@ -1,0 +1,24 @@
+Signature-byte dump of FUN_1401dfd80 @ 1401dfd80
+(byte offsets relative to function entry point)
+
++0x00  40 56                          PUSH RSI                                 
++0x02  41 54                          PUSH R12                                 
++0x04  41 57                          PUSH R15                                 
++0x06  48 83 EC 30                    SUB RSP,0x30                             
++0x0A  48 8B 71 08                    MOV RSI,qword ptr [RCX + 0x8]            
++0x0E  4C 8B E1                       MOV R12,RCX                              
++0x11  4C 63 FA                       MOVSXD R15,EDX                           
++0x14  44 3B BE D8 0B 00 00           CMP R15D,dword ptr [RSI + 0xbd8]         
++0x1B  0F 84 7E 01 00 00              JZ 0x1401dff1f                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x21  8B 86 9C 0B 00 00              MOV EAX,dword ptr [RSI + 0xb9c]          
++0x27  48 89 5C 24 50                 MOV qword ptr [RSP + 0x50],RBX           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2C  48 89 6C 24 58                 MOV qword ptr [RSP + 0x58],RBP           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x31  48 89 7C 24 60                 MOV qword ptr [RSP + 0x60],RDI           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x36  4C 89 6C 24 28                 MOV qword ptr [RSP + 0x28],R13           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3B  4C 89 74 24 20                 MOV qword ptr [RSP + 0x20],R14           [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (64 total): 40 56 41 54 41 57 48 83 EC 30 48 8B 71 08 4C 8B E1 4C 63 FA 44 3B BE D8 0B 00 00 0F 84 7E 01 00 00 8B 86 9C 0B 00 00 48 89 5C 24 50 48 89 6C 24 58 48 89 7C 24 60 4C 89 6C 24 28 4C 89 74 24 20
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+40 56 41 54 41 57 48 83 EC 30 48 8B 71 08 4C 8B E1 4C 63 FA 44 3B BE D8 0B 00 00 ?? ?? ?? ?? ?? ?? 8B 86 9C 0B 00 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??

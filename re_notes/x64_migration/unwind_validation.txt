@@ -1,0 +1,84 @@
+================================================================
+Queried address: 0x14008191a
+RUNTIME_FUNCTION @ pdata offset 0x66fc
+  BeginAddress = 0x140081900  <-- queried address is 26 bytes INTO this range, NOT the start
+  EndAddress   = 0x14008198d (range size 141 bytes)
+  UNWIND_INFO @ 0x14047f5d0
+    Version=1 Flags=0x0
+    SizeOfProlog=4
+    CountOfUnwindCodes=1
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+
+================================================================
+Queried address: 0x140079351
+RUNTIME_FUNCTION @ pdata offset 0x5fe8
+  BeginAddress = 0x140079330  <-- queried address is 33 bytes INTO this range, NOT the start
+  EndAddress   = 0x14007939e (range size 110 bytes)
+  UNWIND_INFO @ 0x14047fa58
+    Version=1 Flags=0x0
+    SizeOfProlog=6
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+
+================================================================
+Queried address: 0x14026360f
+RUNTIME_FUNCTION @ pdata offset 0x1f9e0
+  BeginAddress = 0x140263460  <-- queried address is 431 bytes INTO this range, NOT the start
+  EndAddress   = 0x140263628 (range size 456 bytes)
+  UNWIND_INFO @ 0x1404a5014
+    Version=1 Flags=0x0
+    SizeOfProlog=35
+    CountOfUnwindCodes=9
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+
+================================================================
+Queried address: 0x14022f909
+RUNTIME_FUNCTION @ pdata offset 0x1c7c4
+  BeginAddress = 0x14022f81e  <-- queried address is 235 bytes INTO this range, NOT the start
+  EndAddress   = 0x14022f935 (range size 279 bytes)
+  UNWIND_INFO @ 0x1404a1ba8
+    Version=1 Flags=0x4 [UNW_FLAG_CHAININFO -- this unwind info is CHAINED to a parent RUNTIME_FUNCTION, a real, strong signal this is a split fragment, not an independent function]
+    SizeOfProlog=8
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+
+================================================================
+Queried address: 0x14019c450
+RUNTIME_FUNCTION @ pdata offset 0x15e88
+  BeginAddress = 0x14019c450  <-- queried address IS the real function start
+  EndAddress   = 0x14019c54b (range size 251 bytes)
+  UNWIND_INFO @ 0x140492938
+    Version=1 Flags=0x0
+    SizeOfProlog=20
+    CountOfUnwindCodes=8
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+
+================================================================
+Queried address: 0x140274100
+RUNTIME_FUNCTION @ pdata offset 0x20a3c
+  BeginAddress = 0x140274100  <-- queried address IS the real function start
+  EndAddress   = 0x140274420 (range size 800 bytes)
+  UNWIND_INFO @ 0x1404a64e4
+    Version=1 Flags=0x0
+    SizeOfProlog=106
+    CountOfUnwindCodes=23
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+
+================================================================
+Queried address: 0x1401dc140
+RUNTIME_FUNCTION @ pdata offset 0x18bd0
+  BeginAddress = 0x1401dc140  <-- queried address IS the real function start
+  EndAddress   = 0x1401dc59c (range size 1116 bytes)
+  UNWIND_INFO @ 0x14049cdc0
+    Version=1 Flags=0x0
+    SizeOfProlog=41
+    CountOfUnwindCodes=8
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+

@@ -1,0 +1,71 @@
+================================================================
+Function: FUN_1401dfd80 @ 1401dfd80
+----------------------------------------------------------------
+
+void FUN_1401dfd80(longlong *param_1,int param_2)
+
+{
+  longlong lVar1;
+  longlong lVar2;
+  uint uVar3;
+  int iVar4;
+  uint uVar5;
+  longlong *plVar6;
+  longlong lVar7;
+  
+  lVar1 = param_1[1];
+  lVar7 = (longlong)param_2;
+  if (param_2 == *(int *)(lVar1 + 0xbd8)) {
+    return;
+  }
+  if ((*(uint *)(lVar1 + 0xb9c) >> 0x1e & 1) != 0) {
+    *(uint *)(lVar1 + 0xb94) = *(uint *)(lVar1 + 0xb94) & 0xbfffffff;
+    *(uint *)(lVar1 + 0xb9c) = *(uint *)(lVar1 + 0xb9c) & 0xbfffffff;
+    (**(code **)(**(longlong **)(lVar1 + 0x110) + 0x1c8))(*(longlong **)(lVar1 + 0x110),0xc2,0);
+  }
+  uVar5 = 0;
+  lVar2 = (&DAT_141bb6e00)[lVar7 * 4];
+  if (lVar2 != 0) {
+    plVar6 = (longlong *)(lVar1 + 0x70);
+    do {
+      if (*plVar6 == lVar2) {
+        uVar3 = uVar5 + 0xf1;
+        if (uVar5 < 0x10) {
+          uVar3 = uVar5;
+        }
+        (**(code **)(**(longlong **)(lVar1 + 0x110) + 0x208))(*(longlong **)(lVar1 + 0x110),uVar3,0)
+        ;
+        *plVar6 = 0;
+      }
+      uVar5 = uVar5 + 1;
+      plVar6 = plVar6 + 1;
+    } while (uVar5 < 0x14);
+  }
+  iVar4 = *(int *)(lVar1 + 0xbd8);
+  plVar6 = *(longlong **)(lVar1 + 0x110);
+  if ((iVar4 == 0x10) || ((&DAT_141bb6e08)[(longlong)iVar4 * 4] != (&DAT_141bb6e08)[lVar7 * 4])) {
+    (**(code **)(*plVar6 + 0x128))(plVar6,0,(&DAT_141bb6e08)[lVar7 * 4]);
+    iVar4 = *(int *)(lVar1 + 0xbd8);
+    *(undefined8 *)(lVar1 + 0xbc8) = 0;
+    *(undefined4 *)(lVar1 + 0xbd0) = *(undefined4 *)(&DAT_141bb6e18 + lVar7 * 0x20);
+    *(undefined4 *)(lVar1 + 0xbd4) = *(undefined4 *)(&DAT_141bb6e1c + lVar7 * 0x20);
+    *(undefined4 *)(lVar1 + 0x184) = 0xffffffff;
+    *(undefined4 *)(lVar1 + 0x188) = 0;
+    *(undefined4 *)(lVar1 + 0x18c) = 0x3f800000;
+    if (iVar4 != 0x10) goto LAB_1401dfece;
+  }
+  else {
+LAB_1401dfece:
+    if ((&DAT_141bb6e10)[(longlong)iVar4 * 4] == (&DAT_141bb6e10)[lVar7 * 4]) goto LAB_1401dfef2;
+  }
+  (**(code **)(*plVar6 + 0x138))(plVar6,(&DAT_141bb6e10)[lVar7 * 4]);
+LAB_1401dfef2:
+  lVar7 = *param_1;
+  *(int *)(lVar1 + 0xbd8) = param_2;
+  *(undefined4 *)(lVar7 + 0x17c0) = 0;
+  *(undefined1 *)(lVar7 + 0x181c) = 1;
+  return;
+}
+
+
+

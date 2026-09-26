@@ -1,0 +1,49 @@
+================================================================
+Function: FUN_0049d6a0 @ 0049d6a0
+----------------------------------------------------------------
+
+void FUN_0049d6a0(int param_1,int param_2)
+
+{
+  int iVar1;
+  int iVar2;
+  int *piVar3;
+  uint uVar4;
+  
+  iVar1 = param_1;
+  uVar4 = 0;
+  if (*(int *)(param_1 + 0x41f90) != 0) {
+    iVar2 = param_2 + 0xcfc;
+    piVar3 = (int *)(param_1 + 0x42158);
+    do {
+      if (*piVar3 == 0xb) {
+        thunk_FUN_00508560(iVar1,&param_1);
+        FUN_00515250(param_2,iVar2,uVar4,&param_1);
+      }
+      uVar4 = uVar4 + 1;
+      piVar3 = piVar3 + 0x78;
+      iVar2 = iVar2 + 0x94;
+    } while (uVar4 < *(uint *)(iVar1 + 0x41f90));
+  }
+  uVar4 = 0;
+  if (*(int *)(iVar1 + 0x41f90) != 0) {
+    iVar2 = param_2 + 0xcfc;
+    piVar3 = (int *)(iVar1 + 0x42158);
+    do {
+      if (*piVar3 == 10) {
+        thunk_FUN_00508560(iVar1,&param_1);
+        FUN_00515250(param_2,iVar2,uVar4,&param_1);
+      }
+      uVar4 = uVar4 + 1;
+      piVar3 = piVar3 + 0x78;
+      iVar2 = iVar2 + 0x94;
+    } while (uVar4 < *(uint *)(iVar1 + 0x41f90));
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_0049d6a0 ----
+  CALLER #1: from 00694328 in FUN_006942e0 @ 006942e0 refType=UNCONDITIONAL_CALL
+Total callers: 1
+

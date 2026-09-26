@@ -1,0 +1,16 @@
+=== Reference counts per global ===
+sm_sunShadowCenter (141884f20): 3 references
+sm_sunShadowScale (141884f30): 2 references
+sm_fastSunShadow (141884f50): 2 references
+
+=== Candidate functions, ranked by distinct global diversity (5) ===
+
+---- FUN_1401b50e0 @ 1401b50e0 (globals: sm_fastSunShadow, sm_sunShadowCenter, sm_sunShadowScale) ----
+
+---- FUN_1401e6a70 @ 1401e6a70 (globals: sm_sunShadowCenter) ----
+
+---- FUN_1401e6170 @ 1401e6170 (globals: sm_sunShadowCenter) ----
+
+---- FUN_1401d8f70 @ 1401d8f70 (globals: sm_sunShadowScale) ----
+
+---- FUN_14019c450 @ 14019c450 (globals: sm_fastSunShadow) ----

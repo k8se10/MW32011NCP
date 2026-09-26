@@ -1,0 +1,29 @@
+Signature-byte dump of FUN_14019c450 @ 14019c450
+(byte offsets relative to function entry point)
+
++0x00  48 89 5C 24 08                 MOV qword ptr [RSP + 0x8],RBX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  48 89 6C 24 10                 MOV qword ptr [RSP + 0x10],RBP           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0A  48 89 74 24 18                 MOV qword ptr [RSP + 0x18],RSI           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0F  57                             PUSH RDI                                 
++0x10  48 83 EC 50                    SUB RSP,0x50                             
++0x14  48 8B 15 DD C1 6E 01           MOV RDX,qword ptr [0x141888648]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1B  48 8B F9                       MOV RDI,RCX                              
++0x1E  48 8B 82 98 00 00 00           MOV RAX,qword ptr [RDX + 0x98]           
++0x25  8B 72 0C                       MOV ESI,dword ptr [RDX + 0xc]            
++0x28  8B 6A 28                       MOV EBP,dword ptr [RDX + 0x28]           
++0x2B  48 89 44 24 28                 MOV qword ptr [RSP + 0x28],RAX           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30  48 8B 05 F9 A6 6F 01           MOV RAX,qword ptr [0x141896b80]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x37  83 B8 5C 1A 04 00 00           CMP dword ptr [RAX + 0x41a5c],0x0        
++0x3E  75 14                          JNZ 0x14019c4a4                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x40  48 8B 05 B9 8A 6E 01           MOV RAX,qword ptr [0x141884f50]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x47  48 8D 1D 82 F0 FF FF           LEA RBX,[0x14019b520]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4E  80 78 10 00                    CMP byte ptr [RAX + 0x10],0x0            
++0x52  75 07                          JNZ 0x14019c4ab                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x54  48 8D 1D B5 F4 FF FF           LEA RBX,[0x14019b960]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x5B  48 8B 42 58                    MOV RAX,qword ptr [RDX + 0x58]           
+
+Raw bytes (95 total): 48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 50 48 8B 15 DD C1 6E 01 48 8B F9 48 8B 82 98 00 00 00 8B 72 0C 8B 6A 28 48 89 44 24 28 48 8B 05 F9 A6 6F 01 83 B8 5C 1A 04 00 00 75 14 48 8B 05 B9 8A 6E 01 48 8D 1D 82 F0 FF FF 80 78 10 00 75 07 48 8D 1D B5 F4 FF FF 48 8B 42 58
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 57 48 83 EC 50 ?? ?? ?? ?? ?? ?? ?? 48 8B F9 48 8B 82 98 00 00 00 8B 72 0C 8B 6A 28 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 83 B8 5C 1A 04 00 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 80 78 10 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 8B 42 58

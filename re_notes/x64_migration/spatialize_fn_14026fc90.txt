@@ -1,0 +1,81 @@
+================================================================
+Function: FUN_14026fc90 @ 14026fc90
+----------------------------------------------------------------
+
+undefined8
+FUN_14026fc90(longlong *param_1,longlong *param_2,undefined4 param_3,undefined4 param_4,
+             undefined4 param_5,int param_6,undefined4 *param_7,int *param_8)
+
+{
+  char cVar1;
+  int iVar2;
+  longlong lVar3;
+  int iVar4;
+  longlong *plVar5;
+  
+  iVar4 = 0xe;
+  if (0xe < DAT_1425c4274 + 0xe) {
+    plVar5 = &DAT_1425c0c98;
+    iVar2 = DAT_1425c4274;
+    do {
+      if ((((*(int *)((longlong)plVar5 + -0xbc) == param_6) &&
+           (cVar1 = FUN_14030b8a0(iVar4), iVar2 = DAT_1425c4274, cVar1 == '\0')) &&
+          ((*(byte *)(*plVar5 + 0x54) & 1) != 0)) &&
+         ((*(longlong *)*plVar5 == *param_1 && (*(longlong *)plVar5[1] == *param_2)))) {
+        FUN_14026fec0(iVar4,param_3,param_4,param_5);
+        FUN_14030bbd0(iVar4,param_7);
+        goto LAB_14026fe9b;
+      }
+      iVar4 = iVar4 + 1;
+      plVar5 = plVar5 + 0x26;
+    } while (iVar4 < iVar2 + 0xe);
+  }
+  iVar4 = 0;
+  if (0 < DAT_1425c4270) {
+    plVar5 = &DAT_1425bfbf8;
+    iVar2 = DAT_1425c4270;
+    do {
+      if (((*(int *)((longlong)plVar5 + -0xbc) == param_6) &&
+          (cVar1 = FUN_14030b8a0(iVar4), iVar2 = DAT_1425c4270, cVar1 == '\0')) &&
+         (((*(byte *)(*plVar5 + 0x54) & 1) != 0 &&
+          ((*(longlong *)*plVar5 == *param_1 && (*(longlong *)plVar5[1] == *param_2)))))) {
+        FUN_14026fec0(iVar4,param_3,param_4,param_5);
+        if (param_8 == (int *)0x0) {
+          return 1;
+        }
+        *param_8 = iVar4;
+        return 1;
+      }
+      iVar4 = iVar4 + 1;
+      plVar5 = plVar5 + 0x26;
+    } while (iVar4 < iVar2);
+  }
+  iVar4 = 0x2e;
+  if (0x2e < DAT_1425c4278 + 0x2e) {
+    plVar5 = &DAT_1425c3298;
+    iVar2 = DAT_1425c4278;
+    do {
+      if ((((*(int *)((longlong)plVar5 + -0xbc) == param_6) &&
+           (cVar1 = FUN_14030b8d0(iVar4), iVar2 = DAT_1425c4278, cVar1 == '\0')) &&
+          ((*(byte *)(*plVar5 + 0x54) & 1) != 0)) &&
+         ((*(longlong *)*plVar5 == *param_1 && (*(longlong *)plVar5[1] == *param_2)))) {
+        FUN_14026fec0(iVar4,param_3,param_4,param_5);
+        lVar3 = (longlong)iVar4 * 0x130;
+        *(undefined4 *)(&DAT_1425bfc14 + lVar3) = *param_7;
+        *(undefined4 *)(&DAT_1425bfc18 + lVar3) = param_7[1];
+        *(undefined4 *)(&DAT_1425bfc1c + lVar3) = param_7[2];
+LAB_14026fe9b:
+        if (param_8 != (int *)0x0) {
+          *param_8 = iVar4;
+        }
+        return 1;
+      }
+      iVar4 = iVar4 + 1;
+      plVar5 = plVar5 + 0x26;
+    } while (iVar4 < iVar2 + 0x2e);
+  }
+  return 0;
+}
+
+
+

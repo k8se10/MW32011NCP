@@ -1,0 +1,11 @@
+=== Reference counts per global ===
+r_sunflare_shader (141c556c0): 2 references
+r_sun_fx_position (141c556a0): 2 references
+r_sunblind_max_darken (141c55710): 2 references
+r_sunglare_max_lighten (141c55738): 2 references
+
+=== Candidate functions, ranked by distinct global diversity (2) ===
+
+---- FUN_1401dc140 @ 1401dc140 (globals: r_sun_fx_position, r_sunblind_max_darken, r_sunflare_shader, r_sunglare_max_lighten) ----
+
+---- FUN_1401dc640 @ 1401dc640 (globals: r_sun_fx_position, r_sunblind_max_darken, r_sunflare_shader, r_sunglare_max_lighten) ----

@@ -1,0 +1,10 @@
+Searching for qword value 0x14008191a (8-byte aligned)
+Block Headers [140000000-1400003ff]: 0 matches.
+Block .text [140001000-1403e29ff]: 0 matches.
+Block .rdata [1403e3000-1404be7ff]: 0 matches.
+Block .data [1404bf000-1444370b3]: 0 matches.
+Block .pdata [144438000-14446a1ff]: 0 matches.
+Block _RDATA [14446b000-14446b1ff]: 0 matches.
+Block .rsrc [14446c000-1444835ff]: 0 matches.
+Block .bind [144484000-1444bd247]: 0 matches.
+Block tdb [ff00000000-ff0000184f]: 0 matches.

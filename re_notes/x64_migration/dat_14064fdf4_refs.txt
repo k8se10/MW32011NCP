@@ -1,0 +1,18 @@
+=== Reference counts per global ===
+DAT_14064fdf4 (14064fdf4): 11 references
+
+=== Candidate functions, ranked by distinct global diversity (7) ===
+
+---- FUN_140082890 @ 140082890 (globals: DAT_14064fdf4) ----
+
+---- FUN_140082a50 @ 140082a50 (globals: DAT_14064fdf4) ----
+
+---- FUN_140081900 @ 140081900 (globals: DAT_14064fdf4) ----
+
+---- FUN_1400825d0 @ 1400825d0 (globals: DAT_14064fdf4) ----
+
+---- FUN_140082fc0 @ 140082fc0 (globals: DAT_14064fdf4) ----
+
+---- FUN_14008191a @ 14008191a (globals: DAT_14064fdf4) ----
+
+---- FUN_14023f170 @ 14023f170 (globals: DAT_14064fdf4) ----

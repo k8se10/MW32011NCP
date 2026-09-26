@@ -1,0 +1,32 @@
+================================================================
+Function: FUN_0041f060 @ 0041f060
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_0041f060(void)
+
+{
+  DAT_00aa4194 = 1;
+  FUN_004a9820(&DAT_00aa41d8);
+  if (DAT_00aa4194 != 0) {
+    FUN_00546b30();
+    FUN_004f57b0();
+  }
+  _DAT_00aa421c = FUN_005446b0("white",3);
+  _DAT_00aa4220 = FUN_005446b0("console",3);
+  DAT_00aa41d0 = FUN_0045d040("fonts/consoleFont",3);
+  DAT_0092995c = DAT_00aa41e0 + -0x30;
+  FUN_004e6640();
+  return;
+}
+
+
+---- CALLERS of FUN_0041f060 ----
+  CALLER #1: from 00608b59 in FUN_00608b10 @ 00608b10 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 0046df45 in FUN_0046df20 @ 0046df20 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 00608a96 in FUN_00608820 @ 00608820 refType=UNCONDITIONAL_CALL
+  CALLER #4: from 004c7f73 in FUN_004c7f60 @ 004c7f60 refType=UNCONDITIONAL_CALL
+  CALLER #5: from 00552e04 in <none/data> refType=UNCONDITIONAL_CALL
+Total callers: 5
+

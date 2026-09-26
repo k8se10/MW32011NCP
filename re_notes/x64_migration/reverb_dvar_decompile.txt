@@ -1,0 +1,269 @@
+================================================================
+Function: FUN_140271240 @ 140271240
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140271240(void)
+
+{
+  undefined8 uVar1;
+  undefined8 uVar2;
+  longlong lVar3;
+  undefined8 *puVar4;
+  ulonglong uVar5;
+  undefined4 *puVar6;
+  uint uVar7;
+  ulonglong uVar8;
+  ulonglong uVar9;
+  longlong lVar10;
+  undefined4 *puVar11;
+  undefined1 local_res8 [8];
+  undefined8 in_stack_fffffffffffffec8;
+  undefined4 uVar12;
+  undefined4 local_128 [72];
+  
+  uVar12 = (undefined4)((ulonglong)in_stack_fffffffffffffec8 >> 0x20);
+  _DAT_1425b3f48 =
+       FUN_1402c43f0("snd_errorOnMissing",0,1,"Cause a Com_Error if a sound file is missing.");
+  DAT_1425b3f58 =
+       FUN_1402c4650("snd_volume",DAT_1403e525c,0,DAT_1403e3e6c,CONCAT44(uVar12,1),
+                     "Game sound master volume");
+  lVar10 = 4;
+  _DAT_1425b3ef8 =
+       FUN_1402c46d0("snd_loadFadeTime",500,1,2000,4,
+                     "Fade time for loading from a checkpoint after death.");
+  DAT_1425b3f00 =
+       FUN_1402c46d0("snd_slaveFadeTime",500,0,5000,4,
+                     "The amount of time in milliseconds for a \'slave\' sound\nto fade its volumes when a master sound starts or stops"
+                    );
+  DAT_1425b3f08 = FUN_1402c43f0("snd_enable2D",1,4,"Enable 2D sounds");
+  DAT_1425b3f10 = FUN_1402c43f0("snd_enable3D",1,4,"Enable 3D sounds");
+  DAT_1425b3f18 = FUN_1402c43f0("snd_enableStream",1,4,"Enable streamed sounds");
+  _DAT_1425b3f60 = FUN_1402c43f0("snd_enableReverb",1,4,"Enable sound reverberation");
+  _DAT_1425b3f68 = FUN_1402c43f0("snd_enableEq",1,1,"Enable equalization filter");
+  uVar12 = 1;
+  _DAT_1425b3f20 =
+       FUN_1402c45d0("snd_draw3D",&PTR_DAT_1404d1b70,0,4,
+                     "Draw the position and info of world sounds");
+  uVar2 = CONCAT44(uVar12,4);
+  DAT_1425b3f28 =
+       FUN_1402c46d0("snd_levelFadeTime",0xfa,0,5000,uVar2,
+                     "The amout of time in milliseconds for all audio to fade in at the start of a level"
+                    );
+  uVar5 = CONCAT44((int)((ulonglong)uVar2 >> 0x20),1);
+  DAT_1425b3f70 =
+       FUN_1402c4650("snd_cinematicVolumeScale",DAT_1403e3e68,0,DAT_1403e3e6c,uVar5,
+                     "Scales the volume of Bink videos.");
+  uVar9 = 0;
+  _DAT_1425b3f30 =
+       FUN_1402c4650("snd_vol_wpn_plr",DAT_1403e9b14,0,DAT_1403e3e6c,uVar5 & 0xffffffff00000000,
+                     "Modifier for the player weapon sound levels. Value used at the game init.");
+  DAT_1425b3f78 =
+       FUN_1402c46d0("snd_occlusionDelay",0x96,0,0x7fffffff,0x44,
+                     "Minimum delay in (ms) between occlusion updates");
+  DAT_1425b3f80 =
+       FUN_1402c46d0("snd_occlusionLerpTime",500,0,0x7fffffff,0x44,
+                     "Time to lerp to target occlusion lerp when occluded");
+  DAT_1425b3f88 = FUN_1402c43f0("snd_occlusionEnabled",1,0x44,"Enable occlusion");
+  _DAT_1425b3f50 =
+       FUN_1402c43f0("snd_touchStreamFilesOnLoad",0,1,
+                     "Check whether stream sound files exist while loading");
+  _DAT_1425b3f38 =
+       FUN_1402c43f0("snd_usingXAudio2RestartFix",1,0,
+                     "Used to enable restarting XAudio2 when the audio device changes");
+  uVar1 = _UNK_140407548;
+  uVar2 = _DAT_140407540;
+  DAT_1425be4b0 = &DAT_1425be430;
+  DAT_1425be430 = 0;
+  _DAT_1425be434 = 0x3f800000;
+  _DAT_1425be438 = 0x3f800000;
+  _DAT_1425be440 = 0;
+  _DAT_1425be448 = 0;
+  DAT_1425be44c = 1;
+  puVar4 = (undefined8 *)&DAT_1425c707c;
+  do {
+    *puVar4 = uVar2;
+    puVar4[1] = uVar1;
+    puVar4[2] = uVar2;
+    puVar4[3] = uVar1;
+    puVar4[4] = uVar2;
+    puVar4[5] = uVar1;
+    puVar4[6] = uVar2;
+    puVar4[7] = uVar1;
+    puVar4[8] = uVar2;
+    puVar4[9] = uVar1;
+    puVar4[10] = uVar2;
+    puVar4[0xb] = uVar1;
+    puVar4[0xc] = uVar2;
+    puVar4[0xd] = uVar1;
+    puVar4[0xe] = uVar2;
+    puVar4[0xf] = uVar1;
+    lVar10 = lVar10 + -1;
+    puVar4 = puVar4 + 0x10;
+  } while (lVar10 != 0);
+  DAT_1425c7384 = 0x3f800000;
+  _DAT_1425c7388 = 0x3f800000;
+  _DAT_1425c738c = 0x3f800000;
+  _DAT_1425c7394 = 0;
+  FUN_140271a20();
+  FUN_1402bd750(local_res8,0x80000);
+  uVar2 = FUN_1402bd930(local_res8);
+  lVar10 = thunk_FUN_1400a7990("soundaliases/channels.def",uVar2,0x80000);
+  if (lVar10 == 0) {
+    FUN_14023c700(1,"unable to load entity channel file [%s].\n","soundaliases/channels.def");
+  }
+  FUN_140272be0(lVar10);
+  FUN_14000f170();
+  lVar10 = 2;
+  uVar5 = uVar9;
+  if (0 < DAT_1425bfb28) {
+    do {
+      uVar7 = (int)uVar5 + 1;
+      uVar5 = (ulonglong)uVar7;
+      (&DAT_1425be570)[(longlong)DAT_1425bfb28 * 0x15] = 2;
+    } while ((int)uVar7 < DAT_1425bfb28);
+  }
+  FUN_1402bd840(local_res8);
+  FUN_1402bd750(local_res8,0x80000);
+  uVar2 = FUN_1402bd930(local_res8);
+  lVar3 = thunk_FUN_1400a7990("soundaliases/volumemodgroups.svmod",uVar2,0x80000);
+  if (lVar3 == 0) {
+    FUN_14023c700(1,"unable to load volume mod group file [%s].\n",
+                  "soundaliases/volumemodgroups.svmod");
+  }
+  FUN_140273190(lVar3);
+  FUN_1402bd840(local_res8);
+  DAT_1425be3e8 = &DAT_1425bc5d4;
+  DAT_1425b3f94 = 1;
+  DAT_1425bbfb8 = 0x3f800000;
+  _DAT_1425bbfbc = 0x3f800000;
+  _DAT_1425bbfc0 = 0x3f800000;
+  _DAT_1425bbfc8 = 0;
+  uVar5 = uVar9;
+  uVar8 = uVar9;
+  if (0 < DAT_1425bfb28) {
+    do {
+      *(undefined4 *)((longlong)&DAT_1425bbfd0 + uVar5) = 0x3f800000;
+      uVar7 = (int)uVar8 + 1;
+      *(undefined4 *)((longlong)&DAT_1425bbfd4 + uVar5) = 0x3f800000;
+      *(undefined8 *)((longlong)&DAT_1425bbfd8 + uVar5) = 0x3f800000;
+      *(undefined8 *)((longlong)&DAT_1425bbfe0 + uVar5) = 0;
+      puVar11 = DAT_1425be3e8;
+      *(undefined4 *)(uVar5 + (longlong)DAT_1425be3e8) = 0x3f800000;
+      *(undefined4 *)(uVar5 + 4 + (longlong)puVar11) = 0x3f800000;
+      *(undefined8 *)(uVar5 + 8 + (longlong)puVar11) = 0x3f800000;
+      *(undefined8 *)(uVar5 + 0x10 + (longlong)puVar11) = 0;
+      uVar5 = uVar5 + 0x18;
+      uVar8 = (ulonglong)uVar7;
+    } while ((int)uVar7 < DAT_1425bfb28);
+  }
+  DAT_1425bc5d0 = 1;
+  *(undefined1 *)(DAT_1425be3e8 + 0x180) = 1;
+  DAT_1425be4f4 = FUN_1402f2210();
+  uVar1 = _UNK_140407548;
+  uVar2 = _DAT_140407540;
+  _DAT_1425be42c = 0;
+  DAT_1425be428 = 0;
+  DAT_1425bbfb4 = *(float *)(DAT_1425b3f58 + 0x10) * DAT_1403e5258;
+  _DAT_1425cd474 = 0;
+  DAT_1425c7290 = DAT_1403ea7b0;
+  _DAT_1425c7280 = _DAT_14042c930;
+  _DAT_1425c7288 = _UNK_14042c938;
+  DAT_1425c7294 = DAT_1403e5284;
+  DAT_1425c72a4 = _DAT_14042c920;
+  DAT_1425c72a8 = _UNK_14042c924;
+  DAT_1425c72ac = _UNK_14042c928;
+  DAT_1425c72b0 = _UNK_14042c92c;
+  DAT_1425ccc80 = 0;
+  _DAT_1425cd078 = 0;
+  DAT_1425cd07c = 0;
+  puVar4 = (undefined8 *)&DAT_1425bfa28;
+  DAT_1425be4f8 = DAT_1425be4f4;
+  do {
+    *puVar4 = uVar2;
+    puVar4[1] = uVar1;
+    puVar4[2] = uVar2;
+    puVar4[3] = uVar1;
+    puVar4[4] = uVar2;
+    puVar4[5] = uVar1;
+    puVar4[6] = uVar2;
+    puVar4[7] = uVar1;
+    puVar4[8] = uVar2;
+    puVar4[9] = uVar1;
+    puVar4[10] = uVar2;
+    puVar4[0xb] = uVar1;
+    puVar4[0xc] = uVar2;
+    puVar4[0xd] = uVar1;
+    puVar4[0xe] = uVar2;
+    puVar4[0xf] = uVar1;
+    lVar10 = lVar10 + -1;
+    puVar4 = puVar4 + 0x10;
+  } while (lVar10 != 0);
+  FUN_140274dc0();
+  FUN_140390680(local_128,0,0x120);
+  DAT_1425ccc60 = 2;
+  _DAT_1425ccc64 = &DAT_1425ccc20;
+  puVar11 = local_128;
+  DAT_1425ccc6c = 6;
+  _DAT_1425ccc70 = &DAT_1425ccc30;
+  puVar6 = &DAT_1425ccc24;
+  uVar5 = uVar9;
+  do {
+    uVar12 = *puVar11;
+    puVar11 = puVar11 + 6;
+    *(char *)((longlong)puVar6 + -3) = (char)uVar5;
+    uVar7 = (int)uVar5 + 1;
+    uVar5 = (ulonglong)uVar7;
+    *(undefined1 *)(puVar6 + -1) = 0;
+    *puVar6 = uVar12;
+    puVar6 = puVar6 + 2;
+  } while ((int)uVar7 < 2);
+  puVar11 = local_128;
+  puVar6 = &DAT_1425ccc34;
+  do {
+    uVar12 = *puVar11;
+    puVar11 = puVar11 + 6;
+    *(char *)((longlong)puVar6 + -3) = (char)uVar9;
+    uVar7 = (int)uVar9 + 1;
+    uVar9 = (ulonglong)uVar7;
+    *(undefined1 *)(puVar6 + -1) = 0;
+    *puVar6 = uVar12;
+    puVar6 = puVar6 + 2;
+  } while ((int)uVar7 < 6);
+  puVar4 = &DAT_1425cc140;
+  do {
+    *(undefined4 *)(puVar4 + -2) = 0xffffffff;
+    *(undefined2 *)((longlong)puVar4 + -0xc) = 0;
+    puVar4[-1] = 0;
+    *puVar4 = 0x3f800000;
+    puVar4[1] = 0;
+    puVar4[2] = 0;
+    puVar4[3] = 0x3f800000;
+    puVar4[4] = 0;
+    puVar4[5] = 0;
+    puVar4[6] = 0x3f800000;
+    puVar4[7] = 0;
+    puVar4[8] = 0;
+    puVar4[9] = 0x3f800000;
+    puVar4[10] = 0;
+    puVar4[0xb] = 0;
+    puVar4[0xc] = 0x3f800000;
+    puVar4[0xd] = 0;
+    puVar4[0xe] = 0;
+    puVar4[0xf] = 0x3f800000;
+    puVar4[0x10] = 0;
+    puVar4[0x11] = 0;
+    puVar4[0x12] = 0x3f800000;
+    puVar4[0x13] = 0;
+    puVar4[0x14] = 0;
+    puVar4[0x15] = 0x3f800000;
+    puVar4[0x16] = 0;
+    puVar4 = puVar4 + 0x19;
+  } while ((longlong)puVar4 < 0x1425ccc30);
+  DAT_1425c77a0 = 0;
+  return;
+}
+
+
+

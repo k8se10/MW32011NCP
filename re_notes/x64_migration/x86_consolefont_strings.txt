@@ -1,0 +1,7 @@
+STRING @ 0083f284: "fonts/consolefont"
+  REF #1: from 00619155 in FUN_00619020 @ 00619020
+  REF #2: from 0092ae38 in <none/data>
+
+STRING @ 008669f0: "fonts/consoleFont"
+  REF #1: from 0041f0a9 in FUN_0041f060 @ 0041f060
+

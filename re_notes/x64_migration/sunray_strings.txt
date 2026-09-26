@@ -1,0 +1,42 @@
+STRING @ 140413148: "r_sun_from_dvars"
+  REF #1: from 1401b7149 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 1404213d8: "r_sunflare_shader"
+  REF #1: from 1401dc1c5 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07d0 in <none/data>
+
+STRING @ 1404213f0: "r_sunflare_min_size"
+  REF #1: from 1401dc1d9 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07d8 in <none/data>
+
+STRING @ 140421408: "r_sunflare_min_angle"
+  REF #1: from 1401dc20b in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07e0 in <none/data>
+
+STRING @ 140421420: "r_sunflare_max_size"
+  REF #1: from 1401dc245 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07e8 in <none/data>
+
+STRING @ 140421438: "r_sunflare_max_angle"
+  REF #1: from 1401dc27b in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07f0 in <none/data>
+
+STRING @ 140421450: "r_sunflare_max_alpha"
+  REF #1: from 1401dc2ae in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07f8 in <none/data>
+
+STRING @ 140421468: "r_sunflare_fadein"
+  REF #1: from 1401dc2e5 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0800 in <none/data>
+
+STRING @ 140421480: "r_sunflare_fadeout"
+  REF #1: from 1401dc31a in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0808 in <none/data>
+
+STRING @ 140421588: "r_sun_fx_position"
+  REF #1: from 1401dc53d in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0860 in <none/data>
+
+STRING @ 140421630: "sun_flare"
+  REF #1: from 1401dc1be in FUN_1401dc140 @ 1401dc140
+

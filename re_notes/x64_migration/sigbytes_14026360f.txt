@@ -1,0 +1,16 @@
+Signature-byte dump of FUN_14026360f @ 14026360f
+(byte offsets relative to function entry point)
+
++0x00  4C 8D 9C 24 A0 05 00 00        LEA R11,[RSP + 0x5a0]                    
++0x08  49 8B 5B 10                    MOV RBX,qword ptr [R11 + 0x10]           
++0x0C  49 8B 73 18                    MOV RSI,qword ptr [R11 + 0x18]           
++0x10  49 8B 7B 20                    MOV RDI,qword ptr [R11 + 0x20]           
++0x14  49 8B E3                       MOV RSP,R11                              
++0x17  5D                             POP RBP                                  
++0x18  C3                             RET                                      
+
+Raw bytes (25 total): 4C 8D 9C 24 A0 05 00 00 49 8B 5B 10 49 8B 73 18 49 8B 7B 20 49 8B E3 5D C3
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+4C 8D 9C 24 A0 05 00 00 49 8B 5B 10 49 8B 73 18 49 8B 7B 20 49 8B E3 5D C3

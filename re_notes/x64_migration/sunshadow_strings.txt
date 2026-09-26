@@ -1,0 +1,105 @@
+STRING @ 1404126f8: "sm_sunShadowCenter"
+  REF #1: from 1401b68b1 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412758: "sm_sunShadowCenterMode"
+  REF #1: from 1401b6901 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412790: "sm_sunShadowScale"
+  REF #1: from 1401b6918 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412810: "sm_fastSunShadow"
+  REF #1: from 1401b699b in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412828: "Lock usage of sm_sunShadowScale at 1"
+  REF #1: from 1401b69b2 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140412850: "sm_sunShadowScaleLocked"
+  REF #1: from 1401b69b9 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 140413148: "r_sun_from_dvars"
+  REF #1: from 1401b7149 in FUN_1401b50e0 @ 1401b50e0
+
+STRING @ 1404213a8: "r_sunsprite_shader"
+  REF #1: from 1401dc169 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07c0 in <none/data>
+
+STRING @ 1404213c0: "r_sunsprite_size"
+  REF #1: from 1401dc17d in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07c8 in <none/data>
+
+STRING @ 1404213d8: "r_sunflare_shader"
+  REF #1: from 1401dc1c5 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07d0 in <none/data>
+
+STRING @ 1404213f0: "r_sunflare_min_size"
+  REF #1: from 1401dc1d9 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07d8 in <none/data>
+
+STRING @ 140421408: "r_sunflare_min_angle"
+  REF #1: from 1401dc20b in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07e0 in <none/data>
+
+STRING @ 140421420: "r_sunflare_max_size"
+  REF #1: from 1401dc245 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07e8 in <none/data>
+
+STRING @ 140421438: "r_sunflare_max_angle"
+  REF #1: from 1401dc27b in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07f0 in <none/data>
+
+STRING @ 140421450: "r_sunflare_max_alpha"
+  REF #1: from 1401dc2ae in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d07f8 in <none/data>
+
+STRING @ 140421468: "r_sunflare_fadein"
+  REF #1: from 1401dc2e5 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0800 in <none/data>
+
+STRING @ 140421480: "r_sunflare_fadeout"
+  REF #1: from 1401dc31a in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0808 in <none/data>
+
+STRING @ 140421498: "r_sunblind_min_angle"
+  REF #1: from 1401dc349 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0810 in <none/data>
+
+STRING @ 1404214b0: "r_sunblind_max_angle"
+  REF #1: from 1401dc37b in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0818 in <none/data>
+
+STRING @ 1404214c8: "r_sunblind_max_darken"
+  REF #1: from 1401dc3ad in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0820 in <none/data>
+
+STRING @ 1404214e0: "r_sunblind_fadein"
+  REF #1: from 1401dc3df in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0828 in <none/data>
+
+STRING @ 1404214f8: "r_sunblind_fadeout"
+  REF #1: from 1401dc411 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0830 in <none/data>
+
+STRING @ 140421510: "r_sunglare_min_angle"
+  REF #1: from 1401dc443 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0838 in <none/data>
+
+STRING @ 140421528: "r_sunglare_max_angle"
+  REF #1: from 1401dc475 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0840 in <none/data>
+
+STRING @ 140421540: "r_sunglare_max_lighten"
+  REF #1: from 1401dc4a7 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0848 in <none/data>
+
+STRING @ 140421558: "r_sunglare_fadein"
+  REF #1: from 1401dc4d9 in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0850 in <none/data>
+
+STRING @ 140421570: "r_sunglare_fadeout"
+  REF #1: from 1401dc50b in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0858 in <none/data>
+
+STRING @ 140421588: "r_sun_fx_position"
+  REF #1: from 1401dc53d in FUN_1401dc140 @ 1401dc140
+  REF #2: from 1404d0860 in <none/data>
+

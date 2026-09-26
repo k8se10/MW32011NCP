@@ -1,0 +1,24 @@
+================================================================
+Queried address: 0x1401bc4f0
+RUNTIME_FUNCTION @ pdata offset 0x174fc
+  BeginAddress = 0x1401bc4f0  <-- queried address IS the real function start
+  EndAddress   = 0x1401bc557 (range size 103 bytes)
+  UNWIND_INFO @ 0x14047f5d0
+    Version=1 Flags=0x0
+    SizeOfProlog=4
+    CountOfUnwindCodes=1
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+
+================================================================
+Queried address: 0x140082fc0
+RUNTIME_FUNCTION @ pdata offset 0x68ac
+  BeginAddress = 0x140082fc0  <-- queried address IS the real function start
+  EndAddress   = 0x140082fed (range size 45 bytes)
+  UNWIND_INFO @ 0x14048857c
+    Version=1 Flags=0x0
+    SizeOfProlog=7
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: LIKELY SAFE: real function start, nonzero prologue, not chained -- a normal, independently hookable function by this specific check (still confirm via a raw disassembly/DumpSigBytes.java prologue read before actually hooking, per this project's own standing convention).
+

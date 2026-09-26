@@ -1,0 +1,28 @@
+================================================================
+Function: FUN_006b2c90 @ 006b2c90
+----------------------------------------------------------------
+
+void FUN_006b2c90(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                 undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8,
+                 undefined4 param_9,int param_10)
+
+{
+  char cVar1;
+  int iVar2;
+  uint uVar3;
+  int unaff_EDI;
+  
+  if (((((*(int *)(unaff_EDI + 8) != 0) &&
+        (iVar2 = FUN_004dc990(*(int *)(unaff_EDI + 8)), iVar2 != 0)) &&
+       ((uVar3 = *(uint *)(unaff_EDI + 0x3c) & 1, uVar3 != 0 || ((*(byte *)(iVar2 + 0x3c) & 1) == 0)
+        ))) && (((uVar3 == 0 || ((*(byte *)(iVar2 + 0x3c) & 1) == 0)) ||
+                (cVar1 = FUN_00460650(*(undefined4 *)(unaff_EDI + 8)), cVar1 != '\0')))) &&
+     (param_10 < 0xb)) {
+    FUN_006b2e00(iVar2,iVar2,param_1,param_2,param_3,param_4,param_5,0,param_6,param_7,param_8,
+                 param_9,param_10);
+  }
+  return;
+}
+
+
+

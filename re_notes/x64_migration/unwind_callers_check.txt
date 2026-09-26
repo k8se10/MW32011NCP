@@ -1,0 +1,36 @@
+================================================================
+Queried address: 0x14023e2bf
+RUNTIME_FUNCTION @ pdata offset 0x1d358
+  BeginAddress = 0x14023e185  <-- queried address is 314 bytes INTO this range, NOT the start
+  EndAddress   = 0x14023e304 (range size 383 bytes)
+  UNWIND_INFO @ 0x1404a2f70
+    Version=1 Flags=0x4 [UNW_FLAG_CHAININFO -- this unwind info is CHAINED to a parent RUNTIME_FUNCTION, a real, strong signal this is a split fragment, not an independent function]
+    SizeOfProlog=0 [ZERO -- no real prologue: this range establishes no stack frame of its own, a strong signal it's a shared epilogue/tail fragment reached via JMP, not a real callable function -- DO NOT MinHook this address]
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+
+================================================================
+Queried address: 0x140079351
+RUNTIME_FUNCTION @ pdata offset 0x5fe8
+  BeginAddress = 0x140079330  <-- queried address is 33 bytes INTO this range, NOT the start
+  EndAddress   = 0x14007939e (range size 110 bytes)
+  UNWIND_INFO @ 0x14047fa58
+    Version=1 Flags=0x0
+    SizeOfProlog=6
+    CountOfUnwindCodes=2
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+
+================================================================
+Queried address: 0x14023f1c3
+RUNTIME_FUNCTION @ pdata offset 0x1d478
+  BeginAddress = 0x14023f170  <-- queried address is 83 bytes INTO this range, NOT the start
+  EndAddress   = 0x14023f1f9 (range size 137 bytes)
+  UNWIND_INFO @ 0x14047f5d0
+    Version=1 Flags=0x0
+    SizeOfProlog=4
+    CountOfUnwindCodes=1
+    FrameRegister=0 FrameOffset=0
+  VERDICT: UNSAFE: queried address is not even the real function's own start -- it's a mid-range address (return-address-style), do not hook directly.
+

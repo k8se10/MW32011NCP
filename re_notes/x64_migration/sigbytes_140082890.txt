@@ -1,0 +1,27 @@
+Signature-byte dump of FUN_140082890 @ 140082890
+(byte offsets relative to function entry point)
+
++0x00  48 83 EC 28                    SUB RSP,0x28                             
++0x04  E8 B7 10 15 00                 CALL 0x1401d3950                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x09  E8 62 C9 1B 00                 CALL 0x14023f200                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0E  E8 5D 6A FF FF                 CALL 0x140079300                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x13  E8 48 12 00 00                 CALL 0x140083af0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x18  83 3D 45 D5 5C 00 00           CMP dword ptr [0x14064fdf4],0x0          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1F  74 2D                          JZ 0x1400828de                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x21  33 C0                          XOR EAX,EAX                              
++0x23  33 C9                          XOR ECX,ECX                              
++0x25  89 05 39 D5 5C 00              MOV dword ptr [0x14064fdf4],EAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2B  48 89 05 C6 D5 5C 00           MOV qword ptr [0x14064fe88],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x32  48 89 05 C7 D5 5C 00           MOV qword ptr [0x14064fe90],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x39  48 89 05 68 D5 5C 00           MOV qword ptr [0x14064fe38],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x40  E8 2B B6 13 00                 CALL 0x1401bdf00                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x45  48 83 C4 28                    ADD RSP,0x28                             
++0x49  E9 12 1D F8 FF                 JMP 0x1400045f0                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4E  48 83 C4 28                    ADD RSP,0x28                             
++0x52  C3                             RET                                      
+
+Raw bytes (83 total): 48 83 EC 28 E8 B7 10 15 00 E8 62 C9 1B 00 E8 5D 6A FF FF E8 48 12 00 00 83 3D 45 D5 5C 00 00 74 2D 33 C0 33 C9 89 05 39 D5 5C 00 48 89 05 C6 D5 5C 00 48 89 05 C7 D5 5C 00 48 89 05 68 D5 5C 00 E8 2B B6 13 00 48 83 C4 28 E9 12 1D F8 FF 48 83 C4 28 C3
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+48 83 EC 28 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 33 C0 33 C9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 83 C4 28 ?? ?? ?? ?? ?? 48 83 C4 28 C3

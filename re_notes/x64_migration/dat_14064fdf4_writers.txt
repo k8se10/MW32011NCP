@@ -1,0 +1,159 @@
+================================================================
+Function: FUN_140082890 @ 140082890
+Signature: undefined FUN_140082890(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140082890(void)
+
+{
+  FUN_1401d3950();
+  FUN_14023f200();
+  FUN_140079300();
+  FUN_140083af0();
+  if (DAT_14064fdf4 != 0) {
+    DAT_14064fdf4 = 0;
+    _DAT_14064fe88 = 0;
+    _DAT_14064fe90 = 0;
+    DAT_14064fe38 = 0;
+    FUN_1401bdf00(0);
+    _guard_check_icall();
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140082a50 @ 140082a50
+Signature: undefined FUN_140082a50(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140082a50(void)
+
+{
+  FUN_1401d3950();
+  DAT_14064fdf4 = 0;
+  _DAT_14064fe88 = 0;
+  _DAT_14064fe90 = 0;
+  DAT_14064fe38 = 0;
+  FUN_1401bdf00(1);
+  _guard_check_icall();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1400825d0 @ 1400825d0
+Signature: undefined FUN_1400825d0(void)
+----------------------------------------------------------------
+
+void FUN_1400825d0(void)
+
+{
+  if (DAT_14064fdf4 != 0) {
+    FUN_14008dd00();
+    FUN_14008da30();
+    return;
+  }
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140082fc0 @ 140082fc0
+Signature: undefined FUN_140082fc0(void)
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140082fc0(void)
+
+{
+  undefined1 local_78 [4];
+  undefined4 local_74;
+  undefined4 local_70;
+  undefined4 local_6c;
+  undefined4 local_68;
+  undefined4 local_64;
+  undefined4 local_60;
+  undefined4 local_5c;
+  char *local_58;
+  undefined8 local_50;
+  undefined *local_48;
+  undefined8 local_40;
+  char *local_38;
+  undefined8 local_30;
+  char *local_28;
+  undefined4 local_20;
+  undefined2 local_1c;
+  undefined4 local_14;
+  
+  if (DAT_1406e2558 != 1) {
+    if (*(char *)(DAT_141efb780 + 0x10) != '\0') {
+      FUN_14026c960();
+      return;
+    }
+    FUN_140279e90(0);
+    FUN_14023f200();
+    FUN_140079300();
+    FUN_140083af0();
+    FUN_1401d3950();
+    DAT_14064fdf4 = 0;
+    _DAT_14064fe88 = 0;
+    _DAT_14064fe90 = 0;
+    DAT_14064fe38 = 0;
+    FUN_1401bdf00(1);
+    _guard_check_icall();
+    DAT_14064fdf4 = 0;
+    FUN_14023e610();
+    FUN_1402c46d0("loc_language",DAT_1425f80d0,0,0xe,0x2000,"The current language locale");
+    FUN_1402c43f0("loc_translate",1,2,"Turn on string translation");
+    FUN_1402c43f0("fs_ignoreLocalized",0,6,"Ignore localized assets");
+    FUN_1402c5ad0(DAT_141efb7a8,0);
+    local_74 = 1;
+    local_58 = "code_post_gfx";
+    local_70 = 2;
+    local_48 = &DAT_1403f52f8;
+    local_6c = 0x820;
+    local_38 = "common";
+    local_28 = "patch";
+    local_68 = 0x7ff;
+    local_64 = 0x7fe;
+    local_60 = 0xb;
+    local_20 = 0;
+    local_1c = 3;
+    local_5c = 0x27;
+    local_14 = 900;
+    local_50 = 0;
+    local_40 = 0;
+    local_30 = 0;
+    FUN_1401bc4f0(local_78);
+    FUN_1402c5ad0(DAT_141efb7a8,0);
+    DAT_14064fdf4 = 1;
+    FUN_1401bbea0(&DAT_14064fe44);
+    if (DAT_14064fdf4 != 0) {
+      FUN_14008dd00();
+      FUN_14008da30();
+    }
+    _DAT_14064fe88 = FUN_1401c4ba0("white",3);
+    _DAT_14064fe90 = FUN_1401c4ba0("console",3);
+    DAT_14064fe38 = FUN_1401b7cb0("fonts/consoleFont",3);
+    DAT_1404c0bfc = DAT_14064fe4c + -0x30;
+    FUN_14007ad40();
+    if ((DAT_1406e24c4 != '\0') && (DAT_14064fe00 == 0)) {
+      FUN_140083ab0();
+    }
+    FUN_1401f3f10();
+  }
+  return;
+}
+
+
+

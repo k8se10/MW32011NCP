@@ -1,0 +1,41 @@
+================================================================
+Function: FUN_14023f170 @ 14023f170
+----------------------------------------------------------------
+
+void FUN_14023f170(void)
+
+{
+  int iVar1;
+  undefined8 uVar2;
+  undefined1 auStack_28 [40];
+  
+  if (*(char *)(DAT_141efb780 + 0x10) == '\0') {
+    uVar2 = FUN_140249fe0(2);
+    iVar1 = FUN_1403de2e0(uVar2,auStack_28);
+    if (iVar1 != 0) {
+      uVar2 = FUN_1402cb690("Failed init after: %s",&DAT_141efbec0);
+                    /* WARNING: Subroutine does not return */
+      FUN_1402ee570(uVar2);
+    }
+    if (DAT_14064fdf4 == 0) {
+      FUN_140081900();
+    }
+    FUN_14023c490();
+    FUN_14029f3f0(0,0);
+    FUN_1402eb440();
+    uVar2 = FUN_140249fe0(2);
+    iVar1 = FUN_1403de2e0(uVar2,auStack_28);
+    if (iVar1 == 0) {
+      FUN_14023ccb0();
+    }
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_14023f170 ----
+  CALLER #1: from 144455478 in <none/data> refType=DATA
+  CALLER #2: from 14023cf16 in FUN_14023ce80 @ 14023ce80 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 14023d84e in FUN_14023d800 @ 14023d800 refType=UNCONDITIONAL_CALL
+Total callers: 3
+
