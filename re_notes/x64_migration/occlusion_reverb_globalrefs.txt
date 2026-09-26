@@ -1,0 +1,13 @@
+=== Reference counts per global ===
+snd_enableReverb (1425b3f60): 1 references
+snd_occlusionEnabled (1425b3f88): 2 references
+snd_occlusionDelay (1425b3f78): 2 references
+snd_occlusionLerpTime (1425b3f80): 3 references
+
+=== Candidate functions, ranked by distinct global diversity (3) ===
+
+---- FUN_140271240 @ 140271240 (globals: snd_enableReverb, snd_occlusionDelay, snd_occlusionEnabled, snd_occlusionLerpTime) ----
+
+---- FUN_140278d50 @ 140278d50 (globals: snd_occlusionDelay, snd_occlusionEnabled) ----
+
+---- FUN_140278270 @ 140278270 (globals: snd_occlusionLerpTime) ----

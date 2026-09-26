@@ -376,6 +376,70 @@ void __fastcall Hook_SunShadowDispatch(long long param1)
     g_realSunShadowDispatch(param1);
 }
 
+// MW32011NCP, 2026-09-26: real x64 native audio-occlusion check function
+// (FUN_140278d50), found via FindGlobalRefs against the real
+// snd_occlusionEnabled/snd_occlusionDelay dvar handles (themselves found
+// via the "Enable sound reverberation"/"Enable occlusion" dvar-description
+// strings inside the real sound-system init function). Direct user
+// correction reframed this issue's whole investigation away from the
+// already-confirmed-but-separate ambient-loop duplicate-trigger bug:
+// "the echo is specifically world and ai gunshot sounds" / "my gun sounds
+// fine" / "also explosions sounds weird tho not my grenades, stuff like
+// red barrels" -- every broken case is a non-player-sourced, spatialized
+// sound; every fine case is player-attached. This function is the real
+// native line-of-sight occlusion check (an actual trace between listener
+// and emitter position, throttled by snd_occlusionDelay, gated by
+// snd_occlusionEnabled) that only meaningfully applies to positional/
+// world sounds -- a real candidate for the mechanism behind the reported
+// symptom. A special channel value, 0x7fe, is hardcoded and branches to a
+// structurally different, simpler code path (occlusion state stored
+// directly on the passed struct rather than via a separate per-instance
+// structure resolved through FUN_140270c20) -- not yet confirmed what
+// this value represents, but it's the one concrete structural asymmetry
+// visible in this function's own disassembly, and a real candidate for a
+// "player-local vs world-positional" split. THIS IS A READ-ONLY
+// DIAGNOSTIC HOOK (log-and-call-through, zero behavior change) -- reports
+// the real channel id (param_1+0xc, SEH-guarded) and the function's own
+// return value for every call, so a live session's log can be cross-
+// referenced against the already-live Hook_PlaySoundAlias channel/alias
+// data to see whether world/AI channels behave differently from the
+// 0x7fe special case.
+constexpr const char* kOcclusionCheckSignature =
+    "4C 8B DC 49 89 5B 20 56 48 81 EC 90 00 00 00 48 8B 05 ?? ?? ?? ?? "
+    "8B F2 48 8B D9 80 78 10 00 0F 84 ?? ?? ?? ?? 8B 49 0C 81 F9 FF FF 00 00 "
+    "0F 84 ?? ?? ?? ?? 49 89 6B 08";
+
+using OcclusionCheckFn = unsigned char(__fastcall*)(long long param1, unsigned int param2);
+OcclusionCheckFn g_realOcclusionCheck = nullptr;
+long long g_occlusionCheckFireCount = 0;
+
+unsigned char __fastcall Hook_OcclusionCheck(long long param1, unsigned int param2)
+{
+    unsigned char result = g_realOcclusionCheck(param1, param2);
+    long long fireIndex = ++g_occlusionCheckFireCount;
+    if (fireIndex <= 200 || (fireIndex % 1000) == 0) {
+        int channel = -1;
+        bool readOk = false;
+#ifdef _WIN32
+        __try {
+            if (param1 != 0) {
+                channel = *reinterpret_cast<int*>(param1 + 0xc);
+                readOk = true;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            readOk = false;
+        }
+#endif
+        char buf[176];
+        sprintf_s(buf, "[x64-occlusion-diag] fire #%lld: channel=%d readOk=%d result=%u tick=%llu",
+                   fireIndex, channel, readOk ? 1 : 0, static_cast<unsigned int>(result),
+                   static_cast<unsigned long long>(GetTickCount64()));
+        LogFromController(buf);
+    }
+    return result;
+}
+
 // MW32011NCP, 2026-09-26: real x64 console/UI font-init function -- loads
 // "fonts/consoleFont", matches x86's own FUN_0041f060 logic-for-logic
 // exactly, SAME string. CORRECTED same day: the real function entry is
@@ -8838,6 +8902,45 @@ void InstallAnalogInputHooksX64()
                             "'[x64-sunshadow-diag] dispatch fire' on a sun-ray map to see which path "
                             "(fast/slow) native code is actually taking, and how often this fires.");
                     }
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: real x64 audio-occlusion check diagnostic,
+        // see kOcclusionCheckSignature's own comment above for the full
+        // context (the "world/AI sounds echo, player-sourced sounds are
+        // fine" re-scoped investigation). Read-only, log-and-call-through,
+        // zero behavior change. This is a function-start signature -- the
+        // hook target IS the match address directly, no offset needed.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kOcclusionCheckSignature);
+        if (!r.found) {
+            LogFromController("[x64-occlusion-diag] FATAL: occlusion-check signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_OcclusionCheck),
+                                                    reinterpret_cast<void**>(&g_realOcclusionCheck));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-occlusion-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-occlusion-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-occlusion-diag] occlusion-check diagnostic hook installed and "
+                        "enabled -- log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-occlusion-diag] fire' during real world/AI gunfire and explosions (red "
+                        "barrels), cross-referenced against Hook_PlaySoundAlias's own channel numbers, to "
+                        "see whether occlusion behaves differently for those channels than for the special "
+                        "channel=0x7fe(2046) case or the player's own weapon/grenade sounds.");
                 }
             }
         }
