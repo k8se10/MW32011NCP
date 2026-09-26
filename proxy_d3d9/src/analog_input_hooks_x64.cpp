@@ -297,6 +297,85 @@ using PlaySoundAliasFn = unsigned int(__fastcall*)(
 PlaySoundAliasFn g_realPlaySoundAlias = nullptr;
 long long g_playSoundAliasFireCount = 0;
 
+// MW32011NCP, 2026-09-26: real x64 sun/cascade-shadow fast-vs-slow dispatcher
+// (FUN_14019c450 in the reference Ghidra project), found while chasing a
+// direct user observation: "only maps with sun rays like this so far have
+// been observed with the 4x slowdown." This is a genuinely SEPARATE shadow
+// system from the per-light point/spot-light shadow-dispatch loop already
+// root-caused and fixed for issue #4 (SkipRedundantShadowActivation,
+// FUN_140196ad0) -- this one is keyed off real, distinct native dvars
+// (sm_sunShadowScale/sm_fastSunShadow/sm_sunShadowCenter*, found via a
+// string-xref search, unrelated to the r_light* dvars the earlier fix
+// targets) and only ever runs when a real per-frame gate (FUN_1401d2b20)
+// says the sun is currently relevant -- exactly the condition a map with
+// visible light shafts through windows/skylights would satisfy far more
+// often than a map without a strong directional sun. Full decompile
+// confirms a real two-way dispatch: `sm_fastSunShadow` (a real, distinct
+// native dvar, confirmed at registration to default TRUE) selects
+// FUN_14019b520 when true (and a second, unidentified per-frame flag at
+// DAT_141896b80+0x41a5c is false); FUN_14019b960 is used in every other
+// case (fastSunShadow off, OR that flag forcing full quality). Given the
+// dvar's own name and default, FUN_14019b520 is the intended FAST path and
+// FUN_14019b960 the slow/full-quality fallback -- if something makes x64
+// always take the slow path on sun-heavy maps (a wrong default, a flag
+// that's incorrectly set, or simply this being genuinely expensive-by-
+// design work gated on sun visibility), that would explain the observed
+// correlation without needing to be an x64-specific bug at all. THIS IS A
+// READ-ONLY DIAGNOSTIC HOOK (log-and-call-through, zero behavior change)
+// -- it does not change which path native code takes, only reports it.
+// Both RIP-relative globals below are resolved from FIXED, KNOWN offsets
+// within this exact signature match (not independently re-scanned), per
+// SigScan::ResolveRipRelative's own documented technique.
+constexpr const char* kSunShadowDispatchSignature =
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 50 "
+    "48 8B 15 ?? ?? ?? ?? 48 8B F9 48 8B 82 98 00 00 00 8B 72 0C 8B 6A 28 "
+    "48 89 44 24 28 48 8B 05 ?? ?? ?? ?? 83 B8 5C 1A 04 00 00 75 ?? "
+    "48 8B 05 ?? ?? ?? ??";
+constexpr size_t kSunShadowFlagInsnOffset = 0x30;   // "48 8B 05 ?? ?? ?? ??" -> &DAT_141896b80
+constexpr size_t kSunShadowFlagInsnLength = 7;
+constexpr size_t kFastSunShadowInsnOffset = 0x40;   // "48 8B 05 ?? ?? ?? ??" -> &DAT_141884f50
+constexpr size_t kFastSunShadowInsnLength = 7;
+
+using SunShadowDispatchFn = void(__fastcall*)(long long param1);
+SunShadowDispatchFn g_realSunShadowDispatch = nullptr;
+uintptr_t* g_sunShadowFlagBasePtr = nullptr;      // &DAT_141896b80 (holds a pointer)
+uintptr_t* g_fastSunShadowHandlePtr = nullptr;    // &DAT_141884f50 (holds a dvar_t* handle)
+long long g_sunShadowDispatchFireCount = 0;
+
+void __fastcall Hook_SunShadowDispatch(long long param1)
+{
+    ++g_sunShadowDispatchFireCount;
+    int flagValue = 0;
+    bool fastSunShadowOn = false;
+    bool readOk = false;
+#ifdef _WIN32
+    __try {
+        if (g_sunShadowFlagBasePtr != nullptr && g_fastSunShadowHandlePtr != nullptr) {
+            uintptr_t flagBase = *g_sunShadowFlagBasePtr;
+            uintptr_t handleBase = *g_fastSunShadowHandlePtr;
+            if (flagBase != 0 && handleBase != 0) {
+                flagValue = *reinterpret_cast<int*>(flagBase + 0x41a5c);
+                fastSunShadowOn = (*reinterpret_cast<unsigned char*>(handleBase + 0x10) != 0);
+                readOk = true;
+            }
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        readOk = false;
+    }
+#endif
+    const char* pathTaken = "unknown(read-failed)";
+    if (readOk) {
+        pathTaken = (flagValue == 0 && fastSunShadowOn) ? "FAST(FUN_14019b520)" : "SLOW(FUN_14019b960)";
+    }
+    char buf[192];
+    sprintf_s(buf, "[x64-sunshadow-diag] dispatch fire #%lld: flag=%d fastSunShadowDvar=%d path=%s tick=%llu",
+               g_sunShadowDispatchFireCount, flagValue, fastSunShadowOn ? 1 : 0, pathTaken,
+               static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    g_realSunShadowDispatch(param1);
+}
+
 // MW32011NCP, 2026-09-24: the real x64 projection-matrix-build function
 // (FUN_1401e13e0 in the reference Ghidra project) -- the jitter-injection
 // hook point the DLSS/Streamline and FSR 3.1 roadmaps both need (see
@@ -8269,6 +8348,53 @@ void InstallAnalogInputHooksX64()
                         "rapid repeated plays of the same alias at depth=0 (the signature of a real "
                         "duplicate-playback bug, as opposed to depth>0 which is a normal chained/"
                         "secondary-alias blend).");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: sun/cascade-shadow fast-vs-slow dispatcher
+        // diagnostic, see kSunShadowDispatchSignature's own comment above
+        // for the full context (the "sun rays correlate with 4x slowdown"
+        // investigation). Read-only, log-and-call-through, zero behavior
+        // change. Resolves the two RIP-relative globals from fixed offsets
+        // within the same match before installing the hook, per this
+        // file's own established SigScan::ResolveRipRelative convention.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kSunShadowDispatchSignature);
+        if (!r.found) {
+            LogFromController("[x64-sunshadow-diag] FATAL: sun-shadow dispatcher signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            g_sunShadowFlagBasePtr = reinterpret_cast<uintptr_t*>(
+                SigScan::ResolveRipRelative(r.address + kSunShadowFlagInsnOffset, kSunShadowFlagInsnLength));
+            g_fastSunShadowHandlePtr = reinterpret_cast<uintptr_t*>(
+                SigScan::ResolveRipRelative(r.address + kFastSunShadowInsnOffset, kFastSunShadowInsnLength));
+            if (g_sunShadowFlagBasePtr == nullptr || g_fastSunShadowHandlePtr == nullptr) {
+                LogFromController("[x64-sunshadow-diag] FATAL: failed to resolve one or both RIP-relative "
+                    "globals -- diagnostic hook not installed this session");
+            } else {
+                void* target = reinterpret_cast<void*>(r.address);
+                MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SunShadowDispatch),
+                                                        reinterpret_cast<void**>(&g_realSunShadowDispatch));
+                if (createStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-sunshadow-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                    LogFromController(buf);
+                } else {
+                    MH_STATUS enableStatus = MH_EnableHook(target);
+                    if (enableStatus != MH_OK) {
+                        char buf[160];
+                        sprintf_s(buf, "[x64-sunshadow-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                        LogFromController(buf);
+                    } else {
+                        LogFromController("[x64-sunshadow-diag] sun-shadow dispatch diagnostic hook installed "
+                            "and enabled -- log-and-call-through only, zero behavior change. Watch the log for "
+                            "'[x64-sunshadow-diag] dispatch fire' on a sun-ray map to see which path "
+                            "(fast/slow) native code is actually taking, and how often this fires.");
+                    }
                 }
             }
         }
