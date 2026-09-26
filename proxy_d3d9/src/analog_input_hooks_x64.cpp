@@ -1494,9 +1494,19 @@ unsigned int __fastcall Hook_PlaySoundAlias(
             sprintf_s(nameBuf, "<fault reading name>");
         }
 #endif
-        char buf[192];
-        sprintf_s(buf, "[x64-sound-diag] PlaySoundAlias fire #%lld: alias=\"%s\" channel=%u depth=%d tick=%lld",
-                   fireIndex, nameBuf, channel, recursionDepth, nowMs);
+        // MW32011NCP, 2026-09-26: added caller-address capture after live
+        // data confirmed the real bug -- a whole ~37-emitter ambient-loop
+        // batch (airconditioner_running_loop, emt_*, fire_*) re-firing
+        // identically, same channels, same tick, back-to-back and then
+        // again nearly every subsequent tick. Depth=0, so this isn't the
+        // chain-blend recursion; something is re-invoking the WHOLE
+        // "(re)start ambient emitters in range" batch every frame instead
+        // of once. Caller address pinpoints which native function that is.
+        uintptr_t callerGhidra = ToGhidraAddressX64(_ReturnAddress());
+        char buf[224];
+        sprintf_s(buf, "[x64-sound-diag] PlaySoundAlias fire #%lld: alias=\"%s\" channel=%u depth=%d tick=%lld caller=0x%llX",
+                   fireIndex, nameBuf, channel, recursionDepth, nowMs,
+                   static_cast<unsigned long long>(callerGhidra));
         LogFromController(buf);
     }
     return g_realPlaySoundAlias(asset, listener, param3, param4, param5, channel, origin, voiceOut,
