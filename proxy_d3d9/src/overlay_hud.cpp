@@ -118,6 +118,10 @@ extern void GpuSyncMarkX64(const char* label); // gpu_timing_probe_x64.cpp -- re
 extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hooks_x64.cpp -- real, signature-
     // scanned dvar reader (see that function's own comment). Used here (2026-09-26) to log the real native
     // `cl_paused` dvar alongside the render-view diagnostic -- this project has never had a reliable "the game
+extern "C" const char* GetDvarStringX64_Exported(const char* name); // analog_input_hooks_x64.cpp -- same
+    // pattern, for the real `coop_mapName` string dvar (2026-09-26, direct instruction: "lets add the map
+    // detection via the map string"), so a log spanning multiple maps can be split/correlated automatically
+    // instead of relying on a human noting timestamps.
     // is genuinely at its own in-game pause menu" signal (the existing `menuActive`/`IsMenuActiveX64_Exported`
     // flags are a blanket "some menu/UI is active" bit that also fires for the main menu and loading screens,
     // per this issue's own already-documented correction), which repeatedly forced guessing pause-vs-live state
@@ -7767,11 +7771,38 @@ HRESULT WINAPI Hook_EndScene(void* device)
         int totalFires = GetAndResetRenderViewSequenceX64(s_seqBuf, kSeqCap);
         int realTransitions = GetAndResetRenderViewTransitionCountX64();
 
+        // MW32011NCP, 2026-09-26: real map-name tagging, direct instruction
+        // ("lets add the map detection via the map string... so_underground
+        // etc"). `coop_mapName` is a real string dvar (default
+        // "so_nyse_manhattan", confirmed via decompile of its registration
+        // call) -- checked every frame (cheap: one dvar-string lookup, no
+        // allocation) so a map transition is caught immediately rather than
+        // only on the next throttled sample, and logged as its own,
+        // unmissable line the moment it changes -- makes splitting a log
+        // that spans multiple maps (e.g. Dome vs Underground) automatic
+        // instead of relying on a human noting timestamps.
+        static char s_lastMapName[64] = "";
+        const char* currentMapName = GetDvarStringX64_Exported("coop_mapName");
+        if (currentMapName == nullptr) currentMapName = "";
+        if (strcmp(currentMapName, s_lastMapName) != 0) {
+            // Two %s substitutions (up to 63 chars each, matching
+            // s_lastMapName/currentMapName's own real size) plus the
+            // literal text and %lld -- 160 would NOT have been enough
+            // (same overflow class as today's earlier InstallOcclusionLod-
+            // ScaleFixX64 crash); sized with real margin this time.
+            char mapBuf[256];
+            sprintf_s(mapBuf, "[x64-map-diag] map changed: \"%s\" -> \"%s\" at frame=%lld",
+                       s_lastMapName, currentMapName, s_frameCounter);
+            LogFromController(mapBuf);
+            strncpy_s(s_lastMapName, currentMapName, _TRUNCATE);
+        }
+
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
             int clPaused = static_cast<int>(GetDvarFloatX64_Exported("cl_paused"));
-            char buf[260];
-            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d clPaused=%d",
-                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions, clPaused);
+            char buf[320];
+            sprintf_s(buf, "[x64-renderview-rate] frame=%lld frameMs=%.2f fps=%.1f renderViewFires=%d realTransitions=%d clPaused=%d map=\"%s\"",
+                s_frameCounter, frameMs, frameMs > 0.0 ? (1000.0 / frameMs) : 0.0, totalFires, realTransitions, clPaused,
+                s_lastMapName);
             LogFromController(buf);
 
             // Real sequence dump, ONLY on genuinely slow frames (not the

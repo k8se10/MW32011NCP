@@ -4753,6 +4753,17 @@ const char* GetDvarStringX64(const char* name)
     return GetDvarStringX64Raw(name);
 }
 
+// MW32011NCP, 2026-09-26: exported for overlay_hud.cpp, matching the
+// existing GetDvarFloatX64_Exported pattern -- direct user instruction to
+// tag diagnostics with the real current map, via `coop_mapName` (a real
+// string dvar, default "so_nyse_manhattan", confirmed via decompile of its
+// registration call -- "so_" is this game's own Special Ops/Survival map
+// prefix, e.g. "so_dome"/"so_underground").
+extern "C" const char* GetDvarStringX64_Exported(const char* name)
+{
+    return GetDvarStringX64(name);
+}
+
 // GetEffectiveFov-equivalent: FUN_140069e60(playerIndex) -> float. Standard x64
 // calling convention (playerIndex in ECX, confirmed via disassembly: `MOV EDI, ECX`
 // at function entry, no other register setup beforehand) -- returns in XMM0 as a
