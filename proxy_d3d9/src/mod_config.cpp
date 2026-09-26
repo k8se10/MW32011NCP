@@ -1410,6 +1410,7 @@ void LoadModConfig()
     }
     ReadBool(path, "Video", "ProjectionJitterEnabled", g_modConfig.projectionJitterEnabled);
     ReadBool(path, "Video", "SkipRedundantShadowActivation", g_modConfig.skipRedundantShadowActivationX64);
+    ReadBool(path, "Video", "SkipRedundantConsoleFontInit", g_modConfig.skipRedundantConsoleFontInitX64);
 
     g_buttonMap = ResolveButtonMap(g_modConfig.buttonLayout, g_modConfig.flipTriggers);
 
@@ -1437,7 +1438,8 @@ void LoadModConfig()
         "armorFieldScanLogging=%d forceGlyphOverlay=%d glyphPositionEditMode=%d "
         "captureRuntimeMenuAssets=%d frametimeBenchmarkLogging=%d disableControllerInputX64=%d "
         "framePacingEnabled=%d waitCoalescingEnabled=%d iwdReadAccelEnabled=%d projectionMatrixJitterProbeEnabled=%d "
-        "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d skipRedundantShadowActivationX64=%d",
+        "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d skipRedundantShadowActivationX64=%d "
+        "skipRedundantConsoleFontInitX64=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1477,7 +1479,8 @@ void LoadModConfig()
         g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeCandidateIndex,
         g_modConfig.projectionJitterEnabled ? 1 : 0,
-        g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0);
+        g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0,
+        g_modConfig.skipRedundantConsoleFontInitX64 ? 1 : 0);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS

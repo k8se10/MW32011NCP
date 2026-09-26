@@ -1102,6 +1102,48 @@ struct ModConfig
     // own comment (analog_input_hooks_x64.cpp) for the full mechanism.
     bool skipRedundantShadowActivationX64 = true;
 
+    // [Video] SkipRedundantConsoleFontInit (2026-09-26, issue #4's console-
+    // font-init cost -- known_issues_x64.md). Real, confirmed, LIVE-TIMED
+    // finding: FUN_140081900 (console/UI font-init, loads the console's
+    // "white"/"console" materials and "fonts/consoleFont") sets its own
+    // "already initialized" flag (DAT_14064fdf4) to 1 UNCONDITIONALLY at
+    // entry and always redoes the FULL load -- it has no "already done"
+    // check of its own. One of its two real native callers (the main
+    // thread's own idle-loop path, FUN_14023f170) already checks that same
+    // flag before calling and skips when it's already set; the OTHER real
+    // caller (FUN_140079330, gated by a completely different flag,
+    // DAT_1406e24c4) does NOT check it at all, and redundantly re-triggers
+    // the full reload every time ITS OWN gate condition fires, even when
+    // nothing has actually changed since the last real load. Live-timed via
+    // a QueryPerformanceCounter wrap on this exact function: 958ms on the
+    // genuine first call, then a consistent ~91-99ms on every subsequent
+    // (redundant) call, reproduced identically across two separate sessions
+    // -- directly in the same magnitude range as the render-thread main-
+    // thread-fallback frame spikes (100-165ms) this issue has been chasing
+    // since it first found them. This fix makes the POST_hook check the
+    // SAME live flag (DAT_14064fdf4, resolved once via
+    // SigScan::ResolveRipRelativeAt against this hook's own already-
+    // installed signature match, no new scan) before calling the real
+    // trampoline -- if it's already nonzero (i.e. some real native call,
+    // including this function's own prior run, has already marked the
+    // console/font state current, and nothing has reset it since), the
+    // real trampoline is skipped entirely, matching the exact semantic
+    // Path B's own native code already implements, just applied to the one
+    // caller that was missing it. A real, legitimate reset (the console-
+    // shutdown functions, FUN_140082890/FUN_140082a50, both explicitly
+    // zero this flag on a genuine vid_restart/language-change/shutdown
+    // event) still clears the flag and lets the next call through
+    // normally -- this never blocks a real, necessary reload, only a
+    // provably redundant repeat of one that just happened. Kept as a
+    // config toggle (not unconditional) since it's only been reasoned
+    // about via decompile + live timing so far, not yet independently
+    // confirmed harmless across a long real play session -- default ON
+    // given the strength of the evidence and the low blast radius (worst
+    // case if ever wrong: stale console/font state, trivially reversible
+    // by toggling this off, no crash risk since the skip path never
+    // touches memory the real function wouldn't have touched anyway).
+    bool skipRedundantConsoleFontInitX64 = true;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real

@@ -409,6 +409,12 @@ constexpr const char* kConsoleFontInitSignature =
 using ConsoleFontInitFn = void(__fastcall*)();
 ConsoleFontInitFn g_realConsoleFontInit = nullptr;
 long long g_consoleFontInitFireCount = 0;
+long long g_consoleFontInitSkippedCount = 0;
+// &DAT_14064fdf4, resolved once at install time from this hook's own
+// already-matched signature (the "MOV dword ptr [rip+disp],1" instruction
+// at static offset +0x0B) -- see kConsoleFontInitSignature's own comment
+// and mod_config.h's skipRedundantConsoleFontInitX64 for the full context.
+volatile int* g_consoleFontInitAlreadyDoneFlag = nullptr;
 
 uintptr_t ToGhidraAddressX64(void* runtimeAddr); // defined below, used here first
 
@@ -418,11 +424,28 @@ void __fastcall Hook_ConsoleFontInit()
     uintptr_t callerRuntime = reinterpret_cast<uintptr_t>(_ReturnAddress());
     uintptr_t callerGhidra = ToGhidraAddressX64(reinterpret_cast<void*>(callerRuntime));
 
-    // 2026-09-26: timing added -- the zone-reload primitive this call SOMETIMES
-    // reaches turned out to be fast (0.117ms, one-shot), which doesn't answer
-    // whether THIS call itself (the repeated, per-transition path) is expensive.
-    // Times the whole call regardless of which internal sub-call ends up being
-    // the real cost, if any.
+    // 2026-09-26 REAL FIX: skip the call entirely when the engine's own
+    // "already initialized" flag (DAT_14064fdf4) is already set -- one of
+    // this function's two real native callers already respects this flag
+    // before calling at all; this closes the gap for the other one, which
+    // never checked it. A real reset (FUN_140082890/FUN_140082a50, genuine
+    // console-shutdown/vid_restart/language-change paths) still clears the
+    // flag and lets the next call through normally.
+    if (g_modConfig.skipRedundantConsoleFontInitX64 &&
+        g_consoleFontInitAlreadyDoneFlag != nullptr &&
+        *g_consoleFontInitAlreadyDoneFlag != 0) {
+        ++g_consoleFontInitSkippedCount;
+        char skipBuf[224];
+        sprintf_s(skipBuf, "[x64-consolefont-diag] fire #%lld: real caller=0x%llX SKIPPED (already "
+                   "initialized, skip #%lld) tick=%llu",
+                   g_consoleFontInitFireCount, static_cast<unsigned long long>(callerGhidra),
+                   g_consoleFontInitSkippedCount, static_cast<unsigned long long>(GetTickCount64()));
+        LogFromController(skipBuf);
+        return;
+    }
+
+    // Timing kept for the real (non-skipped) path -- confirms the fix is
+    // only ever paying the real cost when a genuine reload is happening.
     LARGE_INTEGER freq{}, t0{}, t1{};
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&t0);
@@ -8577,10 +8600,11 @@ void InstallAnalogInputHooksX64()
     }
 
     {
-        // MW32011NCP, 2026-09-26: console/UI font-init caller diagnostic, see
-        // kConsoleFontInitSignature's own comment above for the full context
-        // (the render-thread-fallback caller-chain investigation, issue #4).
-        // RE-ENABLED same day at the CORRECTED real function address
+        // MW32011NCP, 2026-09-26: console/UI font-init hook, see
+        // kConsoleFontInitSignature's own comment above and
+        // mod_config.h's skipRedundantConsoleFontInitX64 for the full
+        // context (the render-thread-fallback caller-chain investigation,
+        // issue #4). RE-ENABLED at the CORRECTED real function address
         // (0x140081900, not the original 0x14008191a which crashed every
         // launch): root-caused via a real crash dump (iw5sp.exe.20608.dmp)
         // to Ghidra's own "fully analyzed" project mis-splitting one real
@@ -8588,16 +8612,30 @@ void InstallAnalogInputHooksX64()
         // fixed using a new tool built specifically for this,
         // re_notes/ghidra_scripts/UnwindInfoLookup.java, which reads the
         // real PE .pdata/UNWIND_INFO tables directly rather than trusting
-        // Ghidra's function-boundary database. The corrected address is a
-        // genuine, non-chained, real function start (SizeOfProlog=4,
-        // confirmed real SUB RSP,0x28 prologue via DumpSigBytes.java) --
-        // safe to hook by this project's own now-standing verification
-        // process for any stack-walk-derived target.
+        // Ghidra's function-boundary database. GRADUATED same day from a
+        // pure diagnostic to a REAL FIX once live timing confirmed the
+        // ~90-100ms-per-call cost: now also resolves &DAT_14064fdf4 (the
+        // engine's own "already initialized" flag) via
+        // SigScan::ResolveRipRelativeAt against this same signature match,
+        // so the hook can skip the real call entirely when it's
+        // provably redundant.
         SigScan::Result r = SigScan::FindPatternInMainModule(kConsoleFontInitSignature);
         if (!r.found) {
             LogFromController("[x64-consolefont-diag] FATAL: console-font-init signature did not resolve -- "
-                "diagnostic hook not installed this session");
+                "hook not installed this session");
         } else {
+            // "C7 05 ?? ?? ?? ?? 01 00 00 00" starts at signature offset
+            // +0x0B (11), disp32 sits at instruction bytes [2,6), imm32 (the
+            // literal "1") occupies the last 4 bytes -- so the disp32 field
+            // is NOT simply "the last 4 bytes of the instruction" (the
+            // common case ResolveRipRelative's simpler overload assumes),
+            // hence the _At form with explicit field/next-instruction
+            // addresses.
+            constexpr uintptr_t kFlagInsnOffset = 0x0B;
+            constexpr uintptr_t kFlagInsnLength = 10;
+            g_consoleFontInitAlreadyDoneFlag = reinterpret_cast<volatile int*>(
+                SigScan::ResolveRipRelativeAt(r.address + kFlagInsnOffset + 2, r.address + kFlagInsnOffset + kFlagInsnLength));
+
             void* target = reinterpret_cast<void*>(r.address);
             MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ConsoleFontInit),
                                                     reinterpret_cast<void**>(&g_realConsoleFontInit));
@@ -8614,10 +8652,15 @@ void InstallAnalogInputHooksX64()
                                static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
                     LogFromController(buf);
                 } else {
-                    LogFromController("[x64-consolefont-diag] console-font-init caller diagnostic hook "
-                        "installed and enabled -- log-and-call-through only, zero behavior change. Watch the "
-                        "log for '[x64-consolefont-diag] fire' to see the real native caller address, since "
-                        "static analysis found zero references to this function anywhere in the binary.");
+                    char buf[256];
+                    sprintf_s(buf, "[x64-consolefont-diag] console-font-init hook installed and enabled -- "
+                        "skipRedundantConsoleFontInitX64=%d, flag@0x%llX%s. Watch the log for "
+                        "'[x64-consolefont-diag] fire'/'SKIPPED' lines.",
+                        g_modConfig.skipRedundantConsoleFontInitX64 ? 1 : 0,
+                        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_consoleFontInitAlreadyDoneFlag)),
+                        g_consoleFontInitAlreadyDoneFlag == nullptr ?
+                            " (FAILED TO RESOLVE -- skip logic inert, behaves as pure diagnostic this session)" : "");
+                    LogFromController(buf);
                 }
             }
         }
