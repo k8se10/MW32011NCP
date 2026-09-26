@@ -1119,19 +1119,30 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
 
 // MW32011NCP, 2026-09-26: real-play/blend diagnostic for the 2026-09-26
 // native-audio-duplication investigation -- see kPlaySoundAliasSignature's
-// own comment above for the full context. Logs the first 200 fires
-// unconditionally (a real combat burst of duplicate/echoing plays needs to
-// be caught whole, not truncated by an early rate-limit window), then falls
-// back to this file's own standard ~250ms floor to avoid a long session
-// flooding the log (the exact issue #87 lesson this file already documents
-// elsewhere). Per-fire: alias name (SEH-guarded read, bounded print),
-// channel, and recursionDepth -- a real run of rapid repeats for the SAME
-// alias name at recursionDepth==0 (a fresh top-level play, not a legitimate
-// chained/secondary-alias blend) within a tight time window is the concrete
-// signature that would confirm the user's own duplicate-playback theory;
-// anything chained (recursionDepth>0) is expected, normal alias-blend
-// behavior per FUN_140273ec0's own real depth cap and should not be
-// mistaken for the bug being hunted.
+// own comment above for the full context. UPDATED same day: the original
+// 200-fires-then-~250ms-floor design was live-tested and found to actively
+// hurt this specific investigation -- real capture data showed only ~300
+// total fires across a whole play session (nowhere near issue #87's log-
+// flood territory), and the GLOBAL 250ms floor meant any unrelated alias
+// firing (e.g. a looping ambience like "airconditioner_running_loop") could
+// eat the rate-limit budget and silently suppress a genuinely rapid repeat
+// of the SPECIFIC alias under investigation ("aagun_fire_skyburst",
+// directly flagged by the user as "the weird echo one") -- one observed
+// inter-fire gap of exactly 250ms (the floor value itself) is a real,
+// concrete sign this was already happening. Fixed by dropping the throttle
+// entirely, uncapped -- direct instruction, "just unbound it these are dev
+// test toggles not mod features to keep on": this hook is a temporary,
+// dev-only diagnostic (see kPlaySoundAliasSignature's own comment), not a
+// standing feature meant to run indefinitely on a player's machine, so it
+// doesn't need this file's usual issue #87-style rate-limiting discipline.
+// Per-fire: alias name (SEH-guarded read,
+// bounded print), channel, and recursionDepth -- a real run of rapid
+// repeats for the SAME alias name at recursionDepth==0 (a fresh top-level
+// play, not a legitimate chained/secondary-alias blend) within a tight
+// time window is the concrete signature that would confirm the user's own
+// duplicate-playback theory; anything chained (recursionDepth>0) is
+// expected, normal alias-blend behavior per FUN_140273ec0's own real depth
+// cap and should not be mistaken for the bug being hunted.
 unsigned int __fastcall Hook_PlaySoundAlias(
     void* asset, void* listener, float param3, float param4, float param5, unsigned int channel,
     float* origin, unsigned int* voiceOut, unsigned int param9, char param10, float param11,
@@ -1139,10 +1150,11 @@ unsigned int __fastcall Hook_PlaySoundAlias(
 {
     long long fireIndex = ++g_playSoundAliasFireCount;
     long long nowMs = static_cast<long long>(GetTickCount64());
-    static long long s_lastLogMs = 0;
-    bool shouldLog = (fireIndex <= 200) || (nowMs - s_lastLogMs >= 250);
-    if (shouldLog) {
-        s_lastLogMs = nowMs;
+    // Unbounded on purpose -- dev-only diagnostic toggle, not a shipped mod
+    // feature meant to run indefinitely on every player's machine (unlike
+    // this file's other, genuinely long-lived diagnostics that need the
+    // issue #87 rate-limiting discipline). Direct instruction, 2026-09-26.
+    {
         char nameBuf[64] = "<unreadable>";
 #ifdef _WIN32
         __try {
