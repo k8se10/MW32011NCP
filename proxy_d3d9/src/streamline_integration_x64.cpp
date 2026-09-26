@@ -30,6 +30,7 @@
     // without including any Vulkan header itself.
 #include "../third_party/streamline/include/sl.h"
 #include "../third_party/streamline/include/sl_helpers_vk.h"
+#include "../third_party/streamline/include/sl_dlss.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp -- real
     // external-linkage logger every other file in this codebase uses (dllmain.cpp's
@@ -46,6 +47,8 @@ using PFun_slGetNewFrameToken_t = sl::Result(sl::FrameToken*&, const uint32_t*);
 using PFun_slSetTagForFrame_t = sl::Result(const sl::FrameToken&, const sl::ViewportHandle&,
     const sl::ResourceTag*, uint32_t, sl::CommandBuffer*);
 using PFun_slSetConstants_t = sl::Result(const sl::Constants&, const sl::FrameToken&, const sl::ViewportHandle&);
+using PFun_slEvaluateFeature_t = sl::Result(sl::Feature, const sl::FrameToken&, const sl::BaseStructure**, uint32_t, sl::CommandBuffer*);
+using PFun_slGetFeatureFunction_t = sl::Result(sl::Feature, const char*, void*&);
 
 HMODULE g_streamlineModule = nullptr;
 PFun_slInit_t* g_slInit = nullptr;
@@ -55,6 +58,17 @@ PFun_slSetVulkanInfo_t* g_slSetVulkanInfo = nullptr;
 PFun_slGetNewFrameToken_t* g_slGetNewFrameToken = nullptr;
 PFun_slSetTagForFrame_t* g_slSetTagForFrame = nullptr;
 PFun_slSetConstants_t* g_slSetConstants = nullptr;
+PFun_slEvaluateFeature_t* g_slEvaluateFeature = nullptr; // 2026-09-26 -- the real DLSS
+    // evaluation call, resolved alongside the other core exports (see
+    // TryLoadStreamlineInterposer's own missing-exports check below).
+PFun_slGetFeatureFunction_t* g_slGetFeatureFunction = nullptr; // 2026-09-26 -- resolves
+    // per-feature functions (slDLSSSetOptions, etc.) by name; per its own doc comment
+    // (sl_core_api.h) this must only be called AFTER slSetVulkanInfo has succeeded.
+// slDLSSSetOptions itself -- resolved lazily via g_slGetFeatureFunction the first time
+// StreamlineDLSSSetOptionsX64 is called (not at load time, since it needs a real device
+// registered first per that function's own doc comment), cached after.
+using PFun_slDLSSSetOptions_t = sl::Result(const sl::ViewportHandle&, const sl::DLSSOptions&);
+PFun_slDLSSSetOptions_t* g_slDLSSSetOptions = nullptr;
 bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
 sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
@@ -115,16 +129,22 @@ bool TryLoadStreamlineInterposer()
         GetProcAddress(slModule, "slSetTagForFrame"));
     g_slSetConstants = reinterpret_cast<PFun_slSetConstants_t*>(
         GetProcAddress(slModule, "slSetConstants"));
+    g_slEvaluateFeature = reinterpret_cast<PFun_slEvaluateFeature_t*>(
+        GetProcAddress(slModule, "slEvaluateFeature"));
+    g_slGetFeatureFunction = reinterpret_cast<PFun_slGetFeatureFunction_t*>(
+        GetProcAddress(slModule, "slGetFeatureFunction"));
     if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo
-        || !g_slGetNewFrameToken || !g_slSetTagForFrame || !g_slSetConstants) {
+        || !g_slGetNewFrameToken || !g_slSetTagForFrame || !g_slSetConstants
+        || !g_slEvaluateFeature || !g_slGetFeatureFunction) {
         // Real worst-case measured (wc -c on the literal): 306 bytes; +MAX_PATH
         // (260) for %s = 566 -- buf[750] leaves real margin (this project's own
-        // standing sprintf_s-overflow lesson).
-        char buf[750];
+        // standing sprintf_s-overflow lesson). Widened to 900 (2026-09-26) after
+        // adding two more export names to the same literal.
+        char buf[900];
         sprintf_s(buf, "[streamline] Vendored sl.interposer.dll loaded from '%s' but is missing "
             "slInit/slShutdown/slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/"
-            "slSetTagForFrame/slSetConstants exports (corrupted/wrong-version file?) -- Streamline "
-            "will not be initialized this session.", slPath);
+            "slSetTagForFrame/slSetConstants/slEvaluateFeature/slGetFeatureFunction exports "
+            "(corrupted/wrong-version file?) -- Streamline will not be initialized this session.", slPath);
         LogFromController(buf);
         FreeLibrary(slModule);
         g_slInit = nullptr;
@@ -134,14 +154,16 @@ bool TryLoadStreamlineInterposer()
         g_slGetNewFrameToken = nullptr;
         g_slSetTagForFrame = nullptr;
         g_slSetConstants = nullptr;
+        g_slEvaluateFeature = nullptr;
+        g_slGetFeatureFunction = nullptr;
         return false;
     }
 
     g_streamlineModule = slModule;
-    char buf[550];
+    char buf[650];
     sprintf_s(buf, "[streamline] Loaded vendored sl.interposer.dll from '%s' -- slInit/slShutdown/"
         "slGetFeatureRequirements/slSetVulkanInfo/slGetNewFrameToken/slSetTagForFrame/"
-        "slSetConstants resolved.", slPath);
+        "slSetConstants/slEvaluateFeature/slGetFeatureFunction resolved.", slPath);
     LogFromController(buf);
     return true;
 }
@@ -437,6 +459,15 @@ VkQueue GetDxvkVkQueueX64()
     return g_dxvkVkQueueX64;
 }
 
+// 2026-09-26 -- needed by streamline_evaluate_x64.cpp to create a real
+// VkCommandPool against the same queue family Streamline's own registered
+// queue belongs to (a command pool is created FOR a specific queue family;
+// using the wrong one would fail command-buffer allocation).
+uint32_t GetDxvkVkGraphicsQueueFamilyIndexX64()
+{
+    return g_dxvkVkQueueFamilyIndexX64;
+}
+
 // 2026-09-24: real frame-tracking groundwork -- the next unstarted step per
 // slSetVulkanInfo()'s own success log line. slGetNewFrameToken() must be
 // called once per real frame (ProgrammingGuideManualHooking.md); the
@@ -559,6 +590,98 @@ bool StreamlineSetConstantsX64(const sl::Constants& constants)
     if (heartbeat) {
         char buf[100];
         sprintf_s(buf, "[streamline] slSetConstants() succeeded (tick=%lld)", s_constantsTickCount);
+        LogFromController(buf);
+    }
+    return true;
+}
+
+// 2026-09-26: real slDLSSSetOptions wrapper -- MANDATORY before the first
+// slEvaluateFeature(kFeatureDLSS, ...) call, per sl_dlss.h's own doc comment
+// ("Call this method to turn DLSS on/off, change mode etc."). Resolves the
+// real per-feature function pointer lazily via slGetFeatureFunction (its own
+// doc comment: "must be called AFTER device is set... slSetVulkanInfo"), so
+// this can't run any earlier than slSetVulkanInfo's own success -- matches
+// this file's existing g_streamlineVulkanInfoSet gate. Called once from
+// streamline_evaluate_x64.cpp right after real device registration, and
+// again whenever the real output resolution changes (the DLSS output-buffer
+// texture is recreated on that same event, streamline_resources_x64.cpp).
+bool StreamlineDLSSSetOptionsX64(uint32_t outputWidth, uint32_t outputHeight, int modeValue)
+{
+    if (!g_streamlineVulkanInfoSet) return false;
+
+    if (!g_slDLSSSetOptions) {
+        void* fn = nullptr;
+        sl::Result resolveResult = g_slGetFeatureFunction(sl::kFeatureDLSS, "slDLSSSetOptions", fn);
+        if (resolveResult != sl::Result::eOk || !fn) {
+            char buf[200];
+            sprintf_s(buf, "[streamline] slGetFeatureFunction(DLSS, \"slDLSSSetOptions\") FAILED "
+                "(result=%d) -- DLSS cannot be configured this session.", static_cast<int>(resolveResult));
+            LogFromController(buf);
+            return false;
+        }
+        g_slDLSSSetOptions = reinterpret_cast<PFun_slDLSSSetOptions_t*>(fn);
+        LogFromController("[streamline] slDLSSSetOptions resolved via slGetFeatureFunction.");
+    }
+
+    // modeValue is g_modConfig.dlssModeX64, already range-checked to [0,6] at
+    // config-load time (mod_config.cpp) -- matches sl::DLSSMode's own real
+    // enum range (eOff..eDLAA, sl_dlss.h) exactly, so a plain cast is safe.
+    sl::DLSSOptions options{};
+    options.mode = static_cast<sl::DLSSMode>(modeValue);
+    options.outputWidth = outputWidth;
+    options.outputHeight = outputHeight;
+    options.colorBuffersHDR = sl::Boolean::eFalse; // this project's own scene-color
+        // target is D3DFMT_A8R8G8B8/VK_FORMAT_B8G8R8A8_UNORM (8-bit, non-HDR) --
+        // see TagColorResourceForFrame's own confirmed live format.
+
+    sl::ViewportHandle viewport(static_cast<uint32_t>(0));
+    sl::Result result = g_slDLSSSetOptions(viewport, options);
+    char buf[250];
+    sprintf_s(buf, "[streamline] slDLSSSetOptions(mode=%d, output=%ux%u) %s (result=%d)",
+        modeValue, outputWidth, outputHeight, result == sl::Result::eOk ? "succeeded" : "FAILED",
+        static_cast<int>(result));
+    LogFromController(buf);
+    return result == sl::Result::eOk;
+}
+
+// 2026-09-26: real slEvaluateFeature wrapper -- the actual call that makes
+// DLSS run. Must be called with the SAME FrameToken this frame's own
+// slSetTagForFrame/slSetConstants calls used (frame/viewport must match
+// per slEvaluateFeature's own doc comment) -- i.e. BEFORE StreamlineFrameTick()
+// advances g_streamlineCurrentFrameToken to the next frame's token. See
+// streamline_evaluate_x64.cpp's own header comment for the full per-frame
+// ordering this depends on, and overlay_hud.cpp's Hook_EndScene for where
+// this is actually called from.
+bool StreamlineEvaluateFeatureX64(void* vkCommandBuffer)
+{
+    if (!g_streamlineVulkanInfoSet) return false;
+    if (!g_streamlineCurrentFrameToken) return false;
+    if (!vkCommandBuffer) return false;
+
+    sl::ViewportHandle viewport(static_cast<uint32_t>(0));
+    const sl::BaseStructure* inputs[] = { &viewport };
+
+    sl::Result result = g_slEvaluateFeature(sl::kFeatureDLSS, *g_streamlineCurrentFrameToken,
+        inputs, 1, reinterpret_cast<sl::CommandBuffer*>(vkCommandBuffer));
+
+    static long long s_evaluateTickCount = 0;
+    ++s_evaluateTickCount;
+    bool heartbeat = s_evaluateTickCount <= 5 || (s_evaluateTickCount % 5000) == 0;
+    if (result != sl::Result::eOk) {
+        static bool s_failureLogged = false;
+        if (!s_failureLogged || heartbeat) {
+            s_failureLogged = true;
+            char buf[150];
+            sprintf_s(buf, "[streamline] slEvaluateFeature(DLSS) FAILED (result=%d, tick=%lld)",
+                static_cast<int>(result), s_evaluateTickCount);
+            LogFromController(buf);
+        }
+        return false;
+    }
+
+    if (heartbeat) {
+        char buf[100];
+        sprintf_s(buf, "[streamline] slEvaluateFeature(DLSS) succeeded (tick=%lld)", s_evaluateTickCount);
         LogFromController(buf);
     }
     return true;

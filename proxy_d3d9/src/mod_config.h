@@ -794,6 +794,22 @@ struct ModConfig
     // own device, resource tagging, the jitter/motion-vector contract).
     bool streamlineEnabled = false;
 
+    // [Experimental] DLSSModeX64 (2026-09-26) -- the real sl::DLSSMode enum
+    // value (0=eOff, 1=eMaxPerformance, 2=eBalanced, 3=eMaxQuality,
+    // 4=eUltraPerformance, 5=eUltraQuality, 6=eDLAA, sl_dlss.h) passed to
+    // slDLSSSetOptions once actual DLSS evaluation is wired
+    // (streamline_evaluate_x64.cpp). Only meaningful once StreamlineEnabled=1
+    // and slEvaluateFeature is actually being called -- has no effect before
+    // that. Default eMaxQuality (3): this project already fixes DLSS's real
+    // input/output resolution pair itself via InternalRenderScalePercent
+    // ("internal render scaled percent is what we feed into dlss," direct
+    // instruction, 2026-09-24) rather than letting DLSS pick its own render
+    // resolution for a given mode, so the mode value mainly tunes the AI
+    // model's own internal behavior for whatever ratio results -- eMaxQuality
+    // is the safest, most visually conservative default for an arbitrary
+    // ratio, not tied to any specific "quality tier" render-scale value.
+    int dlssModeX64 = 3;
+
     // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,
     // 0/disabled by default. Real motivation, direct user framing: "basically the plan
     // is to allow better texture and internal render res as again above 1080p it looks

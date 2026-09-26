@@ -60,6 +60,10 @@ void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp, 2026-09-24 
 void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, 2026-09-24 --
     // real motion-vectors buffer (kBufferTypeMotionVectors), same "we own this
     // resource" rationale as the output buffer above.
+void EvaluateStreamlineDlssX64(); // streamline_evaluate_x64.cpp, 2026-09-26 -- the
+    // real slEvaluateFeature(DLSS) call. MUST run after this frame's own tagging
+    // (above) but BEFORE StreamlineFrameTick() advances the frame token for the
+    // NEXT frame -- see that file's own header comment for why the order matters.
 extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
     // 2026-09-26 -- the single correct "is it safe/meaningful to do real
     // Streamline-adjacent work right now" gate (false unless StreamlineEnabled,
@@ -7879,29 +7883,45 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // Streamline-adjacent entry point fixed the same session (see
     // IsStreamlineInitializedX64's own comment, streamline_integration_x64.cpp).
     if (IsStreamlineInitializedX64()) {
-        LARGE_INTEGER freq{}, t0{}, t1{}, t2{}, t3{}, t4{};
+        // REORDERED, 2026-09-26 (real correctness fix, not just a perf/logging
+        // change): StreamlineFrameTick() advances g_streamlineCurrentFrameToken
+        // to the token for the UPCOMING frame -- it must run LAST, after this
+        // frame's own tagging AND evaluation are both done with the token that
+        // was actually current while this frame rendered. The previous order
+        // called StreamlineFrameTick() FIRST, which was harmless while nothing
+        // downstream depended on token/tag consistency within a single frame
+        // (pure diagnostics), but would have silently evaluated DLSS against a
+        // token that no longer matched this frame's own tags/constants once
+        // EvaluateStreamlineDlssX64 was added -- caught and fixed before this
+        // ever ran live. Wrong tags for a token is possible even set to
+        // eValidUntilPresent per docs, so getting this file's own scope wrong
+        // was the specific real risk being closed here.
+        LARGE_INTEGER freq{}, t0{}, t1{}, t2{}, t3{}, t4{}, t5{};
         QueryPerformanceFrequency(&freq);
         auto ms = [&](LARGE_INTEGER a, LARGE_INTEGER b) {
             return (static_cast<double>(b.QuadPart - a.QuadPart) * 1000.0) / static_cast<double>(freq.QuadPart);
         };
 
         QueryPerformanceCounter(&t0);
-        StreamlineFrameTick();
-        QueryPerformanceCounter(&t1);
         TagStreamlineOutputColorX64();
-        QueryPerformanceCounter(&t2);
+        QueryPerformanceCounter(&t1);
         TagStreamlineMotionVectorsX64();
-        QueryPerformanceCounter(&t3);
+        QueryPerformanceCounter(&t2);
         CaptureObjectMotionSnapshotX64();
+        QueryPerformanceCounter(&t3);
+        EvaluateStreamlineDlssX64();
         QueryPerformanceCounter(&t4);
+        StreamlineFrameTick();
+        QueryPerformanceCounter(&t5);
 
-        double msFrameTick = ms(t0, t1), msOutputTag = ms(t1, t2), msMvecTag = ms(t2, t3), msDobj = ms(t3, t4);
-        double msTotal = msFrameTick + msOutputTag + msMvecTag + msDobj;
+        double msOutputTag = ms(t0, t1), msMvecTag = ms(t1, t2), msDobj = ms(t2, t3),
+            msEvaluate = ms(t3, t4), msFrameTick = ms(t4, t5);
+        double msTotal = msOutputTag + msMvecTag + msDobj + msEvaluate + msFrameTick;
         if (msTotal >= 1.0) {
-            char buf[220];
-            sprintf_s(buf, "[x64-streamline-timing] frameTick=%.3fms outputTag=%.3fms mvecTag=%.3fms "
-                "dobjCapture=%.3fms total=%.3fms",
-                msFrameTick, msOutputTag, msMvecTag, msDobj, msTotal);
+            char buf[280];
+            sprintf_s(buf, "[x64-streamline-timing] outputTag=%.3fms mvecTag=%.3fms "
+                "dobjCapture=%.3fms evaluate=%.3fms frameTick=%.3fms total=%.3fms",
+                msOutputTag, msMvecTag, msDobj, msEvaluate, msFrameTick, msTotal);
             LogFromController(buf);
         }
     }

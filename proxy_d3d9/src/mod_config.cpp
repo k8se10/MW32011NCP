@@ -1381,6 +1381,11 @@ void LoadModConfig()
     ReadGraphicsApi(path, g_modConfig.graphicsApi);
     ReadBool(path, "Video", "StreamlineEnabled", g_modConfig.streamlineEnabled);
     {
+        int v = GetPrivateProfileIntA("Experimental", "DLSSModeX64", g_modConfig.dlssModeX64, path);
+        if (v < 0 || v > 6) v = 3; // out-of-range -> fall back to eMaxQuality, never an invalid enum value
+        g_modConfig.dlssModeX64 = v;
+    }
+    {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;
     }
@@ -1466,7 +1471,8 @@ void LoadModConfig()
         "projectionMatrixJitterProbeCandidateIndex=%d projectionJitterEnabled=%d skipRedundantShadowActivationX64=%d "
         "skipRedundantConsoleFontInitX64=%d skipRedundantMasterSequencerReactivationX64=%d "
         "skipRedundantOrchestratorExtraCallsX64=%d skipRedundantScenePostfxGuaranteedCallsX64=%d "
-        "reverbWetScaleX64=%g occlusionLodScaleFixX64=%d pauseBlurStepCapX64=%d liveBlurStepCapX64=%d",
+        "reverbWetScaleX64=%g occlusionLodScaleFixX64=%d pauseBlurStepCapX64=%d liveBlurStepCapX64=%d "
+        "streamlineEnabled=%d dlssModeX64=%d",
         g_modConfig.lookDegreesPerSecondHorizontal, g_modConfig.lookDegreesPerSecondVertical,
         g_modConfig.adsSlowdownStrength,
         g_modConfig.adsSlowdownBaseline,
@@ -1514,7 +1520,9 @@ void LoadModConfig()
         g_modConfig.reverbWetScaleX64,
         g_modConfig.occlusionLodScaleFixX64 ? 1 : 0,
         g_modConfig.pauseBlurStepCapX64,
-        g_modConfig.liveBlurStepCapX64);
+        g_modConfig.liveBlurStepCapX64,
+        g_modConfig.streamlineEnabled ? 1 : 0,
+        g_modConfig.dlssModeX64);
     LogFromController(buf);
 
     // Rewrite the file once, now that g_modConfig holds every existing setting PLUS
