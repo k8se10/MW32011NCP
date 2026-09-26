@@ -417,12 +417,28 @@ void __fastcall Hook_ConsoleFontInit()
     ++g_consoleFontInitFireCount;
     uintptr_t callerRuntime = reinterpret_cast<uintptr_t>(_ReturnAddress());
     uintptr_t callerGhidra = ToGhidraAddressX64(reinterpret_cast<void*>(callerRuntime));
-    char buf[192];
-    sprintf_s(buf, "[x64-consolefont-diag] fire #%lld: real caller=0x%llX tick=%llu",
-               g_consoleFontInitFireCount, static_cast<unsigned long long>(callerGhidra),
-               static_cast<unsigned long long>(GetTickCount64()));
-    LogFromController(buf);
+
+    // 2026-09-26: timing added -- the zone-reload primitive this call SOMETIMES
+    // reaches turned out to be fast (0.117ms, one-shot), which doesn't answer
+    // whether THIS call itself (the repeated, per-transition path) is expensive.
+    // Times the whole call regardless of which internal sub-call ends up being
+    // the real cost, if any.
+    LARGE_INTEGER freq{}, t0{}, t1{};
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
     g_realConsoleFontInit();
+    QueryPerformanceCounter(&t1);
+    double ms = (freq.QuadPart > 0)
+        ? static_cast<double>(t1.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart)
+        : 0.0;
+    static double s_maxMs = 0.0;
+    if (ms > s_maxMs) s_maxMs = ms;
+
+    char buf[224];
+    sprintf_s(buf, "[x64-consolefont-diag] fire #%lld: real caller=0x%llX took %.3fms (session max %.3fms) tick=%llu",
+               g_consoleFontInitFireCount, static_cast<unsigned long long>(callerGhidra),
+               ms, s_maxMs, static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
 }
 
 // MW32011NCP, 2026-09-26: real x64 zone/localization-reload primitive
