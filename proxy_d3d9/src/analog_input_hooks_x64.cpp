@@ -6322,13 +6322,13 @@ void* g_orchestratorExtraCallBReturnAddr = nullptr;
 // own real, unique entry-point prologue (guaranteed globally unique); the
 // second is anchored on a real struct-offset CMP a few instructions before
 // its own call, near the function's real epilogue.
-// **CONFIRMED BROKEN, LIVE-TESTED 2026-09-26 -- causes complete viewport
-// corruption during live gameplay (fine while paused). See
-// mod_config.h's own skipRedundantScenePostfxGuaranteedCallsX64 comment
-// for the full incident record. The toggle stays default OFF; the
-// signatures/resolution/skip logic below are kept, not deleted, in case a
-// future session finds what these two calls actually activate and can
-// make skipping them safe.**
+// **ORIGINAL BLIND SKIP CONFIRMED BROKEN, LIVE-TESTED 2026-09-26 -- caused
+// complete viewport corruption during live gameplay (fine while paused).
+// REVISED same day to a conditional fix (see g_scenePostfxActivePassBasePtr's
+// own comment below) that only skips when a live read confirms the pass is
+// already active. See mod_config.h's own skipRedundantScenePostfxGuaranteedCallsX64
+// comment for the full incident record. Toggle stays default OFF pending
+// live confirmation of the new mechanism.**
 constexpr const char* kScenePostfxFirstCallSignature =
     "48 8B C4 55 56 57 48 83 EC 70 0F 29 70 D8 0F B6 EA 48 89 58 10 "
     "48 8D 91 40 03 00 00 4C 89 70 18 48 8B F9 0F 29 78 C8 48 8D 0D ?? ?? ?? ?? "
@@ -6347,6 +6347,29 @@ constexpr const char* kScenePostfxLastCallSignature =
     "E8 ?? ?? ?? ??";
 constexpr int kScenePostfxLastCallSigLen = 91; // return addr = match + this
 void* g_scenePostfxLastCallReturnAddr = nullptr;
+
+// MW32011NCP, 2026-09-26: the REAL fix for point (c), replacing the blind
+// unconditional skip that live-tested as viewport-breaking. Root cause:
+// the activator itself (FUN_1401dfd80) has its own real dedup check at its
+// very entry -- `if (param_2 == *(int*)(lVar1 + 0xbd8)) return;`, where
+// `lVar1` is the real device/view-context pointer (the value stored at a
+// fixed global, resolved below) and `+0xbd8` is the CURRENTLY ACTIVE pass
+// index. The blind skip assumed both calls were ALWAYS redundant; they
+// aren't -- they're only redundant when pass 1 already happens to be
+// active at that exact point, which x86's differently-shaped call chain
+// apparently guarantees but x64's does not always. This resolves the SAME
+// global the activator itself reads (found via the `MOVUPS [rip+disp]`
+// instruction already present in both point-(c) signatures above, offset
+// verified programmatically, not by hand: +96 into the 123-byte FIRST
+// signature, +64 into the 91-byte LAST one -- both load the same 16-byte
+// pair of globals, only one resolution is needed) and replicates the
+// activator's own check live: skip ONLY when the pass is already active
+// (a case where calling through would have been a proven no-op anyway --
+// this fix can never produce behavior different from always calling
+// through, it only ever removes work the real function would have thrown
+// away itself). SEH-guarded; any failure to read defaults to letting the
+// real call through (the always-safe choice).
+uintptr_t* g_scenePostfxActivePassBasePtr = nullptr; // &PTR_DAT_14040ec18 (holds a pointer; +8 from it is the real ec20 slot)
 
 // Real per-frame fire-SEQUENCE tracking, 2026-09-25 -- CONFIRMED, real,
 // quantitative result from the plain-count version of this diagnostic
@@ -6450,25 +6473,50 @@ void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
     }
 
     // [Experimental] SkipRedundantScenePostfxGuaranteedCalls -- issue #4
-    // "point (c)". Same unconditional-skip shape, two known return
-    // addresses (the scene-postfx function's own guaranteed first/last
-    // activator calls) -- x86's structurally equivalent visual work never
-    // touches the activator at all, confirmed via two independent full
-    // chain traces.
+    // "point (c)". REVISED 2026-09-26 after live-testing the original
+    // unconditional version broke the viewport during live gameplay (fine
+    // while paused) -- see g_scenePostfxActivePassBasePtr's own comment
+    // above for the full root-cause explanation. Now a CONDITIONAL skip:
+    // replicates the real activator's own dedup check (only skip when the
+    // requested pass is ALREADY the live-active one, the one case where
+    // calling through is proven to be a no-op) instead of assuming both
+    // calls are always redundant. Falls through to the real call on any
+    // read failure or when the pass genuinely differs -- the always-safe
+    // default.
     if (g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64) {
         void* ra = _ReturnAddress();
         bool isFirst = (g_scenePostfxFirstCallReturnAddr != nullptr && ra == g_scenePostfxFirstCallReturnAddr);
         bool isLast = (g_scenePostfxLastCallReturnAddr != nullptr && ra == g_scenePostfxLastCallReturnAddr);
         if (isFirst || isLast) {
-            static long long s_postfxSkipCount = 0;
-            ++s_postfxSkipCount;
-            if (s_postfxSkipCount <= 5 || (s_postfxSkipCount % 500) == 0) {
-                char skipBuf[160];
-                sprintf_s(skipBuf, "[x64-postfx-skip] skipped redundant scene-postfx %s call "
-                    "(view=%d, skip #%lld)", isFirst ? "FIRST" : "LAST", param_2, s_postfxSkipCount);
-                LogFromController(skipBuf);
+            bool alreadyActive = false;
+#ifdef _WIN32
+            __try {
+                if (g_scenePostfxActivePassBasePtr != nullptr) {
+                    uintptr_t viewContext = *reinterpret_cast<uintptr_t*>(
+                        reinterpret_cast<uint8_t*>(g_scenePostfxActivePassBasePtr) + 8); // the real ec20 slot
+                    if (viewContext != 0) {
+                        int currentPass = *reinterpret_cast<int*>(viewContext + 0xbd8);
+                        alreadyActive = (currentPass == param_2);
+                    }
+                }
             }
-            return;
+            __except (EXCEPTION_EXECUTE_HANDLER) {
+                alreadyActive = false; // fail safe -- let the real call through
+            }
+#endif
+            if (alreadyActive) {
+                static long long s_postfxSkipCount = 0;
+                ++s_postfxSkipCount;
+                if (s_postfxSkipCount <= 5 || (s_postfxSkipCount % 500) == 0) {
+                    char skipBuf[160];
+                    sprintf_s(skipBuf, "[x64-postfx-skip] skipped genuinely-redundant scene-postfx %s call "
+                        "(view=%d already active, skip #%lld)", isFirst ? "FIRST" : "LAST", param_2, s_postfxSkipCount);
+                    LogFromController(skipBuf);
+                }
+                return;
+            }
+            // Pass wasn't already active (or the read failed) -- this call is
+            // real, necessary work. Fall through to the real trampoline below.
         }
     }
 
@@ -9833,6 +9881,26 @@ void InstallAnalogInputHooksX64()
                 static_cast<unsigned long long>(rF.address),
                 reinterpret_cast<unsigned long long>(g_scenePostfxFirstCallReturnAddr));
             LogFromController(buf);
+
+            // Same real fix's own live-state resolution: the MOVUPS[rip+disp]
+            // at offset +96 into this exact signature loads the
+            // PTR_DAT_14040ec18/ec20 global pair -- the SAME pair the real
+            // activator (FUN_1401dfd80) reads at param_1[1] to get its own
+            // live view-context pointer. ResolveRipRelative gives the real
+            // address OF that global (not its value) -- store it directly so
+            // the hook body can dereference it live each call.
+            uintptr_t activePassGlobalAddr = SigScan::ResolveRipRelative(rF.address + 96, 7);
+            if (activePassGlobalAddr != 0) {
+                g_scenePostfxActivePassBasePtr = reinterpret_cast<uintptr_t*>(activePassGlobalAddr);
+                char buf2[160];
+                sprintf_s(buf2, "[x64-postfx-skip] live active-pass global resolved @ 0x%llX",
+                    static_cast<unsigned long long>(activePassGlobalAddr));
+                LogFromController(buf2);
+            } else {
+                LogFromController("[x64-postfx-skip] FATAL: live active-pass global did not resolve -- "
+                    "SkipRedundantScenePostfxGuaranteedCallsX64 will have no effect this session "
+                    "(safe: the hook falls through to the real call whenever this pointer is null)");
+            }
         }
         SigScan::Result rL = SigScan::FindPatternInMainModule(kScenePostfxLastCallSignature);
         if (!rL.found) {

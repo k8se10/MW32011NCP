@@ -1204,25 +1204,29 @@ struct ModConfig
     // call sites' runtime addresses were confirmed via direct disassembly
     // from the function's own real entry point (0x1401939f0, first call)
     // and its real epilogue-adjacent block (0x14019410c, last call).
-    // **CONFIRMED BROKEN, LIVE-TESTED 2026-09-26 -- DO NOT ENABLE.** Direct
-    // user report with this toggle on (alongside the other two skip
-    // toggles): "viewport is broken completely, except for when paused."
-    // Isolated by disabling this one toggle alone (the other two stayed on)
-    // -- viewport corruption confirmed gone. The "x86 never calls the
-    // activator here, so it's a pure extra cost" reasoning was wrong for
-    // this specific pair of calls: even though x86's DOF/color-grade/fog/
-    // flare CONTENT work never touches the activator, these two calls
-    // (bracketing the whole function, one at entry, one at exit) are very
-    // likely also doing real viewport/render-view-state activation the
-    // rest of the frame depends on, not just redundant content setup --
-    // skipping both leaves the engine in a stale/wrong view state for
-    // everything downstream. Pause likely takes a different code path
-    // through this function (or skips it), explaining "except when
-    // paused." Left in the codebase (not deleted) with this fix disabled
-    // and this warning in place, per this project's own standing
-    // methodology -- do not re-enable without first finding what these
-    // two calls actually activate and confirming it's genuinely safe to
-    // skip. See known_issues_x64.md issue #4's newest round.
+    // **ORIGINAL BLIND VERSION CONFIRMED BROKEN, LIVE-TESTED 2026-09-26.**
+    // Direct user report with the old unconditional skip on (alongside the
+    // other two skip toggles): "viewport is broken completely, except for
+    // when paused." Isolated by disabling this one toggle alone (the other
+    // two stayed on) -- viewport corruption confirmed gone. Root cause: the
+    // real activator (FUN_1401dfd80) has its own live dedup check at entry
+    // -- `if (param_2 == *(int*)(lVar1 + 0xbd8)) return;` -- and the old fix
+    // assumed BOTH of these guaranteed calls were always redundant, when
+    // they're actually only redundant when the requested pass already
+    // happens to be the live-active one at that exact point. Skipping
+    // unconditionally sometimes threw away real, necessary activation work.
+    // **REVISED same day to a conditional fix**: resolves the same live
+    // device/view-context global the real activator itself reads
+    // (PTR_DAT_14040ec18/ec20, via the MOVUPS[rip+disp] already present in
+    // both call-site signatures) and replicates the activator's own check
+    // live -- only skips when the pass is ALREADY active (a case where
+    // calling through is proven to be a no-op; this can never differ from
+    // calling through in any other case, since it falls through whenever
+    // the pass differs or the live read fails). SEH-guarded. Still
+    // EXPERIMENTAL/off by default pending live confirmation of this new
+    // mechanism -- see known_issues_x64.md issue #4's newest round before
+    // enabling, and watch for `[x64-postfx-skip]` log lines saying
+    // "genuinely-redundant" once tested.
     bool skipRedundantScenePostfxGuaranteedCallsX64 = false;
 
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to

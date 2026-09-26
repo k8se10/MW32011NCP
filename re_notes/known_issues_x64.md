@@ -11351,3 +11351,29 @@ Build-verified (x64 Release, 0 errors, `d3d9.dll` timestamp confirmed changed), 
 **Point (c)'s real root cause, working theory (not yet independently confirmed via further RE)**: the "x86 never calls the activator for this content work, so these are pure extra cost" reasoning that correctly identified points (a)/(b) turned out to be WRONG for this specific pair of calls. Even though the two independently-traced x86 visual-effect chains (material-rebind, DOF/color-grade/fog/flare) genuinely never touch the activator for their own CONTENT setup, `FUN_1401939f0`'s own two calls -- bracketing the WHOLE function, one at entry, one at exit -- are very likely also doing real viewport/render-view-state activation that the rest of the frame's rendering depends on, not just redundant content setup. Skipping both unconditionally leaves the engine in a stale or wrong view state for everything downstream, explaining "viewport broken." "Except when paused" is consistent with pause taking a different code path through (or around) this function, matching this issue's own already-documented "pause runs a different code shape than live gameplay" pattern found elsewhere in this investigation.
 
 **Action taken**: `skipRedundantScenePostfxGuaranteedCallsX64` reverted to disabled (both in the C++ default and the live config), with a detailed "CONFIRMED BROKEN, DO NOT ENABLE" warning added to both `mod_config.h` and the signature comment in `analog_input_hooks_x64.cpp`, per this project's own standing convention (kept in the codebase, not deleted, for a future session to revisit once the real activation semantics of those two specific calls are understood). Points (a) and (b) remain `[Experimental]`, both confirmed working via real, live, isolated testing -- candidates for graduation to a non-experimental default-on state once a broader set of repro scenarios has been covered, matching the same bar `SkipRedundantShadowActivation` cleared before its own graduation.
+
+### REAL, CONDITIONAL FIX for point (c), same day -- replaces the blind skip with a live replica of the activator's own dedup check
+
+**Status: Fixed (build-verified, not yet live-tested).** Direct instruction: "dig into point c's real fix" -- rather than leave point (c) permanently disabled, found and implemented its actual safe fix.
+
+**Root cause, confirmed via full decompile of the real activator (`FUN_1401dfd80`) itself**:
+
+```c
+void FUN_1401dfd80(longlong *param_1, int param_2)
+{
+    longlong lVar1;
+    lVar1 = param_1[1];
+    if (param_2 == *(int *)(lVar1 + 0xbd8)) {
+        return;  // real dedup: skip if requested pass already matches the currently-active one
+    }
+    // ... real activation work follows ...
+}
+```
+
+The activator already has its OWN live dedup check at entry -- it skips its real work whenever the requested pass already matches the currently-active one (`lVar1 + 0xbd8`, where `lVar1` is the real device/view-context pointer, `param_1[1]`). The old point (c) fix assumed `FUN_1401939f0`'s two guaranteed calls were ALWAYS redundant and skipped them unconditionally -- wrong, since they're only actually redundant in the specific case this real check already covers. Unconditionally skipping also threw away the real, necessary activation work on every call where the pass genuinely differed, corrupting the viewport.
+
+**The fix**: rather than reimplementing an unconditional skip, replicate the activator's own live check from the hook side, using the SAME global it reads. `lVar1` (`param_1[1]`) is reachable via a fixed pair of adjacent 8-byte globals (`PTR_DAT_14040ec18`/`PTR_DAT_14040ec20`) already loaded together, as a single 16-byte `MOVUPS [rip+disp]`, inside BOTH of the existing point-(c) call-site signatures -- byte offset verified programmatically (not by hand, given this round's own standing signature-accuracy discipline): +96 into the 123-byte FIRST signature, +64 into the 91-byte LAST one, both resolving to the identical global pair, so only one resolution was needed. Added at install time via `SigScan::ResolveRipRelative(rF.address + 96, 7)` (7 = the real `0F 10 05 ?? ?? ?? ??` instruction length), stored in a new `g_scenePostfxActivePassBasePtr`.
+
+`Hook_RenderViewSelectDiag`'s point (c) block now, on every matched call site, SEH-guards a live read of `*(int*)(*(g_scenePostfxActivePassBasePtr + 1) + 0xbd8)` and compares it against the requested pass (`param_2`) -- skipping ONLY when they already match (the exact case the real activator itself would have no-op'd on anyway), and falling through to the real call in every other case, including any read failure or null pointer. This can never produce behavior different from always calling through -- it only ever removes work the real function would have discarded itself -- which is the structural reason this version is expected to be safe where the blind version wasn't.
+
+Build-verified (x64 Release, 0 errors, `d3d9.dll` timestamp confirmed changed: 2026-09-26 17:10). **Not yet live-tested.** Toggle (`SkipRedundantScenePostfxGuaranteedCalls`) stays default OFF in the C++ source and NOT yet re-enabled in the live `mw3ncp_config.ini` pending explicit confirmation this new mechanism is understood to be a genuinely different (conditional, not blind) implementation before re-testing -- given the severity of the prior regression from this exact toggle, re-enabling it live is being left to an explicit follow-up rather than done automatically this round. When tested, watch for `[x64-postfx-skip]` log lines now reading "skipped genuinely-redundant scene-postfx ... already active" (the wording changed from the old blind version's log line, so old and new behavior are distinguishable in a log even after the fact) and confirm zero viewport corruption during live gameplay.
