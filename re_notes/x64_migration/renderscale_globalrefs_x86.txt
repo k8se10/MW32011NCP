@@ -1,0 +1,50 @@
+=== Reference counts per global ===
+reqW (021d2e00): 34 references
+reqH (021d2e04): 41 references
+clampedW (021d2e08): 15 references
+clampedH (021d2e0c): 15 references
+isScaled (021d2e18): 3 references
+nativeW (021d2e1c): 1 references
+nativeH (021d2e20): 1 references
+
+=== Candidate functions, ranked by distinct global diversity (20) ===
+
+---- FUN_00679010 @ 00679010 (globals: clampedH, clampedW, isScaled, nativeH, nativeW, reqH, reqW) ----
+
+---- FUN_00683060 @ 00683060 (globals: clampedH, clampedW, reqH, reqW) ----
+
+---- FUN_00450740 @ 00450740 (globals: clampedH, clampedW, reqH, reqW) ----
+
+---- FUN_00682d70 @ 00682d70 (globals: clampedH, clampedW, isScaled) ----
+
+---- FUN_00682e50 @ 00682e50 (globals: reqH, reqW) ----
+
+---- FUN_0068e0b0 @ 0068e0b0 (globals: reqH, reqW) ----
+
+---- FUN_00469350 @ 00469350 (globals: clampedH, clampedW) ----
+
+---- FUN_00431ed0 @ 00431ed0 (globals: reqH, reqW) ----
+
+---- FUN_004f7b40 @ 004f7b40 (globals: reqH, reqW) ----
+
+---- FUN_004a9820 @ 004a9820 (globals: reqH, reqW) ----
+
+---- FUN_00693e00 @ 00693e00 (globals: reqH, reqW) ----
+
+---- FUN_00698560 @ 00698560 (globals: clampedH, clampedW) ----
+
+---- FUN_00682bc0 @ 00682bc0 (globals: reqH, reqW) ----
+
+---- FUN_00682fa0 @ 00682fa0 (globals: reqH, reqW) ----
+
+---- FUN_0068dfa0 @ 0068dfa0 (globals: reqH, reqW) ----
+
+---- FUN_00463820 @ 00463820 (globals: clampedH, clampedW) ----
+
+---- FUN_0066efe0 @ 0066efe0 (globals: clampedH, clampedW) ----
+
+---- FUN_004d7cd0 @ 004d7cd0 (globals: reqH) ----
+
+---- FUN_00695390 @ 00695390 (globals: reqH) ----
+
+---- FUN_0044a7d0 @ 0044a7d0 (globals: reqH) ----

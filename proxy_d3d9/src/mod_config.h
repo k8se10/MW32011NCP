@@ -1282,6 +1282,21 @@ struct ModConfig
     // balance. See known_issues_x64.md issue #10 (now Resolved).
     float reverbWetScaleX64 = 0.5f;
 
+    // MW32011NCP, 2026-09-26: EXPERIMENTAL fix for the render-scale-
+    // disproportionate-cost report (issue #4) -- see
+    // Hook_OcclusionScreenArea's own comment in analog_input_hooks_x64.cpp
+    // for the full mechanism. Direct instruction: "lets just try a fix, if
+    // it doesnt work then we dont keep it." Temporarily substitutes a
+    // scale-corrected (roughly native-equivalent) resolution into the two
+    // clamped-resolution globals for the duration of the real per-entity
+    // occlusion/LOD-screen-coverage function's call, restoring the real
+    // render-scale-driven values immediately after -- every other reader
+    // of those globals (actual render-target sizing, viewport setup) is
+    // unaffected. OFF by default -- not yet live-tested, real behavior-
+    // changing code (could affect occlusion-culling/LOD correctness if the
+    // theory is wrong). See known_issues_x64.md issue #4's newest round.
+    bool occlusionLodScaleFixX64 = false;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real

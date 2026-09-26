@@ -6193,6 +6193,97 @@ void __fastcall Hook_RenderResCompute(void* self)
     g_origRenderResCompute(self);
 }
 
+// MW32011NCP, 2026-09-26: EXPERIMENTAL fix for the "render scale costs way
+// more than it should, even at 150%, and Dome specifically suffers worse
+// than Underground" report -- known_issues_x64.md issue #4. Direct user
+// instruction: "lets just try a fix, if it doesnt work then we dont keep
+// it." Traced the real mechanism: `FUN_140195280` (the per-frame
+// orchestrator's entity-occlusion-query walker, its own ONLY caller is
+// `FUN_14018e0d0`, the same per-frame orchestrator already touched by
+// today's point (a) fix) calls `FUN_140195cb0` once per visible entity,
+// which computes a screen-space coverage value directly from the render-
+// scale-driven CLAMPED resolution globals (`DAT_14188867c`/`DAT_141888678`
+// -- the exact same globals `Hook_RenderResCompute` above writes, confirmed
+// read by 16 distinct functions total, same fan-out as x86's own 20 --
+// see the FindGlobalRefs comparison in known_issues_x64.md). This coverage
+// value (`param_1+0x14`) is a real, direct "how big does this look on
+// screen right now" number, exactly the shape both occlusion culling AND
+// LOD selection typically share in this class of engine -- a real,
+// concrete candidate for the user's own second theory (LOD may also be
+// scaling with render resolution, not just display resolution).
+// Same reversible pattern as the reverb-wet-scale experiment: temporarily
+// substitutes a SMALLER, scale-corrected resolution (undoing the render-
+// scale multiplier, i.e. roughly native-equivalent) into these two globals
+// for the duration of ONE call to the real function, then restores the
+// real render-scale-driven values immediately after -- every other reader
+// of these globals (the actual render-target allocation, viewport setup,
+// etc.) still sees the real, unmodified value. If this genuinely decouples
+// occlusion/LOD screen-coverage cost from render scale without visibly
+// breaking culling or LOD correctness, it should show as a real, measured
+// FPS improvement at high render scale with no visual regression; if not,
+// it ships OFF by default and can simply be left off.
+constexpr const char* kOcclusionScreenAreaSignature =
+    "48 8B C4 57 48 81 EC A0 00 00 00 44 0F 29 50 C8 48 8B F9 F3 44 0F 10 51 04 "
+    "48 89 68 10 48 8B 2D ?? ?? ?? ?? 44 0F 29 48 D8 45 0F 28 CA 44 0F 29 58 B8 "
+    "45 0F 57 DB 44 0F 29 60 A8 F3 44 0F 59 8D 8C 00 00 00 F3 44 0F 10 61 08 "
+    "41 0F 28 C4 44 0F 29 68 98 F3 0F 59 85 9C 00 00 00 F3 44 0F 10 69 0C "
+    "41 0F 28 CD F3 0F 59 8D AC 00 00 00 F3 44 0F 58 C8 F3 44 0F 58 C9 "
+    "45 0F 2F D9 72 ?? 0F 57 C0 E9 ?? ?? ?? ?? 41 0F 28 D4 48 89 9C 24 B0 00 00 00 "
+    "F3 0F 59 95 90 00 00 00 41 0F 28 C2 48 89 B4 24 C0 00 00 00 "
+    "F3 0F 59 85 80 00 00 00 41 0F 28 CD 8B 35 ?? ?? ?? ?? F3 0F 59 8D A0 00 00 00 "
+    "4C 89 B4 24 C8 00 00 00 44 8B 35 ?? ?? ?? ??";
+constexpr size_t kOcclusionClampedHInsnOffset = 0xB1; // "8B 35 ?? ?? ?? ??" -> &DAT_14188867c
+constexpr size_t kOcclusionClampedHInsnLength = 6;
+constexpr size_t kOcclusionClampedWInsnOffset = 0xC7; // "44 8B 35 ?? ?? ?? ??" -> &DAT_141888678
+constexpr size_t kOcclusionClampedWInsnLength = 7;
+
+using OcclusionScreenAreaFn = void(__fastcall*)(long long);
+OcclusionScreenAreaFn g_realOcclusionScreenArea = nullptr;
+int32_t* g_occlusionClampedWAddr = nullptr; // &DAT_141888678
+int32_t* g_occlusionClampedHAddr = nullptr; // &DAT_14188867c
+
+void __fastcall Hook_OcclusionScreenArea(long long param_1)
+{
+    bool didScale = false;
+    int32_t origW = 0, origH = 0;
+    int pct = g_modConfig.internalRenderScalePercent;
+    if (g_modConfig.occlusionLodScaleFixX64 && pct > 0 && pct != 100 &&
+        g_occlusionClampedWAddr != nullptr && g_occlusionClampedHAddr != nullptr) {
+#ifdef _WIN32
+        __try {
+            origW = *g_occlusionClampedWAddr;
+            origH = *g_occlusionClampedHAddr;
+            if (origW > 0 && origH > 0) {
+                int32_t correctedW = static_cast<int32_t>(static_cast<int64_t>(origW) * 100 / pct);
+                int32_t correctedH = static_cast<int32_t>(static_cast<int64_t>(origH) * 100 / pct);
+                *g_occlusionClampedWAddr = correctedW;
+                *g_occlusionClampedHAddr = correctedH;
+                didScale = true;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            didScale = false;
+        }
+#endif
+    }
+
+    g_realOcclusionScreenArea(param_1);
+
+    if (didScale) {
+#ifdef _WIN32
+        __try {
+            *g_occlusionClampedWAddr = origW;
+            *g_occlusionClampedHAddr = origH;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Nothing to do -- if this write faults, the globals became
+            // invalid between the two accesses, in which case there's no
+            // real value left to restore anyway.
+        }
+#endif
+    }
+}
+
 // ---- Motion blur's real x64 TRIGGER (2026-09-13) -- FUN_14018def0, the x64
 // equivalent of x86's FUN_00693ff0 ------------------------------------------------
 //
@@ -8996,6 +9087,51 @@ void InstallRenderScaleHookX64()
         "FUN_1401bd1d0 (x64 equivalent of x86's FUN_00679010).");
 }
 
+// MW32011NCP, 2026-09-26: install for the OcclusionLodScaleFix experiment,
+// see Hook_OcclusionScreenArea's own comment above for the full context.
+void InstallOcclusionLodScaleFixX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kOcclusionScreenAreaSignature);
+    if (!r.found) {
+        LogFromController("[x64-occlusion-fix] FATAL: occlusion-screen-area signature did not resolve -- "
+            "OcclusionLodScaleFix will have no effect this session");
+        return;
+    }
+    g_occlusionClampedHAddr = reinterpret_cast<int32_t*>(
+        SigScan::ResolveRipRelative(r.address + kOcclusionClampedHInsnOffset, kOcclusionClampedHInsnLength));
+    g_occlusionClampedWAddr = reinterpret_cast<int32_t*>(
+        SigScan::ResolveRipRelative(r.address + kOcclusionClampedWInsnOffset, kOcclusionClampedWInsnLength));
+    if (g_occlusionClampedHAddr == nullptr || g_occlusionClampedWAddr == nullptr) {
+        LogFromController("[x64-occlusion-fix] FATAL: failed to resolve one or both clamped-resolution "
+            "globals -- OcclusionLodScaleFix will have no effect this session");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_OcclusionScreenArea),
+                                            reinterpret_cast<void**>(&g_realOcclusionScreenArea));
+    if (createStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-occlusion-fix] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-occlusion-fix] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    char buf[220];
+    sprintf_s(buf, "[x64-occlusion-fix] OcclusionLodScaleFix hook installed and enabled "
+        "(FUN_140195cb0) -- enabled=%d. When on, temporarily corrects the two clamped-resolution "
+        "globals for the duration of each real call, restoring them immediately after.",
+        g_modConfig.occlusionLodScaleFixX64 ? 1 : 0);
+    LogFromController(buf);
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -10131,6 +10267,13 @@ void InstallAnalogInputHooksX64()
     // comment for why this one hook is safe to port to MP while the rest of this
     // function isn't.
     InstallRenderScaleHookX64();
+
+    // OcclusionLodScaleFix -- EXPERIMENTAL, OFF by default (see mod_config.h's
+    // own occlusionLodScaleFixX64 comment). Installed unconditionally like
+    // every other hook here (per this function's own "install everything,
+    // gate at call time" convention) so flipping the config toggle live
+    // doesn't require a relaunch.
+    InstallOcclusionLodScaleFixX64();
 
     // In-level time-delta flag -- resolves g_inLevelFlag (one of FSR RCAS/motion
     // blur's two real safety gates on x64; the third, menu-active, is already
