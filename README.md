@@ -232,7 +232,7 @@ the main flow.
 
 | # | Gap | Priority | Current status |
 |---|---|---|---|
-| 1 | ⚠ **Internal render scale's safe ceiling is NOT one fixed percentage** | 🔴 High — real, current, user-facing | Confirmed content-dependent: the exact same 200% that's clean throughout SP causes CONSTANT stutter under MP. See full detail below before raising this setting |
+| 1 | ✔ **Internal render scale's disproportionate cost — FOUND AND FIXED (2026-09-26)** | ✅ Resolved | The real root cause was a render-scale-coupled blur/downsample loop (nicknamed "the 67 bug"), not a fixed engine limit. `PauseBlurStepCap` (default ON) and `LiveBlurStepCap` (opt-in) fixed it — a real, confirmed ~3.3x FPS improvement at 250% on this project's own hardest test case, no visual regression. See full detail below |
 | 2 | Pause-menu Back glyph flicker | 🟠 Medium | Cosmetic only — Back still works. Drawn from a stored position specifically to fix this, plus a separate native-template-match path for buy-station Back; several iterations landed 2026-09-21/22 but a residual flicker remains |
 | 3 | Sentry/turret-placement and Campaign QTE prompt **text** | 🟠 Medium | Mechanism works — the on-screen prompt itself still renders native. Buy-station and Survival ready-up's own prompt text are both now fully replaced (see [What works](#what-works-right-now)); this is what's left. Blocked on a genuinely unresolved native offset |
 | 4 | OpenAssetTools `Unlinker` crash (dev tooling) | 🟠 Medium | 5 zones fully clean, many more no longer crash after the `SpeakerMap` fix; a `LoadedSound` alias-miss bug remains open — affects project velocity, not players |
@@ -241,51 +241,51 @@ the main flow.
 | 7 | Back's `+scores` scoreboard | 🟢 Low | Real gap, but a confirmed no-op in SP/Survival on every platform; matters once MP ships |
 | 8 | SMAA edge smoothing | 🟢 Low — parked 2026-09-21 | Implemented but off by default and not viable yet: even a plain capture-and-redraw with no SMAA math looked worse than off and cost far more frame time, so the shared capture/redraw path is suspect independent of the SMAA shaders. See `re_notes/known_issues_x64.md` issue #2 for the staged AA/renderer roadmap |
 
-<details open>
-<summary><b>1. Internal render scale's safe ceiling is NOT one fixed percentage</b> — full detail</summary>
+<details>
+<summary><b>1. Internal render scale's disproportionate cost — found and fixed (2026-09-26)</b> — full detail</summary>
 
 `InternalRenderScalePercent` (the visual-enhancement suite's supersampling/
 downsampling override) defaults to 100% and never clamps or restricts what
 you set it to — it's uncapped by design (see issue #88). A real, severe,
-sustained stutter tied to pushing this well above 100% was investigated in
-full depth 2026-09-23 and root-caused to a genuine **native engine
-stability limit at large render-target sizes** — not a bug in this mod's
-own code (five separate real fix/rule-out attempts against this project's
-own code were all eliminated: a screen-capture cost, a hardcoded 3GB
-memory-detection cap, an I/O-coalescing feature, a HUD-layer CPU copy loop,
-and a shader-sampler setup chain). This is very plausibly why the original
-PC port locked its own internal render resolution to a fixed reference
-size in the first place, long before this mod existed.
+sustained stutter tied to pushing this well above 100% was investigated
+across two separate sessions (2026-09-23, then 2026-09-26) and the actual
+root cause has now been found and fixed — it was never a fixed native
+engine limit.
 
-**The critical thing to understand: there is no single "safe" percentage.**
-In SP, 200% is completely clean — no stutter at all, confirmed across
-damage/pause/ADS/level-transition repros. The exact same 200% setting,
-tested the same day in Multiplayer, causes **constant, sustained lag** —
-not gated to any specific trigger event, just always there. The most
-likely explanation: MP's generally denser per-frame scenes (more players,
-more concurrently-rendered character/weapon models, more active
-netcode/prediction state) sit closer to this same underlying engine
-boundary BEFORE any render-scale multiplier is even applied, so the same
-percentage that's fully safe in one context can be well past the edge in
-another — a busier map or mode, a more chaotic moment in a match, a
-crowded Survival wave, or (unverified but plausible) even a specific
-level's own geometry/lighting complexity could all shift where that edge
-actually sits. **This mod has no way to detect any of that automatically.**
+**The real root cause ("the 67 bug"):** a render-scale-coupled
+blur/downsample loop (`FUN_14018eec0`) whose iteration count scales
+directly with `InternalRenderScalePercent`. This loop runs unconditionally
+every frame — including in the pause menu, where the actual visual result
+it produces is largely redundant with the pause menu's own separate
+Gaussian blur over the dimmed viewport — and its cost is what map-to-map
+and mode-to-mode variance in the earlier investigation was actually
+tracking, not a fixed hardware ceiling.
 
-A real, tested, on-screen warning already fires once per session above
-200% linear (the one boundary this project has actually confirmed, on one
-reference GPU, in SP) — but per the finding above, staying under 200%
-does NOT guarantee you're safe in every mode, and a more powerful GPU may
-tolerate meaningfully higher than 200% in some contexts and meaningfully
-less in others. **Practical guidance until this is better understood**:
-treat any increase above 100% as something to test deliberately in the
-specific mode/map you actually play, not a "set once and forget" value —
-if you notice stutter after raising this setting, especially in
-Multiplayer or a busy Survival wave, lower it back toward 100% rather
-than assuming the on-screen 200% warning is the only threshold that
-matters. See `re_notes/known_issues_x64.md` issue #4 for the complete
-investigation trail, including the exact live-test evidence behind this
-finding.
+**The fix**, shipped 2026-09-26 as two related config options:
+- **`PauseBlurStepCap`** (default **ON**, `[Video]`) — caps this loop's
+  iteration count while the pause menu is open, where the extra work was
+  pure waste. **Live-confirmed a full reversal of the pause-menu lag
+  regression** — pause FPS went from 24 to over 80 on this project's own
+  hardest test map, with no visible visual change (the pause menu's own
+  existing blur already covers it).
+- **`LiveBlurStepCap`** (opt-in, `[Experimental]`, default `3`) — caps the
+  same loop during live gameplay. **Live-confirmed a ~3.3x FPS
+  improvement** at 250% render scale on the hardest tested map (from a
+  low, barely-playable framerate to 85 FPS), with no observed visual
+  regression. Together, these two fixes collapsed the map-to-map FPS
+  variance this setting used to produce from roughly 69% down to roughly
+  18%, and playable framerates (60-90 FPS) are now achievable at 250% on
+  1440p — about 25x the original game's own internal 720p base render
+  resolution.
+
+**Practical guidance now**: `PauseBlurStepCap` is on by default and needs
+no action. If you push `InternalRenderScalePercent` well above 100% for
+gameplay, `LiveBlurStepCap` is the setting to reach for — it's a real
+quality/performance trade-off value (not a universal safe number), so
+treat it the same way as any other `[Experimental]` visual setting: test
+it in the mode/map you actually play. See `re_notes/known_issues_x64.md`
+issue #4 for the complete investigation trail, including "THE 67 BUG" and
+"THE FIX" sections with the full live-test evidence.
 
 </details>
 

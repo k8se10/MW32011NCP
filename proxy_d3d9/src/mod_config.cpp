@@ -1424,8 +1424,10 @@ void LoadModConfig()
     if (g_modConfig.reverbWetScaleX64 < 0.0f) g_modConfig.reverbWetScaleX64 = 0.0f;
     if (g_modConfig.reverbWetScaleX64 > 1.0f) g_modConfig.reverbWetScaleX64 = 1.0f;
     ReadBool(path, "Experimental", "OcclusionLodScaleFix", g_modConfig.occlusionLodScaleFixX64);
+    // Graduated 2026-09-26 (LIVE-CONFIRMED, no legitimate visual downside
+    // -- see mod_config.h's own comment) from [Experimental] to [Video].
     {
-        int v = GetPrivateProfileIntA("Experimental", "PauseBlurStepCap", g_modConfig.pauseBlurStepCapX64, path);
+        int v = GetPrivateProfileIntA("Video", "PauseBlurStepCap", g_modConfig.pauseBlurStepCapX64, path);
         if (v < 0) v = 0;
         g_modConfig.pauseBlurStepCapX64 = v;
     }

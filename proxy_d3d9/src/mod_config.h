@@ -1310,12 +1310,24 @@ struct ModConfig
     // overlay, so reducing its quality there is expected to be invisible.
     // This caps the real trip count to this value ONLY while
     // `IsMenuActiveX64_Exported()` is true -- live gameplay is completely
-    // unaffected regardless of this value. 0 = disabled (no cap, default).
-    // A real, positive value (e.g. 2) keeps the loop's own bookkeeping/
-    // state-tracking intact (still runs, just fewer iterations) rather
-    // than skipping the call outright, avoiding any risk of stale/
-    // uninitialized state for whatever later code might read from it.
-    int pauseBlurStepCapX64 = 0;
+    // unaffected regardless of this value. A real, positive value keeps
+    // the loop's own bookkeeping/state-tracking intact (still runs, just
+    // fewer iterations) rather than skipping the call outright, avoiding
+    // any risk of stale/uninitialized state for whatever later code might
+    // read from it.
+    // **GRADUATED TO DEFAULT ON (value 2), 2026-09-26** -- unlike
+    // liveBlurStepCapX64 below, this one has no legitimate visual
+    // downside AT ALL: its output is unconditionally masked by the pause
+    // menu's own separate blur+dim overlay, confirmed by direct user
+    // report ("little to no visual change") after a real, massive win
+    // (Dome 24fps -> over 80fps while paused -- a full REVERSAL of the
+    // long-standing "pause runs worse than live gameplay" regression, not
+    // just a fix to parity). Direct instruction: "graduate the blur-cap
+    // fixes to defaults too." Now reads from `[Video]` (moved out of
+    // `[Experimental]`), matching the same graduation bar as
+    // SkipRedundantShadowActivation/SkipRedundantMasterSequencerReactivation
+    // above.
+    int pauseBlurStepCapX64 = 2;
 
     // MW32011NCP, 2026-09-26: LIVE-GAMEPLAY counterpart to
     // pauseBlurStepCapX64 above -- direct instruction after the pause-only
@@ -1324,13 +1336,26 @@ struct ModConfig
     // test this in gameplay." Unlike the pause case, this substep count's
     // real output IS directly visible during live gameplay (no menu
     // blur/dim masking it), so this is a genuine quality-vs-performance
-    // trade the player has to judge for themselves -- 0 = disabled
-    // (default, no cap during live gameplay). Applies whenever
+    // trade the player has to judge for themselves. Applies whenever
     // `IsMenuActiveX64_Exported()` is false; the pause-only cap above
     // keeps applying independently while it's true, so both can be tuned
     // separately (e.g. a conservative live cap, an aggressive pause-only
     // one) rather than sharing one value.
-    int liveBlurStepCapX64 = 0;
+    // **GRADUATED TO DEFAULT 3, 2026-09-26** -- live-tested by the user
+    // on Dome at `InternalRenderScalePercent=250` (the hardest case this
+    // whole investigation used as its reference point): "full fix 85 fps
+    // in gameplay on dome 250%" / "it looks no worse either ibr" -- a
+    // real, confirmed ~3.3x improvement (23.3fps -> averaging 76.1fps)
+    // with no reported visual regression, and a follow-up report that
+    // the map-to-map FPS variance itself collapsed from ~69% to ~18% as
+    // a direct result. Direct instruction: "graduate the blur-cap fixes
+    // to defaults too." Unlike pauseBlurStepCapX64 above, this stays in
+    // `[Experimental]` (not moved to `[Video]`) -- its output genuinely
+    // is visible during live gameplay, so 3 is what this user judged
+    // acceptable on their own system, not a value RE alone could prove
+    // universally safe, matching reverbWetScaleX64's own graduation
+    // precedent above.
+    int liveBlurStepCapX64 = 3;
 
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton

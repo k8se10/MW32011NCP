@@ -6164,40 +6164,21 @@ void __fastcall Hook_RenderResCompute(void* self)
                 // not a bug in this project's own hooking/override code -- and very
                 // plausibly the real reason the original PC port locked its internal
                 // render resolution to a fixed reference size in the first place
-                // (issue #88's own original finding). Threshold moved to exactly 200%
-                // linear (4x area) -- the real, live-tested boundary this session
-                // actually confirmed, not a generic ported heuristic. Explicitly framed
-                // as hardware-dependent, not a universal hard number: this project has
-                // only verified the boundary on one reference GPU (RTX 2080 Ti) --
-                // significantly more powerful hardware (or a future architecture) may
-                // have a genuinely higher safe ceiling, and this project has no way to
-                // detect that automatically. A real on-screen warning (not just a log
-                // line, per direct instruction: "there should be a limit just a
-                // warning universally above 200%") -- once per session, dismissible,
-                // never blocks or clamps the setting itself.
-                static bool s_highScaleWarningShownX64 = false;
-                int64_t targetAreaX64 = static_cast<int64_t>(targetW) * targetH;
-                int64_t nativeAreaX64 = static_cast<int64_t>(nativeW) * nativeH;
-                if (!s_highScaleWarningShownX64 && nativeAreaX64 > 0 &&
-                    targetAreaX64 > nativeAreaX64 * 4) { // > 4x area, i.e. > 200% linear exactly
-                    s_highScaleWarningShownX64 = true;
-                    LogFromController("[x64-video-scale][WARNING] target resolution exceeds 200% linear render "
-                        "scale -- a real, severe, sustained stutter (damage/pause/ADS/level-transitions) was "
-                        "confirmed live above this point (clean at 200%, broken at 300%) on this project's own "
-                        "reference GPU (RTX 2080 Ti), root-caused to a genuine NATIVE engine stability limit at "
-                        "large render-target sizes, not this mod's own code (known_issues_x64.md issue #4) -- "
-                        "see the on-screen warning");
-                    ShowOverlayMessageUntilDismissed(
-                        "\x03" "Render Scale Warning\n\n"
-                        "\x01" "\xE2\x9A\xA0 Above 200% InternalRenderScalePercent, a real, severe stutter "
-                        "(damage/pause/ADS/level-transitions) has been confirmed on this project's own test "
-                        "hardware -- a genuine native engine limit at large render-target sizes, not a bug in "
-                        "this mod. Higher-end GPUs may have a real, higher safe ceiling than this project has "
-                        "verified -- there's no way to detect that automatically, so this warning fires "
-                        "regardless of your actual hardware.\n\n"
-                        "Enter / Space / Click to continue:",
-                        OverlayAnimStyle::Plain);
-                }
+                // (issue #88's own original finding).
+                //
+                // REMOVED, 2026-09-26 (direct instruction: "we can remove or edit
+                // the render scale modal warnings too"). The "severe stutter above
+                // 200%, genuine native engine limit" claim this warning made is no
+                // longer accurate -- issue #4's real root cause ("the 67 bug," a
+                // render-scale-coupled iterative blur/downsample loop, not a fixed
+                // engine limit) was found and fixed the same day: PauseBlurStepCap
+                // (now default ON) and LiveBlurStepCap together LIVE-CONFIRMED a
+                // real ~3.3x improvement at 250% on this project's own worst-case
+                // test map (23.3fps -> averaging 76.1fps, peaking at 85, no visual
+                // regression), collapsing the map-to-map variance from ~69% to
+                // ~18% along with it. Keeping this warning would now be actively
+                // misleading. See known_issues_x64.md issue #4's "the 67 bug" and
+                // "THE FIX" entries for the full record.
             }
         }
     }
