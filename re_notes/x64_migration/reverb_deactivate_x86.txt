@@ -1,0 +1,37 @@
+================================================================
+Function: FUN_00554790 @ 00554790
+----------------------------------------------------------------
+
+void FUN_00554790(int param_1,int param_2)
+
+{
+  char *pcVar1;
+  int iVar2;
+  
+  iVar2 = param_1 * 0x20;
+  (&DAT_02816890)[iVar2] = 0;
+  if ((undefined4 *)(&DAT_02816874 + iVar2) == DAT_028168f4) {
+    param_1 = param_1 + -1;
+    if (-1 < param_1) {
+      pcVar1 = &DAT_02816890 + param_1 * 0x20;
+      do {
+        if (*pcVar1 != '\0') break;
+        param_1 = param_1 + -1;
+        pcVar1 = pcVar1 + -0x20;
+      } while (-1 < param_1);
+    }
+    if (param_2 < 1) {
+      param_2 = 1;
+    }
+    DAT_028168f4 = (undefined4 *)(&DAT_02816874 + param_1 * 0x20);
+    FUN_0052f700(*DAT_028168f4);
+    DAT_028168f4[1] = *(undefined4 *)(&DAT_02816878 + iVar2);
+    DAT_028168f4[3] = ((float)DAT_028168f4[2] - *(float *)(&DAT_02816878 + iVar2)) / (float)param_2;
+    DAT_028168f4[4] = *(undefined4 *)(&DAT_02816884 + iVar2);
+    DAT_028168f4[6] = ((float)DAT_028168f4[5] - *(float *)(&DAT_02816884 + iVar2)) / (float)param_2;
+  }
+  return;
+}
+
+
+

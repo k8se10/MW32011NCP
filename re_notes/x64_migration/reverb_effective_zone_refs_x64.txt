@@ -1,0 +1,21 @@
+=== Reference counts per global ===
+effectiveReverbZonePtr (1425be4b0): 29 references
+reverbSlotStateBase (1425be430): 11 references
+
+=== Candidate functions, ranked by distinct global diversity (8) ===
+
+---- FUN_140279e90 @ 140279e90 (globals: effectiveReverbZonePtr, reverbSlotStateBase) ----
+
+---- FUN_140275b60 @ 140275b60 (globals: effectiveReverbZonePtr, reverbSlotStateBase) ----
+
+---- FUN_1402701c0 @ 1402701c0 (globals: effectiveReverbZonePtr, reverbSlotStateBase) ----
+
+---- FUN_140277f90 @ 140277f90 (globals: effectiveReverbZonePtr, reverbSlotStateBase) ----
+
+---- FUN_140271240 @ 140271240 (globals: effectiveReverbZonePtr, reverbSlotStateBase) ----
+
+---- FUN_14027a470 @ 14027a470 (globals: effectiveReverbZonePtr) ----
+
+---- FUN_14030e740 @ 14030e740 (globals: effectiveReverbZonePtr) ----
+
+---- FUN_14030f4d0 @ 14030f4d0 (globals: effectiveReverbZonePtr) ----

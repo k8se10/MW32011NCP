@@ -1,0 +1,12 @@
+=== Reference counts per global ===
+reverbSlotFlags (2816890): 8 references
+
+=== Candidate functions, ranked by distinct global diversity (4) ===
+
+---- FUN_004f40d0 @ 004f40d0 (globals: reverbSlotFlags) ----
+
+---- FUN_00554790 @ 00554790 (globals: reverbSlotFlags) ----
+
+---- FUN_00444480 @ 00444480 (globals: reverbSlotFlags) ----
+
+---- FUN_005284e0 @ 005284e0 (globals: reverbSlotFlags) ----

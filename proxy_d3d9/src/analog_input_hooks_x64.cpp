@@ -500,6 +500,11 @@ constexpr const char* kReverbDeactivateSignature =
 using ReverbDeactivateFn = void(__fastcall*)(int, int);
 ReverbDeactivateFn g_realReverbDeactivate = nullptr;
 long long g_reverbDeactivateFireCount = 0;
+// &DAT_1425be4b0 (the "currently effective reverb zone" pointer global) --
+// resolved from kReverbDeactivateSignature's own already-matched CMP
+// RBX,[rip+disp] instruction at fixed offset +0x30 (see the deactivate
+// install block), reused here rather than re-scanning for it separately.
+uintptr_t* g_reverbEffectiveZonePtrAddr = nullptr;
 
 void __fastcall Hook_ReverbDeactivate(int slot, int fadeFrames)
 {
@@ -510,6 +515,101 @@ void __fastcall Hook_ReverbDeactivate(int slot, int fadeFrames)
                static_cast<unsigned long long>(GetTickCount64()));
     LogFromController(buf);
     g_realReverbDeactivate(slot, fadeFrames);
+}
+
+// MW32011NCP, 2026-09-26: real x64 native reverb MIX-APPLICATION function
+// (FUN_14030e740) -- the actual point where a per-channel "skip reverb"
+// exemption flag is checked and, if clear, the CURRENTLY EFFECTIVE reverb
+// zone's live wet level gets multiplied into this channel's real 3D output
+// gain (computed via X3DAudioCalculate, the confirmed real Microsoft
+// XAudio2 3D-audio API x64 uses -- x86 has NO reference to this function at
+// all, and does not import X3DAudio1_7.dll; x86 imports mss32.dll (Miles
+// Sound System) instead, confirming the reverb-mixing pipeline was wholly
+// replaced for x64, not merely recompiled -- see this file's own reverb
+// investigation trail in known_issues_x64.md issue #10 for the full
+// context, including the direct user observation "sounds like reverb is in
+// a room not open space." The real check, straight from the disassembly:
+// `if ((channelDef[0x54] & 8) == 0) { wet = *(float*)(effectiveZone + 4); }`
+// -- bit 3 of a byte at offset +0x54 of the channel's own definition
+// struct (resolved via `*(qword*)(&DAT_1425bfbf8 + channelIndex*0x130)`)
+// exempts that channel type from ever getting the live reverb wet level
+// multiplied in; every other channel gets it applied unconditionally,
+// straight from whatever zone is currently effective. THIS IS A READ-ONLY
+// DIAGNOSTIC HOOK (log-and-call-through, zero behavior change) -- reports
+// channel index, the raw flag byte, whether this channel is reverb-exempt,
+// and (when not exempt) the live wet value that would be applied, so a
+// live session's log can directly confirm or refute whether world/AI
+// channels are non-exempt (get the reverb) while the player's own weapon/
+// grenade channels are exempt (stay dry) -- the theory this hook exists to
+// test.
+constexpr const char* kMixReverbApplySignature =
+    "4C 8B DC 49 89 5B 18 55 56 57 49 8D 6B A1 48 81 EC C0 00 00 00 48 63 F9 "
+    "48 8D 35 ?? ?? ?? ?? 48 69 DF 30 01 00 00";
+constexpr size_t kMixReverbApplyChannelDefLeaOffset = 0x18; // "48 8D 35 ?? ?? ?? ??" -> &0x1425b3f90
+constexpr size_t kMixReverbApplyChannelDefLeaLength = 7;
+constexpr uintptr_t kMixReverbApplyChannelDefArrayFixedAdd = 0xbc68; // 0x1425b3f90 + this = &DAT_1425bfbf8
+
+using MixReverbApplyFn = void(__fastcall*)(int);
+MixReverbApplyFn g_realMixReverbApply = nullptr;
+uintptr_t g_reverbChannelDefArrayBase = 0; // &DAT_1425bfbf8, resolved once at install
+long long g_mixReverbApplyFireCount = 0;
+
+void __fastcall Hook_MixReverbApply(int channelIndex)
+{
+    long long fireIndex = ++g_mixReverbApplyFireCount;
+    if (fireIndex <= 200 || (fireIndex % 2000) == 0) {
+        bool readOk = false;
+        int flagByte = -1;
+        bool reverbExempt = false;
+        float currentWet = 0.0f;
+        bool wetReadOk = false;
+#ifdef _WIN32
+        __try {
+            if (g_reverbChannelDefArrayBase != 0) {
+                uintptr_t channelDefPtr = *reinterpret_cast<uintptr_t*>(
+                    g_reverbChannelDefArrayBase + static_cast<uintptr_t>(channelIndex) * 0x130);
+                if (channelDefPtr != 0) {
+                    flagByte = *reinterpret_cast<unsigned char*>(channelDefPtr + 0x54);
+                    reverbExempt = (flagByte & 8) != 0;
+                    readOk = true;
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            readOk = false;
+        }
+        if (readOk && !reverbExempt) {
+            __try {
+                if (g_reverbEffectiveZonePtrAddr != nullptr) {
+                    uintptr_t effectiveZone = *g_reverbEffectiveZonePtrAddr;
+                    if (effectiveZone != 0) {
+                        currentWet = *reinterpret_cast<float*>(effectiveZone + 4);
+                        wetReadOk = true;
+                    }
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER) {
+                wetReadOk = false;
+            }
+        }
+#endif
+        char buf[224];
+        if (!readOk) {
+            sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d <flag read failed> tick=%llu",
+                       fireIndex, channelIndex, static_cast<unsigned long long>(GetTickCount64()));
+        } else if (reverbExempt) {
+            sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X EXEMPT (no reverb applied) tick=%llu",
+                       fireIndex, channelIndex, flagByte, static_cast<unsigned long long>(GetTickCount64()));
+        } else if (wetReadOk) {
+            sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X NOT-EXEMPT wet=%.3f applied tick=%llu",
+                       fireIndex, channelIndex, flagByte, currentWet, static_cast<unsigned long long>(GetTickCount64()));
+        } else {
+            sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X NOT-EXEMPT <wet read failed> tick=%llu",
+                       fireIndex, channelIndex, flagByte, static_cast<unsigned long long>(GetTickCount64()));
+        }
+        LogFromController(buf);
+    }
+    g_realMixReverbApply(channelIndex);
 }
 
 // MW32011NCP, 2026-09-26: real x64 console/UI font-init function -- loads
@@ -9061,6 +9161,16 @@ void InstallAnalogInputHooksX64()
             LogFromController("[x64-reverb-diag] FATAL: reverb-deactivate signature did not resolve -- "
                 "diagnostic hook not installed this session");
         } else {
+            // Reuse this same match to resolve &DAT_1425be4b0 (the effective-
+            // zone pointer) too -- offset +0x30 is the CMP RBX,[rip+disp]
+            // instruction against it, already present in this exact signature.
+            g_reverbEffectiveZonePtrAddr = reinterpret_cast<uintptr_t*>(
+                SigScan::ResolveRipRelative(r.address + 0x30, 7));
+            if (g_reverbEffectiveZonePtrAddr == nullptr) {
+                LogFromController("[x64-reverb-diag] WARNING: failed to resolve &DAT_1425be4b0 -- the "
+                    "mix-apply diagnostic's wet-value reporting will be unavailable this session "
+                    "(safe: it just won't show a wet value for non-exempt channels)");
+            }
             void* target = reinterpret_cast<void*>(r.address);
             MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ReverbDeactivate),
                                                     reinterpret_cast<void**>(&g_realReverbDeactivate));
@@ -9082,6 +9192,52 @@ void InstallAnalogInputHooksX64()
                         "'[x64-reverb-diag] ACTIVATE'/'DEACTIVATE' pairs during real play -- an ACTIVATE "
                         "with no matching DEACTIVATE for the same slot (or a DEACTIVATE that never comes) "
                         "would directly confirm the 'stuck in indoor reverb' theory.");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: reverb mix-application diagnostic, see
+        // kMixReverbApplySignature's own comment above for the full context
+        // (the "which channels get the reverb-exempt flag" test). Read-only,
+        // log-and-call-through, zero behavior change. Function-start
+        // signature -- hook target is the match address directly.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMixReverbApplySignature);
+        if (!r.found) {
+            LogFromController("[x64-mixreverb-diag] FATAL: mix-apply signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            uintptr_t channelDefArrayFixedBase = SigScan::ResolveRipRelative(
+                r.address + kMixReverbApplyChannelDefLeaOffset, kMixReverbApplyChannelDefLeaLength);
+            if (channelDefArrayFixedBase == 0) {
+                LogFromController("[x64-mixreverb-diag] FATAL: failed to resolve the channel-def array "
+                    "base -- diagnostic hook not installed this session");
+            } else {
+                g_reverbChannelDefArrayBase = channelDefArrayFixedBase + kMixReverbApplyChannelDefArrayFixedAdd;
+                void* target = reinterpret_cast<void*>(r.address);
+                MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MixReverbApply),
+                                                        reinterpret_cast<void**>(&g_realMixReverbApply));
+                if (createStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-mixreverb-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                    LogFromController(buf);
+                } else {
+                    MH_STATUS enableStatus = MH_EnableHook(target);
+                    if (enableStatus != MH_OK) {
+                        char buf[160];
+                        sprintf_s(buf, "[x64-mixreverb-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                        LogFromController(buf);
+                    } else {
+                        LogFromController("[x64-mixreverb-diag] reverb mix-apply diagnostic hook installed "
+                            "and enabled -- log-and-call-through only, zero behavior change. Watch the log "
+                            "for '[x64-mixreverb-diag]' lines during real world/AI gunfire, an explosion, "
+                            "and your own weapon fire -- EXEMPT vs NOT-EXEMPT per channel is the direct "
+                            "test of whether player-sourced audio is skipping the reverb mix while world/AI "
+                            "audio isn't.");
+                    }
                 }
             }
         }
