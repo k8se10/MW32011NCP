@@ -425,6 +425,62 @@ void __fastcall Hook_ConsoleFontInit()
     g_realConsoleFontInit();
 }
 
+// MW32011NCP, 2026-09-26: real x64 zone/localization-reload primitive
+// (FUN_1401bc4f0 in the reference Ghidra project) -- the actual, concrete
+// target this session's whole render-thread-fallback/console-font-init
+// trace was building toward. Copies a caller-supplied descriptor struct
+// (real fields matching "code_post_gfx"/"common"/"patch" per the caller,
+// FUN_140082fc0's own decompile) into fixed globals, calls FUN_1401b50e0
+// (the SAME master render-dvar-registration function this session's own
+// sun-shadow investigation already mapped -- registers hundreds of real
+// r_*/sm_* dvars), then TAIL-JUMPS (not RET) into FUN_1401d31b0 for the
+// real continuation. A plain call-through timing wrap here captures the
+// FULL cost of everything through the tail-jumped continuation too, since
+// from this hook's own trampoline-call perspective, control doesn't return
+// until the whole chain (including whatever 0x1401d31b0 does) completes --
+// a tail call is invisible to a caller-side timer. Direct connection to a
+// real, independently-raised theory from last night's own session (commit
+// 275044951, "Tested the user's synchronous-I/O theory") -- that pass
+// cleared the narrower async-ReadFileEx angle specifically but never found
+// this concrete call site; this is the same underlying theory, now with an
+// actual, real, load-bearing function to test it against directly.
+// Verified via re_notes/ghidra_scripts/UnwindInfoLookup.java before being
+// hooked (real function start, SizeOfProlog=4, not chained) per this
+// project's own standing post-crash safety process. THIS IS A READ-ONLY
+// DIAGNOSTIC HOOK (log-and-call-through, zero behavior change) -- times
+// every real call, uncapped (dev-only diagnostic, per this session's own
+// established convention for these temporary investigation tools).
+constexpr const char* kZoneReloadPrimitiveSignature =
+    "48 83 EC 28 0F 10 01 ?? ?? ?? ?? ?? ?? ?? 0F 10 49 10 ?? ?? ?? ?? ?? ?? ?? "
+    "0F 10 41 20 ?? ?? ?? ?? ?? ?? ?? 0F 10 49 30 ?? ?? ?? ?? ?? ?? ?? "
+    "0F 10 41 40 ?? ?? ?? ?? ?? ?? ?? 0F 10 49 50 ?? ?? ?? ?? ?? ?? ?? "
+    "F2 0F 10 41 60 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? "
+    "48 83 C4 28 ?? ?? ?? ?? ??";
+
+using ZoneReloadPrimitiveFn = void(__fastcall*)(void* descriptor);
+ZoneReloadPrimitiveFn g_realZoneReloadPrimitive = nullptr;
+long long g_zoneReloadPrimitiveFireCount = 0;
+
+void __fastcall Hook_ZoneReloadPrimitiveTiming(void* descriptor)
+{
+    long long fireIndex = ++g_zoneReloadPrimitiveFireCount;
+    LARGE_INTEGER freq{}, t0{}, t1{};
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+    g_realZoneReloadPrimitive(descriptor);
+    QueryPerformanceCounter(&t1);
+    double ms = (freq.QuadPart > 0)
+        ? static_cast<double>(t1.QuadPart - t0.QuadPart) * 1000.0 / static_cast<double>(freq.QuadPart)
+        : 0.0;
+
+    static double s_maxMs = 0.0;
+    if (ms > s_maxMs) s_maxMs = ms;
+    char buf[192];
+    sprintf_s(buf, "[x64-zonereload-timing] fire #%lld: took %.3fms (session max %.3fms) tick=%llu",
+               fireIndex, ms, s_maxMs, static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+}
+
 // MW32011NCP, 2026-09-24: the real x64 projection-matrix-build function
 // (FUN_1401e13e0 in the reference Ghidra project) -- the jitter-injection
 // hook point the DLSS/Streamline and FSR 3.1 roadmaps both need (see
@@ -8491,6 +8547,42 @@ void InstallAnalogInputHooksX64()
                         "installed and enabled -- log-and-call-through only, zero behavior change. Watch the "
                         "log for '[x64-consolefont-diag] fire' to see the real native caller address, since "
                         "static analysis found zero references to this function anywhere in the binary.");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: zone/localization-reload primitive timing
+        // diagnostic, see kZoneReloadPrimitiveSignature's own comment above
+        // for the full context. Read-only, log-and-call-through, zero
+        // behavior change -- times every real call via QueryPerformanceCounter.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kZoneReloadPrimitiveSignature);
+        if (!r.found) {
+            LogFromController("[x64-zonereload-timing] FATAL: zone-reload-primitive signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ZoneReloadPrimitiveTiming),
+                                                    reinterpret_cast<void**>(&g_realZoneReloadPrimitive));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-zonereload-timing] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-zonereload-timing] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-zonereload-timing] zone-reload-primitive timing hook installed "
+                        "and enabled -- log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-zonereload-timing] fire' to see how long this call (including its tail-jumped "
+                        "continuation) actually takes -- this is the concrete test of last night's own "
+                        "synchronous-I/O theory (commit 275044951).");
                 }
             }
         }
