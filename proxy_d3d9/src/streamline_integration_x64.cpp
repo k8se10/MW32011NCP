@@ -73,6 +73,12 @@ bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
 sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
     // refreshed once per real frame by StreamlineFrameTick() -- never freed by us.
+long long g_streamlineFrameSequenceX64 = 0; // 2026-09-27 -- incremented only on a
+    // genuinely successful slGetNewFrameToken() call (StreamlineFrameTick), exposed
+    // via GetStreamlineFrameSequenceX64() so streamline_camera_x64.cpp can detect
+    // "is this still the same real frame as my last slSetConstants call" without
+    // needing to inspect sl::FrameToken's own opaque internals -- see that fix's own
+    // comment (streamline_camera_x64.cpp) for the real bug this closes.
 VkInstance g_dxvkVkInstanceX64 = VK_NULL_HANDLE; // cached in RegisterDxvkVulkanDeviceWithStreamline,
 VkDevice g_dxvkVkDeviceX64 = VK_NULL_HANDLE;     // 2026-09-24 -- real handles, exposed via
 VkQueue g_dxvkVkQueueX64 = VK_NULL_HANDLE;       // 2026-09-26 -- added for gpu_timing_probe_x64.cpp's
@@ -539,12 +545,26 @@ void StreamlineFrameTick()
         return;
     }
 
+    ++g_streamlineFrameSequenceX64; // only reached on a real success -- the early
+        // return above on failure deliberately does NOT advance this.
+
     if (s_frameTickCount == 1 || (s_frameTickCount % 5000) == 0) {
         char buf[200];
         sprintf_s(buf, "[streamline] slGetNewFrameToken() succeeded (frame=%lld, token=0x%p) -- "
             "real per-frame tracking is live.", s_frameTickCount, static_cast<void*>(g_streamlineCurrentFrameToken));
         LogFromController(buf);
     }
+}
+
+// 2026-09-27: public accessor for g_streamlineFrameSequenceX64 -- see that
+// global's own comment. Returns 0 if no real frame has ticked yet this
+// session (a genuinely impossible sequence value for any call made after
+// the first successful StreamlineFrameTick(), since it's pre-incremented
+// starting from 0 -- callers should treat 0 as "not yet ticked," not as a
+// real frame's sequence number).
+long long GetStreamlineFrameSequenceX64()
+{
+    return g_streamlineFrameSequenceX64;
 }
 
 // 2026-09-24: real slSetTagForFrame wrapper -- the next unstarted step after

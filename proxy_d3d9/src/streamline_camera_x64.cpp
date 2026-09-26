@@ -46,6 +46,7 @@ extern "C" float GetDvarFloatX64_Exported(const char* name); // analog_input_hoo
     // real, already-live-confirmed dvar reader (already used for "cg_fov" itself
     // in that same file's own ADS zoom-slowdown feature).
 extern bool StreamlineSetConstantsX64(const sl::Constants& constants); // streamline_integration_x64.cpp
+extern long long GetStreamlineFrameSequenceX64(); // streamline_integration_x64.cpp, 2026-09-27
 extern bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp
 
 namespace {
@@ -159,6 +160,35 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
     // StreamlineEnabled=0. See IsStreamlineInitializedX64's own comment
     // (streamline_integration_x64.cpp) for why this is the correct signal.
     if (!IsStreamlineInitializedX64()) return;
+
+    // REAL BUG FIX, 2026-09-27: this function is called on EVERY nonzero-
+    // position fire -- confirmed live to be ~13 times per real frame, all
+    // sharing one render-state struct (see this function's own "roughly 13
+    // of which are bit-identical" comment below, and the ROUND-4 finding in
+    // vulkan_dlss_pipeline_research.md item 17). Every one of those 13 calls
+    // used to call StreamlineSetConstantsX64 unconditionally -- 2026-09-24's
+    // own comment reasoned this was harmless ("calcCameraToPrevCamera on
+    // identical data just produces an identity-ish transform, not
+    // corruption"), which is true for the MATH but not for the real SDK
+    // contract: a first live test (2026-09-26/27) found slSetConstants
+    // failing with eErrorDuplicatedConstants ("Setting different 'common'
+    // constants multiple times within the same frame is NOT allowed!") on
+    // the large majority of real frames -- Streamline itself only permits
+    // ONE slSetConstants call per real frame/token, and this function was
+    // calling it up to 13 times. Fixed by skipping this entire function
+    // (not just the SetConstants call -- the redundant compute/logging work
+    // is real waste too) once it's already run for the current real frame,
+    // tracked via GetStreamlineFrameSequenceX64() (incremented once per real
+    // frame by StreamlineFrameTick(), streamline_integration_x64.cpp) rather
+    // than by comparing this call's own camera data against the last call's
+    // -- a data-based dedup would also incorrectly skip a genuinely NEW
+    // frame whose camera happens to be at rest (identical to the previous
+    // frame's own final state), which the frame-sequence approach can't get
+    // wrong.
+    static long long s_lastConstantsFrameSeqX64 = -1;
+    long long currentFrameSeq = GetStreamlineFrameSequenceX64();
+    if (currentFrameSeq == s_lastConstantsFrameSeqX64) return;
+    s_lastConstantsFrameSeqX64 = currentFrameSeq;
 
     ++g_streamlineCameraTickCountX64;
     bool heartbeat = g_streamlineCameraTickCountX64 <= 5 || (g_streamlineCameraTickCountX64 % 20000) == 0;
@@ -287,16 +317,22 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
         sl::matrixFullInvert(constants.prevClipToClip, constants.clipToPrevClip);
         constants.reset = sl::Boolean::eFalse;
 
-        // 2026-09-24: this function is called on EVERY nonzero-position fire,
-        // roughly 13 of which are bit-identical within one real frame (see
-        // analog_input_hooks_x64.cpp's own call-site comment) -- a fixed
-        // sparse cadence (first 5, every 5000th) landed on identical-data
-        // ticks essentially every time by pure chance (~13/14 odds per
-        // sample), showing an all-zero translation that looked suspicious
-        // but wasn't a bug, just a sampling artifact. Log real motion
-        // whenever it actually happens instead of gambling on a fixed tick
-        // count, PLUS keep a much sparser heartbeat so a genuinely-idle
-        // camera still confirms the pipeline is alive.
+        // 2026-09-24: this function USED TO be called on every nonzero-
+        // position fire, roughly 13 of which were bit-identical within one
+        // real frame (see analog_input_hooks_x64.cpp's own call-site
+        // comment) -- a fixed sparse cadence (first 5, every 5000th) landed
+        // on identical-data ticks essentially every time by pure chance
+        // (~13/14 odds per sample), showing an all-zero translation that
+        // looked suspicious but wasn't a bug, just a sampling artifact. Log
+        // real motion whenever it actually happens instead of gambling on a
+        // fixed tick count, PLUS keep a much sparser heartbeat so a
+        // genuinely-idle camera still confirms the pipeline is alive.
+        // SUPERSEDED, 2026-09-27: the real per-frame dedup guard added at
+        // this function's own top now means this code only ever runs once
+        // per real frame -- the "13 identical calls" premise this comment
+        // describes no longer applies to THIS function's own call rate, but
+        // the reasoning for logging on real motion rather than a fixed tick
+        // count is still correct and kept as-is.
         float tx = cameraToPrevCamera[3].x, ty = cameraToPrevCamera[3].y, tz = cameraToPrevCamera[3].z;
         bool realMotion = (fabsf(tx) > 0.0001f) || (fabsf(ty) > 0.0001f) || (fabsf(tz) > 0.0001f);
 
