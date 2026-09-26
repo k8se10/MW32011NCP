@@ -376,36 +376,35 @@ void __fastcall Hook_SunShadowDispatch(long long param1)
     g_realSunShadowDispatch(param1);
 }
 
-// MW32011NCP, 2026-09-26: real x64 console/UI font-init function
-// (FUN_14008191a in the reference Ghidra project -- loads "fonts/consoleFont",
-// matches x86's own FUN_0041f060 logic-for-logic exactly, SAME string). Found
-// as one of the two distinct real caller chains behind issue #4's render-
-// thread main-thread-fallback diagnostic (both captures of this specific
-// chain landed in frames saturated with glyph/HUD-hint overlay activity --
-// [manual-glyph-diag]/[menuhint-trace]/[x64-readyup] all firing the same
-// frame, one occurrence on the main menu itself at 6fps). Direct user
-// correction/confirmation: "console font is surely the way the game is
-// supposed to build glyphs and DID NOT exist on x86" -- static diff confirmed
-// the function and its string DO exist on x86 (FUN_0041f060, identical
-// logic), but x86 reaches it via 5 real, ordinary, statically-visible direct
-// calls (UNCONDITIONAL_CALL) -- x64 has ZERO static references anywhere
-// (no direct CALL, no LEA, no qword-table entry -- FindQwordValueOccurrences
-// came back empty across every section), despite being LIVE-CONFIRMED to
-// actually execute via this exact hook's own future captures. This is real,
-// concrete evidence x64 reaches this function through some indirect
-// mechanism (a computed/multi-hop function pointer, plausibly the per-frame
-// opcode/command-dispatch table this project's own renderer_architecture_map.md
-// already mapped) rather than x86's plain direct-call graph -- a genuine
-// structural difference in HOW this gets invoked, not just where. THIS IS A
+// MW32011NCP, 2026-09-26: real x64 console/UI font-init function -- loads
+// "fonts/consoleFont", matches x86's own FUN_0041f060 logic-for-logic
+// exactly, SAME string. CORRECTED same day: the real function entry is
+// 0x140081900, NOT 0x14008191a (the address this project originally hooked,
+// which crashed every launch -- see the "METHODOLOGY" round in
+// known_issues_x64.md issue #4 for the full root-cause trail). 0x14008191a
+// turned out to be a mid-function return address Ghidra's own "fully
+// analyzed" project had mistakenly split into its own spurious "function" --
+// confirmed via a direct read of the real PE .pdata/UNWIND_INFO tables
+// (re_notes/ghidra_scripts/UnwindInfoLookup.java, built specifically to
+// catch this class of error going forward), which shows 0x140081900 as the
+// REAL RUNTIME_FUNCTION start (a genuine, non-chained, SizeOfProlog=4
+// prologue) covering the whole 141-byte range including the old, wrong
+// address. This also fully explains why static analysis found zero
+// references to the old address: it was never a real function entry to
+// begin with, so nothing ever called it. Found as one of the two distinct
+// real caller chains behind issue #4's render-thread main-thread-fallback
+// diagnostic (both captures landed in frames saturated with glyph/HUD-hint
+// overlay activity -- [manual-glyph-diag]/[menuhint-trace]/[x64-readyup] all
+// firing the same frame, one occurrence on the main menu itself at 6fps).
+// Direct user correction/confirmation: "console font is surely the way the
+// game is supposed to build glyphs and DID NOT exist on x86" -- static diff
+// confirmed the function and its string DO exist on x86 (FUN_0041f060,
+// identical logic), reached there via 5 ordinary direct calls. THIS IS A
 // READ-ONLY DIAGNOSTIC HOOK (log-and-call-through, zero behavior change) --
-// captures the real caller via _ReturnAddress() at hook entry (safe
-// regardless of the hooked function's own internal stack usage, since
-// MinHook's trampoline runs after the return address is already on the
-// stack) since static analysis couldn't find the call site at all.
+// captures the real caller via _ReturnAddress() at hook entry, now on a
+// genuinely safe, unwind-info-verified function start.
 constexpr const char* kConsoleFontInitSignature =
-    "83 3D ?? ?? ?? ?? 00 74 ?? E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? "
-    "BA 03 00 00 00 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? "
-    "BA 03 00 00 00 48 89 05 ?? ?? ?? ??";
+    "48 83 EC 28 48 8D 0D ?? ?? ?? ?? C7 05 ?? ?? ?? ?? 01 00 00 00 E8 ?? ?? ?? ??";
 
 using ConsoleFontInitFn = void(__fastcall*)();
 ConsoleFontInitFn g_realConsoleFontInit = nullptr;
@@ -8450,26 +8449,23 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    if (false) {
+    {
         // MW32011NCP, 2026-09-26: console/UI font-init caller diagnostic, see
         // kConsoleFontInitSignature's own comment above for the full context
         // (the render-thread-fallback caller-chain investigation, issue #4).
-        // DISABLED same day, live crash: FUN_14008191a has no visible SUB RSP
-        // of its own (no normal stack-frame prologue), meaning it's very
-        // likely entered via something other than an ordinary CALL -- MinHook's
-        // trampoline assumes normal call/ret semantics, and hooking this exact
-        // address corrupted the stack, crashing every launch inside the hook's
-        // own sprintf_s call chain (real crash dump analysis, iw5sp.exe.20608.dmp:
-        // Hook_ConsoleFontInit -> sprintf_s<192> -> AV reading 0xFFFFFFFFFFFFFFFF,
-        // with a garbage "return address" of exactly the module base 0x140000000
-        // on the stack -- a clear stack-corruption signature, not a genuine
-        // buffer-size bug despite crashing inside sprintf_s). Left in place,
-        // disabled via `if (false)`, rather than deleted -- the real finding
-        // (x64 reaches this function through a non-standard invocation this
-        // hook was never actually going to observe correctly) stands on its
-        // own; re-enabling needs a different technique (e.g. hooking a real
-        // CALLER further up a chain that DOES have a normal prologue) before
-        // ever being tried live again.
+        // RE-ENABLED same day at the CORRECTED real function address
+        // (0x140081900, not the original 0x14008191a which crashed every
+        // launch): root-caused via a real crash dump (iw5sp.exe.20608.dmp)
+        // to Ghidra's own "fully analyzed" project mis-splitting one real
+        // function into two at a mid-body return address -- confirmed and
+        // fixed using a new tool built specifically for this,
+        // re_notes/ghidra_scripts/UnwindInfoLookup.java, which reads the
+        // real PE .pdata/UNWIND_INFO tables directly rather than trusting
+        // Ghidra's function-boundary database. The corrected address is a
+        // genuine, non-chained, real function start (SizeOfProlog=4,
+        // confirmed real SUB RSP,0x28 prologue via DumpSigBytes.java) --
+        // safe to hook by this project's own now-standing verification
+        // process for any stack-walk-derived target.
         SigScan::Result r = SigScan::FindPatternInMainModule(kConsoleFontInitSignature);
         if (!r.found) {
             LogFromController("[x64-consolefont-diag] FATAL: console-font-init signature did not resolve -- "
