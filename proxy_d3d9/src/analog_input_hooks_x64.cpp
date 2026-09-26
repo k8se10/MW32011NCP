@@ -554,30 +554,75 @@ MixReverbApplyFn g_realMixReverbApply = nullptr;
 uintptr_t g_reverbChannelDefArrayBase = 0; // &DAT_1425bfbf8, resolved once at install
 long long g_mixReverbApplyFireCount = 0;
 
+// MW32011NCP, 2026-09-26: concurrent-voice-aware wet scaling, direct
+// follow-up to the plain ReverbWetScale experiment above -- direct user
+// observation after live-testing scale=0.5: "sounds fine apart from when
+// multiple guns are shooting, maybe we scale it based on number of noises
+// as that seems to affect overall reverb." This is a real, physically
+// sound explanation: every NOT-EXEMPT channel gets the SAME wet level
+// multiplied into its own independent X3DAudioCalculate output, and those
+// independent per-channel outputs all sum together at the final mix --
+// there is no shared reverb bus with its own single decay curve here, so
+// N simultaneous reverberant channels really do produce roughly N times
+// the reverberant energy, not a saturating/blended total the way a real
+// shared reverb send would. Tracked per-tick (GetTickCount64() granularity,
+// matching this project's other per-tick reverb diagnostics): counts real
+// NOT-EXEMPT fires in the CURRENT tick, and uses the PREVIOUS tick's final
+// count as a one-tick-lagged estimate of "how many concurrent reverberant
+// voices are active right now" (cheap, no pre-scan needed, and voice
+// counts don't typically swing wildly tick-to-tick). The base
+// ReverbWetScale value is treated as the target for a SINGLE concurrent
+// voice; when more are active, it's further divided by sqrt(voiceCount) --
+// the standard incoherent-signal-summing correction (RMS of N equal-
+// amplitude, random-phase signals scales as amplitude*sqrt(N), so dividing
+// each one's amplitude by sqrt(N) keeps the summed total roughly constant
+// regardless of how many voices are contributing).
+long long g_mixReverbLastTickMs = -1;
+int g_mixReverbConcurrentCountThisTick = 0;
+int g_mixReverbConcurrentCountPrevTick = 1;
+
 void __fastcall Hook_MixReverbApply(int channelIndex)
 {
     long long fireIndex = ++g_mixReverbApplyFireCount;
+    long long nowTickMs = static_cast<long long>(GetTickCount64());
+
+    bool readOk = false;
+    int flagByte = -1;
+    bool reverbExempt = false;
+#ifdef _WIN32
+    __try {
+        if (g_reverbChannelDefArrayBase != 0) {
+            uintptr_t channelDefPtr = *reinterpret_cast<uintptr_t*>(
+                g_reverbChannelDefArrayBase + static_cast<uintptr_t>(channelIndex) * 0x130);
+            if (channelDefPtr != 0) {
+                flagByte = *reinterpret_cast<unsigned char*>(channelDefPtr + 0x54);
+                reverbExempt = (flagByte & 8) != 0;
+                readOk = true;
+            }
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        readOk = false;
+    }
+#endif
+
+    // Roll the per-tick concurrent-voice counter forward. This runs every
+    // fire (not just logged samples) since the real wet-scaling below
+    // depends on it, not only the diagnostic log.
+    if (nowTickMs != g_mixReverbLastTickMs) {
+        g_mixReverbConcurrentCountPrevTick =
+            (g_mixReverbConcurrentCountThisTick > 0) ? g_mixReverbConcurrentCountThisTick : 1;
+        g_mixReverbConcurrentCountThisTick = 0;
+        g_mixReverbLastTickMs = nowTickMs;
+    }
+    if (readOk && !reverbExempt) {
+        ++g_mixReverbConcurrentCountThisTick;
+    }
+
     if (fireIndex <= 200 || (fireIndex % 2000) == 0) {
-        bool readOk = false;
-        int flagByte = -1;
-        bool reverbExempt = false;
         float currentWet = 0.0f;
         bool wetReadOk = false;
 #ifdef _WIN32
-        __try {
-            if (g_reverbChannelDefArrayBase != 0) {
-                uintptr_t channelDefPtr = *reinterpret_cast<uintptr_t*>(
-                    g_reverbChannelDefArrayBase + static_cast<uintptr_t>(channelIndex) * 0x130);
-                if (channelDefPtr != 0) {
-                    flagByte = *reinterpret_cast<unsigned char*>(channelDefPtr + 0x54);
-                    reverbExempt = (flagByte & 8) != 0;
-                    readOk = true;
-                }
-            }
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            readOk = false;
-        }
         if (readOk && !reverbExempt) {
             __try {
                 if (g_reverbEffectiveZonePtrAddr != nullptr) {
@@ -593,19 +638,21 @@ void __fastcall Hook_MixReverbApply(int channelIndex)
             }
         }
 #endif
-        char buf[224];
+        char buf[256];
         if (!readOk) {
             sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d <flag read failed> tick=%llu",
-                       fireIndex, channelIndex, static_cast<unsigned long long>(GetTickCount64()));
+                       fireIndex, channelIndex, static_cast<unsigned long long>(nowTickMs));
         } else if (reverbExempt) {
             sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X EXEMPT (no reverb applied) tick=%llu",
-                       fireIndex, channelIndex, flagByte, static_cast<unsigned long long>(GetTickCount64()));
+                       fireIndex, channelIndex, flagByte, static_cast<unsigned long long>(nowTickMs));
         } else if (wetReadOk) {
-            sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X NOT-EXEMPT wet=%.3f applied tick=%llu",
-                       fireIndex, channelIndex, flagByte, currentWet, static_cast<unsigned long long>(GetTickCount64()));
+            sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X NOT-EXEMPT wet=%.3f "
+                       "concurrentVoices(prevTick)=%d applied tick=%llu",
+                       fireIndex, channelIndex, flagByte, currentWet, g_mixReverbConcurrentCountPrevTick,
+                       static_cast<unsigned long long>(nowTickMs));
         } else {
             sprintf_s(buf, "[x64-mixreverb-diag] fire #%lld: channel=%d flag=0x%02X NOT-EXEMPT <wet read failed> tick=%llu",
-                       fireIndex, channelIndex, flagByte, static_cast<unsigned long long>(GetTickCount64()));
+                       fireIndex, channelIndex, flagByte, static_cast<unsigned long long>(nowTickMs));
         }
         LogFromController(buf);
     }
@@ -620,27 +667,37 @@ void __fastcall Hook_MixReverbApply(int channelIndex)
     // anywhere else (the reverb-zone activate/deactivate/lerp system, the
     // GSC-facing state, and every other reader of this same global all see
     // the real, unscaled value again the instant this call returns). No-op
-    // (reads and writes nothing) whenever the scale is 1.0 (default) or the
-    // effective-zone pointer never resolved.
+    // (reads and writes nothing) whenever the base scale is 1.0 AND only
+    // one concurrent voice is active, or the effective-zone pointer never
+    // resolved. Exempt channels never read this global at all inside the
+    // real function, so scaling it for their calls would be harmless, but
+    // is skipped anyway to avoid pointless work.
     bool wetWasScaled = false;
     uintptr_t scaledZoneAddr = 0;
     float originalWetForRestore = 0.0f;
-    if (g_modConfig.reverbWetScaleX64 < 1.0f && g_reverbEffectiveZonePtrAddr != nullptr) {
+    if (readOk && !reverbExempt) {
+        float concurrentDivisor = sqrtf(static_cast<float>(g_mixReverbConcurrentCountPrevTick));
+        if (concurrentDivisor < 1.0f) concurrentDivisor = 1.0f;
+        float dynamicScale = g_modConfig.reverbWetScaleX64 / concurrentDivisor;
+        if (dynamicScale < 0.0f) dynamicScale = 0.0f;
+        if (dynamicScale > 1.0f) dynamicScale = 1.0f;
+        if (dynamicScale < 1.0f && g_reverbEffectiveZonePtrAddr != nullptr) {
 #ifdef _WIN32
-        __try {
-            uintptr_t effectiveZone = *g_reverbEffectiveZonePtrAddr;
-            if (effectiveZone != 0) {
-                float* wetPtr = reinterpret_cast<float*>(effectiveZone + 4);
-                originalWetForRestore = *wetPtr;
-                *wetPtr = originalWetForRestore * g_modConfig.reverbWetScaleX64;
-                scaledZoneAddr = effectiveZone;
-                wetWasScaled = true;
+            __try {
+                uintptr_t effectiveZone = *g_reverbEffectiveZonePtrAddr;
+                if (effectiveZone != 0) {
+                    float* wetPtr = reinterpret_cast<float*>(effectiveZone + 4);
+                    originalWetForRestore = *wetPtr;
+                    *wetPtr = originalWetForRestore * dynamicScale;
+                    scaledZoneAddr = effectiveZone;
+                    wetWasScaled = true;
+                }
             }
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            wetWasScaled = false;
-        }
+            __except (EXCEPTION_EXECUTE_HANDLER) {
+                wetWasScaled = false;
+            }
 #endif
+        }
     }
 
     g_realMixReverbApply(channelIndex);
