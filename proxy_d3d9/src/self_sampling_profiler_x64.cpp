@@ -241,8 +241,9 @@ DWORD WINAPI SelfSamplingProfilerThreadProc(LPVOID)
         return 0;
     }
 
-    fprintf(f, "Self-sampling profile: %d rounds over ~%lu ms (interval=%lu ms)\n",
-            totalRounds, kProfileDurationMs, kSampleIntervalMs);
+    fprintf(f, "Self-sampling profile: %d rounds over ~%u ms (interval=%u ms)\n",
+            totalRounds, static_cast<unsigned int>(kProfileDurationMs),
+            static_cast<unsigned int>(kSampleIntervalMs));
     fprintf(f, "Threads observed: %zu\n\n", samplesPerThread.size());
 
     for (const auto& tkv : samplesPerThread) {
@@ -250,9 +251,9 @@ DWORD WINAPI SelfSamplingProfilerThreadProc(LPVOID)
         int totalForThread = tkv.second;
         std::string name = ResolveThreadName(tid);
         if (!name.empty()) {
-            fprintf(f, "Thread %lu [%s] (%d samples):\n", tid, name.c_str(), totalForThread);
+            fprintf(f, "Thread %u [%s] (%d samples):\n", static_cast<unsigned int>(tid), name.c_str(), totalForThread);
         } else {
-            fprintf(f, "Thread %lu (%d samples):\n", tid, totalForThread);
+            fprintf(f, "Thread %u (%d samples):\n", static_cast<unsigned int>(tid), totalForThread);
         }
 
         // Collect this thread's entries, sorted by count descending -- top N only.
