@@ -345,6 +345,33 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
     return true;
 }
 
+// 2026-09-27: real, previously-missing Streamline log-callback -- the SDK's
+// own Preferences struct has a logMessageCallback field ("Optional - Allows
+// log message tracking including critical errors if they occur",
+// sl_core_types.h) that was never wired, so any internal diagnostic
+// Streamline itself logs (e.g. WHY a requested feature's plugin failed to
+// load) went nowhere this project could see. Found live, 2026-09-26/27:
+// slGetFeatureFunction(DLSS, "slDLSSSetOptions") failed with
+// eErrorFeatureMissing (31) despite slInit() itself reporting success and
+// slGetFeatureRequirements(DLSS) succeeding earlier -- meaning the DLSS
+// plugin (sl.dlss.dll/nvngx_dlss.dll, both confirmed present on disk,
+// correct sizes, not corrupted) never actually loaded, and this project had
+// no way to see Streamline's own real reason why. Deliberately logs the
+// prefix and message as two SEPARATE LogFromController calls rather than one
+// sprintf_s'd buffer -- msg's real length is unbounded (an external SDK's
+// own string, not authored in this codebase), and this project has hit the
+// "sprintf_s with an unbounded interpolated string" crash class enough times
+// (known_issues_x64.md, 2026-09-05/13/14/16) that avoiding it entirely here
+// is safer than sizing a buffer defensively.
+void StreamlineLogCallbackX64(sl::LogType type, const char* msg)
+{
+    if (!msg) return;
+    const char* prefix = (type == sl::LogType::eError) ? "[streamline][sl-error]"
+        : (type == sl::LogType::eWarn) ? "[streamline][sl-warn]" : "[streamline][sl-info]";
+    LogFromController(prefix);
+    LogFromController(msg);
+}
+
 // Opt-in entry point -- call once, right after CreateDevice returns
 // (Hook_CreateDevice, d3d9_hook.cpp), passing the just-created
 // IDirect3DDevice9 so DXVK's Vulkan-interop interface can be queried for
@@ -391,7 +418,14 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     pref.numFeaturesToLoad = 1;
     pref.engine = sl::EngineType::eCustom;
     pref.engineVersion = "MW32011NCP";
+    // 2026-09-27: real log callback wired (see StreamlineLogCallbackX64's own
+    // comment) -- eWarn/eError are "Always shown regardless of LogLevel" per
+    // sl_core_types.h's own doc comment on LogType, so eDefault (not eVerbose)
+    // is enough to surface the real reason a feature plugin fails to load
+    // without risking a per-frame-chatty eVerbose log flood this project has
+    // no prior data on.
     pref.logLevel = sl::LogLevel::eDefault;
+    pref.logMessageCallback = &StreamlineLogCallbackX64;
 
     sl::Result result = g_slInit(pref, sl::kSDKVersion);
     if (result != sl::Result::eOk) {
