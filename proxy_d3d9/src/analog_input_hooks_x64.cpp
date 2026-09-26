@@ -6070,8 +6070,35 @@ RenderResComputeFn g_origRenderResCompute = nullptr;
 // unconditional, unclamped copy (DAT_141888670/674) picks up our value instead of
 // the engine's own dvar-driven default -- no r_mode write, no vid_restart, no
 // device/window recreation, identical risk profile to the x86 original this ports.
+// MW32011NCP, 2026-09-26: real call-frequency/context diagnostic, direct
+// follow-up to the disproportionate-cost-at-150%+ report and the user's own
+// theory that this project's hook might be firing at the wrong point/
+// frequency (a genuinely different question from "who reads the resulting
+// globals," already checked and found identical to x86). The existing
+// `[x64-video-scale]` log line is change-deduped (only logs when the
+// TARGET resolution actually changes) -- it was never designed to show how
+// many times FUN_1401bd1d0 itself is really called per frame, or whether
+// it's called with the SAME `self` struct pointer every time (one shared
+// mode/view context) or a DIFFERENT one each call (multiple distinct view
+// contexts, each independently resized). This logs, unconditionally, the
+// real per-call `self` pointer and the return address for the first 40
+// fires of a session, then every 500th -- enough to see the real call
+// shape (frequency and context diversity) directly from a live capture.
+long long g_renderResComputeFireCount = 0;
+
 void __fastcall Hook_RenderResCompute(void* self)
 {
+    {
+        long long fireIndex = ++g_renderResComputeFireCount;
+        if (fireIndex <= 40 || (fireIndex % 500) == 0) {
+            char buf[160];
+            sprintf_s(buf, "[x64-renderres-diag] fire #%lld: self=0x%llX caller=0x%llX tick=%llu",
+                       fireIndex, reinterpret_cast<unsigned long long>(self),
+                       reinterpret_cast<unsigned long long>(_ReturnAddress()),
+                       static_cast<unsigned long long>(GetTickCount64()));
+            LogFromController(buf);
+        }
+    }
     int pct = g_modConfig.internalRenderScalePercent;
     if (pct > 0 && self != nullptr) {
         auto* base = reinterpret_cast<uint8_t*>(self);
