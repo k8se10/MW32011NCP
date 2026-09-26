@@ -8659,12 +8659,37 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    {
+    if (false) {
         // MW32011NCP, 2026-09-26: font-asset-load thunk timing diagnostic,
         // see kFontAssetLoadThunkSignature's own comment above for the full
         // context -- the leading candidate for console-font-init's own
-        // confirmed ~90-100ms-per-call cost. Read-only, log-and-call-through,
-        // zero behavior change.
+        // confirmed ~90-100ms-per-call cost. DISABLED same day, live crash:
+        // the target is only 18 real bytes total (the whole thunk, ending
+        // in its own tail-jump) -- too small for MinHook to safely detour.
+        // A real crash dump (iw5sp.exe.3836.dmp) showed execution landing
+        // at entry+0x20 (0x1401b7cd0), PAST the real function's own 18-byte
+        // body entirely, dereferencing near-null (+0x70 off a garbage
+        // pointer) -- consistent with MinHook's jump patch (and/or its
+        // relocated-and-fixed-up copy of the original tail-jump) needing
+        // more room than this tiny function actually has, corrupting
+        // whatever code or data immediately follows it in the module. A
+        // genuinely different failure class from this session's earlier
+        // "wrong address, not a real function start" crash -- this one WAS
+        // a real, correctly-identified function start (confirmed via
+        // UnwindInfoLookup.java showing no RUNTIME_FUNCTION at all, a valid
+        // leaf-thunk shape, and DumpSigBytes.java showing a clean,
+        // Ghidra-recognized 18-byte body) -- it was simply too short to
+        // safely patch. New standing lesson: MinHook needs real working
+        // room in the target function itself, not just a genuine entry
+        // point -- a function under roughly 14-20 bytes (especially one
+        // whose own last instruction is itself a relative jump MinHook has
+        // to relocate and fix up) is a real risk regardless of how clean
+        // its unwind/prologue signature looks. Left in place, disabled via
+        // `if (false)`, not deleted. A future attempt at this specific
+        // timing question should hook the SHARED underlying implementation
+        // (0x1400a5a20) instead, accepting the tradeoff that it also times
+        // unrelated callers -- or filter by a distinguishing argument if
+        // one exists.
         SigScan::Result r = SigScan::FindPatternInMainModule(kFontAssetLoadThunkSignature);
         if (!r.found) {
             LogFromController("[x64-fontload-timing] FATAL: font-asset-load thunk signature did not resolve -- "
