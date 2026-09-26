@@ -6322,6 +6322,13 @@ void* g_orchestratorExtraCallBReturnAddr = nullptr;
 // own real, unique entry-point prologue (guaranteed globally unique); the
 // second is anchored on a real struct-offset CMP a few instructions before
 // its own call, near the function's real epilogue.
+// **CONFIRMED BROKEN, LIVE-TESTED 2026-09-26 -- causes complete viewport
+// corruption during live gameplay (fine while paused). See
+// mod_config.h's own skipRedundantScenePostfxGuaranteedCallsX64 comment
+// for the full incident record. The toggle stays default OFF; the
+// signatures/resolution/skip logic below are kept, not deleted, in case a
+// future session finds what these two calls actually activate and can
+// make skipping them safe.**
 constexpr const char* kScenePostfxFirstCallSignature =
     "48 8B C4 55 56 57 48 83 EC 70 0F 29 70 D8 0F B6 EA 48 89 58 10 "
     "48 8D 91 40 03 00 00 4C 89 70 18 48 8B F9 0F 29 78 C8 48 8D 0D ?? ?? ?? ?? "
