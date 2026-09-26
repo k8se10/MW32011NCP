@@ -1,0 +1,22 @@
+STRING @ 1403f0b2c: "reverb"
+  REF #1: from 14005a31d in FUN_1400595c0 @ 1400595c0
+  REF #2: from 14005a337 in FUN_1400595c0 @ 1400595c0
+
+STRING @ 1403f0b78: "deactivatereverb"
+  REF #1: from 14005a463 in FUN_1400595c0 @ 1400595c0
+
+STRING @ 1403f1b18: "soundtables/mp_common_reverb.csv"
+  REF #1: from 140062e73 in FUN_140062e00 @ 140062e00
+
+STRING @ 140400b88: "reverb %i \"%s\" %g %g %g"
+  REF #1: from 140124f65 in FUN_140124e80 @ 140124e80
+
+STRING @ 140400ba0: "deactivatereverb %i %g"
+  REF #1: from 140125069 in FUN_140124fd0 @ 140124fd0
+
+STRING @ 14042c588: "Enable sound reverberation"
+  REF #1: from 14027136f in FUN_140271240 @ 140271240
+
+STRING @ 14042c5a8: "snd_enableReverb"
+  REF #1: from 140271380 in FUN_140271240 @ 140271240
+

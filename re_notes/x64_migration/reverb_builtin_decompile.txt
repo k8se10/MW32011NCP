@@ -1,0 +1,95 @@
+================================================================
+Function: FUN_140124e80 @ 140124e80
+----------------------------------------------------------------
+
+void FUN_140124e80(ulonglong param_1)
+
+{
+  int iVar1;
+  uint uVar2;
+  undefined8 uVar3;
+  undefined8 uVar4;
+  float fVar5;
+  float fVar6;
+  float fVar7;
+  
+  if (((short)(param_1 >> 0x10) != 0) || ((&DAT_140f57e00)[(param_1 & 0xffff) * 0x54] == 0)) {
+    FUN_14025c6b0();
+  }
+  fVar6 = DAT_1403e3e6c;
+  fVar5 = DAT_1403e3e68;
+  fVar7 = 0.0;
+  iVar1 = FUN_14025d140();
+  if (iVar1 != 2) {
+    if (iVar1 != 3) {
+      if (iVar1 != 4) {
+        if (iVar1 != 5) {
+          FUN_14025c6b0();
+          return;
+        }
+        fVar7 = (float)FUN_14025cea0(4);
+      }
+      fVar5 = (float)FUN_14025cea0(3);
+    }
+    fVar6 = (float)FUN_14025cea0(2);
+  }
+  uVar4 = 1;
+  uVar3 = FUN_14025d3f0(1);
+  uVar2 = FUN_14025cc10(0);
+  if (uVar2 != DAT_1413b8326) {
+    if (uVar2 == DAT_1413b8328) {
+      uVar4 = 2;
+    }
+    else {
+      FUN_14025c6b0();
+    }
+  }
+  uVar3 = FUN_1402cb690("reverb %i \"%s\" %g %g %g",uVar4,uVar3,(double)fVar6,(double)fVar5,
+                        (double)fVar7);
+  FUN_14026a6f0(param_1 & 0xffff,uVar3);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140124fd0 @ 140124fd0
+----------------------------------------------------------------
+
+void FUN_140124fd0(ulonglong param_1)
+
+{
+  int iVar1;
+  uint uVar2;
+  undefined8 uVar3;
+  float fVar4;
+  
+  if (((short)(param_1 >> 0x10) != 0) || ((&DAT_140f57e00)[(param_1 & 0xffff) * 0x54] == 0)) {
+    FUN_14025c6b0();
+  }
+  fVar4 = 0.0;
+  iVar1 = FUN_14025d140();
+  uVar3 = 1;
+  if (iVar1 != 1) {
+    if (iVar1 != 2) {
+      FUN_14025c6b0();
+      return;
+    }
+    fVar4 = (float)FUN_14025cea0(1);
+  }
+  uVar2 = FUN_14025cc10(0);
+  if (uVar2 != DAT_1413b8326) {
+    if (uVar2 == DAT_1413b8328) {
+      uVar3 = 2;
+    }
+    else {
+      FUN_14025c6b0();
+    }
+  }
+  uVar3 = FUN_1402cb690("deactivatereverb %i %g",uVar3,(double)fVar4);
+  FUN_14026a6f0(param_1 & 0xffff,uVar3);
+  return;
+}
+
+
+

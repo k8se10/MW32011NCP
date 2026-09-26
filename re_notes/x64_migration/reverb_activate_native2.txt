@@ -1,0 +1,67 @@
+================================================================
+Function: FUN_140277f90 @ 140277f90
+----------------------------------------------------------------
+
+void FUN_140277f90(int param_1,undefined8 param_2,float param_3,float param_4,int param_5)
+
+{
+  float fVar1;
+  int *piVar2;
+  int iVar3;
+  undefined *puVar4;
+  char *pcVar5;
+  int iVar6;
+  longlong lVar7;
+  int *piVar8;
+  longlong lVar9;
+  longlong lVar10;
+  
+  puVar4 = PTR_s_generic_1404d1d10;
+  lVar10 = (longlong)param_1;
+  if ((param_1 - 1U < 3) && (DAT_1425b3f90 != '\0')) {
+    iVar6 = 0;
+    lVar7 = lVar10 * 0x20;
+    piVar8 = &DAT_1425be430 + lVar10 * 8;
+    (&DAT_1425be44c)[lVar7] = 1;
+    if (puVar4 != (undefined *)0x0) {
+      lVar9 = 0;
+      do {
+        iVar3 = FUN_1402ca760(param_2,puVar4);
+        if (iVar3 == 0) goto LAB_140278030;
+        puVar4 = (&PTR_s_paddedcell_1404d1d18)[lVar9];
+        lVar9 = lVar9 + 1;
+        iVar6 = iVar6 + 1;
+      } while (puVar4 != (undefined *)0x0);
+    }
+    iVar6 = 0;
+LAB_140278030:
+    *(float *)(&DAT_1425be438 + lVar7) = param_3;
+    *piVar8 = iVar6;
+    *(int *)(&DAT_1425be434 + lVar7) = DAT_1425be4b0[1];
+    iVar3 = 1;
+    if (0 < param_5) {
+      iVar3 = param_5;
+    }
+    fVar1 = (float)DAT_1425be4b0[1];
+    *(float *)(&DAT_1425be444 + lVar7) = param_4;
+    *(float *)(&DAT_1425be43c + lVar7) = (param_3 - fVar1) / (float)iVar3;
+    *(int *)(&DAT_1425be440 + lVar7) = DAT_1425be4b0[4];
+    *(float *)(&DAT_1425be448 + lVar7) = (param_4 - (float)DAT_1425be4b0[4]) / (float)iVar3;
+    piVar2 = DAT_1425be4b0;
+    if ((piVar8 != DAT_1425be4b0) && (piVar2 = piVar8, lVar10 + 1 < 4)) {
+      pcVar5 = &DAT_1425be44c + (lVar10 + 1) * 0x20;
+      do {
+        if (*pcVar5 != '\0') {
+          return;
+        }
+        pcVar5 = pcVar5 + 0x20;
+      } while ((longlong)pcVar5 < 0x1425be4cc);
+    }
+    DAT_1425be4b0 = piVar2;
+    _guard_check_icall(iVar6);
+  }
+  return;
+}
+
+
+

@@ -440,6 +440,78 @@ unsigned char __fastcall Hook_OcclusionCheck(long long param1, unsigned int para
     return result;
 }
 
+// MW32011NCP, 2026-09-26: real x64 native reverb-zone activate/deactivate
+// functions -- the actual mechanism behind GSC's "reverb(...)"/
+// "deactivatereverb(...)" builtins (traced via the generic client-command
+// dispatcher, FUN_1400595c0, found from the "reverb"/"deactivatereverb"
+// command-name strings). Direct user follow-up, mid-investigation: "its
+// almost like its using indoor reverb always instead of shifting between
+// the reverb types!" -- a real, sharp, independently-derived match for
+// what this native code turned out to implement: a 3-slot reverb-zone
+// stack (`DAT_1425be430` + per-slot fields, indices 1-3), where activating
+// slot N sets it active and only takes over as the CURRENTLY EFFECTIVE
+// zone if no higher-numbered slot is already active (a real "most specific
+// zone wins" priority system, `FUN_140277f90`), and deactivating slot N
+// clears it and, if it WAS the effective one, walks back down through
+// lower slots to find a still-active fallback -- or leaves it inactive if
+// none remain (`FUN_1402701c0`). This is a plausible, concrete mechanism
+// for "stuck in indoor reverb": if deactivate never fires for a slot (a
+// GSC trigger-exit that doesn't call `deactivatereverb`), or the fallback
+// walk resolves wrong, a room-type reverb activated once could keep
+// applying to every sound indefinitely afterward, matching the reported
+// symptom exactly. THESE ARE READ-ONLY DIAGNOSTIC HOOKS (log-and-call-
+// through, zero behavior change) -- both fire rarely (only on real GSC
+// activate/deactivate calls, not per-sound), so neither needs this file's
+// usual rate-limiting discipline.
+constexpr const char* kReverbActivateSignature =
+    "40 55 41 56 48 83 EC 48 0F 29 74 24 30 48 8B EA 4C 63 F1 0F 28 F3 "
+    "0F 29 7C 24 20 0F 28 FA 41 8D 46 FF 83 F8 02";
+
+using ReverbActivateFn = void(__fastcall*)(int, const char*, float, float, int);
+ReverbActivateFn g_realReverbActivate = nullptr;
+long long g_reverbActivateFireCount = 0;
+
+void __fastcall Hook_ReverbActivate(int slot, const char* roomType, float wet, float dry, int fadeFrames)
+{
+    ++g_reverbActivateFireCount;
+    char nameBuf[48] = "<null>";
+#ifdef _WIN32
+    __try {
+        if (roomType != nullptr) {
+            sprintf_s(nameBuf, "%.40s", roomType);
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        sprintf_s(nameBuf, "<fault reading room type>");
+    }
+#endif
+    char buf[224];
+    sprintf_s(buf, "[x64-reverb-diag] ACTIVATE fire #%lld: slot=%d room=\"%s\" wet=%.3f dry=%.3f fade=%d tick=%llu",
+               g_reverbActivateFireCount, slot, nameBuf, wet, dry, fadeFrames,
+               static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    g_realReverbActivate(slot, roomType, wet, dry, fadeFrames);
+}
+
+constexpr const char* kReverbDeactivateSignature =
+    "40 57 48 83 EC 20 44 8D 41 FF 8B FA 41 83 F8 02 0F 87 ?? ?? ?? ?? "
+    "48 89 5C 24 30 4C 8D 0D ?? ?? ?? ?? 48 63 D9 48 C1 E3 05 49 03 D9";
+
+using ReverbDeactivateFn = void(__fastcall*)(int, int);
+ReverbDeactivateFn g_realReverbDeactivate = nullptr;
+long long g_reverbDeactivateFireCount = 0;
+
+void __fastcall Hook_ReverbDeactivate(int slot, int fadeFrames)
+{
+    ++g_reverbDeactivateFireCount;
+    char buf[160];
+    sprintf_s(buf, "[x64-reverb-diag] DEACTIVATE fire #%lld: slot=%d fade=%d tick=%llu",
+               g_reverbDeactivateFireCount, slot, fadeFrames,
+               static_cast<unsigned long long>(GetTickCount64()));
+    LogFromController(buf);
+    g_realReverbDeactivate(slot, fadeFrames);
+}
+
 // MW32011NCP, 2026-09-26: real x64 console/UI font-init function -- loads
 // "fonts/consoleFont", matches x86's own FUN_0041f060 logic-for-logic
 // exactly, SAME string. CORRECTED same day: the real function entry is
@@ -8941,6 +9013,75 @@ void InstallAnalogInputHooksX64()
                         "barrels), cross-referenced against Hook_PlaySoundAlias's own channel numbers, to "
                         "see whether occlusion behaves differently for those channels than for the special "
                         "channel=0x7fe(2046) case or the player's own weapon/grenade sounds.");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: reverb-zone activate diagnostic, see
+        // kReverbActivateSignature's own comment above for the full context.
+        // Read-only, log-and-call-through, zero behavior change. Function-
+        // start signature -- hook target is the match address directly.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kReverbActivateSignature);
+        if (!r.found) {
+            LogFromController("[x64-reverb-diag] FATAL: reverb-activate signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ReverbActivate),
+                                                    reinterpret_cast<void**>(&g_realReverbActivate));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-reverb-diag] FATAL: MH_CreateHook (activate) failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-reverb-diag] FATAL: MH_EnableHook (activate) failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-reverb-diag] reverb-activate diagnostic hook installed and "
+                        "enabled -- log-and-call-through only, zero behavior change.");
+                }
+            }
+        }
+    }
+
+    {
+        // MW32011NCP, 2026-09-26: reverb-zone deactivate diagnostic, see
+        // kReverbDeactivateSignature's own comment above (shared with the
+        // activate hook) for the full context. Read-only, log-and-call-
+        // through, zero behavior change.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kReverbDeactivateSignature);
+        if (!r.found) {
+            LogFromController("[x64-reverb-diag] FATAL: reverb-deactivate signature did not resolve -- "
+                "diagnostic hook not installed this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ReverbDeactivate),
+                                                    reinterpret_cast<void**>(&g_realReverbDeactivate));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-reverb-diag] FATAL: MH_CreateHook (deactivate) failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-reverb-diag] FATAL: MH_EnableHook (deactivate) failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-reverb-diag] reverb-deactivate diagnostic hook installed and "
+                        "enabled -- log-and-call-through only, zero behavior change. Watch the log for "
+                        "'[x64-reverb-diag] ACTIVATE'/'DEACTIVATE' pairs during real play -- an ACTIVATE "
+                        "with no matching DEACTIVATE for the same slot (or a DEACTIVATE that never comes) "
+                        "would directly confirm the 'stuck in indoor reverb' theory.");
                 }
             }
         }

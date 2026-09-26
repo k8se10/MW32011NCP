@@ -1,0 +1,49 @@
+Signature-byte dump of FUN_1402701c0 @ 1402701c0
+(byte offsets relative to function entry point)
+
++0x00  40 57                          PUSH RDI                                 
++0x02  48 83 EC 20                    SUB RSP,0x20                             
++0x06  44 8D 41 FF                    LEA R8D,[RCX + -0x1]                     
++0x0A  8B FA                          MOV EDI,EDX                              
++0x0C  41 83 F8 02                    CMP R8D,0x2                              
++0x10  0F 87 CE 00 00 00              JA 0x1402702a4                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x16  48 89 5C 24 30                 MOV qword ptr [RSP + 0x30],RBX           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1B  4C 8D 0D 4E E2 34 02           LEA R9,[0x1425be430]                     [PC-RELATIVE/REF -- likely needs wildcarding]
++0x22  48 63 D9                       MOVSXD RBX,ECX                           
++0x25  48 C1 E3 05                    SHL RBX,0x5                              
++0x29  49 03 D9                       ADD RBX,R9                               
++0x2C  C6 43 1C 00                    MOV byte ptr [RBX + 0x1c],0x0            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x30  48 3B 1D B9 E2 34 02           CMP RBX,qword ptr [0x1425be4b0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x37  0F 85 A2 00 00 00              JNZ 0x14027029f                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3D  49 63 C8                       MOVSXD RCX,R8D                           
++0x40  45 85 C0                       TEST R8D,R8D                             
++0x43  78 23                          JS 0x140270228                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x45  48 8B C1                       MOV RAX,RCX                              
++0x48  48 8D 15 3D E2 34 02           LEA RDX,[0x1425be44c]                    [PC-RELATIVE/REF -- likely needs wildcarding]
++0x4F  48 C1 E0 05                    SHL RAX,0x5                              
++0x53  48 03 C2                       ADD RAX,RDX                              
++0x56  80 38 00                       CMP byte ptr [RAX],0x0                   [PC-RELATIVE/REF -- likely needs wildcarding]
++0x59  75 0D                          JNZ 0x140270228                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x5B  41 FF C8                       DEC R8D                                  
++0x5E  48 83 E8 20                    SUB RAX,0x20                             
++0x62  48 83 E9 01                    SUB RCX,0x1                              
++0x66  79 EE                          JNS 0x140270216                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x68  49 63 C0                       MOVSXD RAX,R8D                           
++0x6B  48 C1 E0 05                    SHL RAX,0x5                              
++0x6F  49 03 C1                       ADD RAX,R9                               
++0x72  48 89 05 77 E2 34 02           MOV qword ptr [0x1425be4b0],RAX          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x79  8B 08                          MOV ECX,dword ptr [RAX]                  [PC-RELATIVE/REF -- likely needs wildcarding]
++0x7B  E8 B0 43 D9 FF                 CALL 0x1400045f0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x80  48 8B 05 69 E2 34 02           MOV RAX,qword ptr [0x1425be4b0]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x87  8B 4B 04                       MOV ECX,dword ptr [RBX + 0x4]            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x8A  89 48 04                       MOV dword ptr [RAX + 0x4],ECX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x8D  B8 01 00 00 00                 MOV EAX,0x1                              
++0x92  3B F8                          CMP EDI,EAX                              
++0x94  0F 4D C7                       CMOVGE EAX,EDI                           
++0x97  66 0F 6E C8                    MOVD XMM1,EAX                            
+
+Raw bytes (155 total): 40 57 48 83 EC 20 44 8D 41 FF 8B FA 41 83 F8 02 0F 87 CE 00 00 00 48 89 5C 24 30 4C 8D 0D 4E E2 34 02 48 63 D9 48 C1 E3 05 49 03 D9 C6 43 1C 00 48 3B 1D B9 E2 34 02 0F 85 A2 00 00 00 49 63 C8 45 85 C0 78 23 48 8B C1 48 8D 15 3D E2 34 02 48 C1 E0 05 48 03 C2 80 38 00 75 0D 41 FF C8 48 83 E8 20 48 83 E9 01 79 EE 49 63 C0 48 C1 E0 05 49 03 C1 48 89 05 77 E2 34 02 8B 08 E8 B0 43 D9 FF 48 8B 05 69 E2 34 02 8B 4B 04 89 48 04 B8 01 00 00 00 3B F8 0F 4D C7 66 0F 6E C8
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+40 57 48 83 EC 20 44 8D 41 FF 8B FA 41 83 F8 02 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 48 63 D9 48 C1 E3 05 49 03 D9 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 49 63 C8 45 85 C0 ?? ?? 48 8B C1 ?? ?? ?? ?? ?? ?? ?? 48 C1 E0 05 48 03 C2 ?? ?? ?? ?? ?? 41 FF C8 48 83 E8 20 48 83 E9 01 ?? ?? 49 63 C0 48 C1 E0 05 49 03 C1 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? B8 01 00 00 00 3B F8 0F 4D C7 66 0F 6E C8
