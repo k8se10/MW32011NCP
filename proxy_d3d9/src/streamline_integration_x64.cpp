@@ -424,6 +424,25 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     pref.numFeaturesToLoad = 1;
     pref.engine = sl::EngineType::eCustom;
     pref.engineVersion = "MW32011NCP";
+    // 2026-09-27: REAL ROOT CAUSE of "Please provide correct application id" /
+    // eErrorFeatureMissing, found by reading NVIDIA's own open-source Streamline
+    // plugin source directly (github.com/NVIDIA-RTX/Streamline,
+    // source/plugins/sl.common/commonEntry.cpp) after the newly-wired log
+    // callback surfaced the error but not WHY it fires despite engine/
+    // engineVersion already being set. The real condition (commonEntry.cpp,
+    // ~line 1494): `bool hasProjectId = !engineVersion.empty() && !projectId.empty();`
+    // -- NGX's "no application id needed" path requires BOTH engineVersion AND
+    // projectId to be non-empty; engineVersion alone (this project's own prior
+    // setup) is NOT sufficient. projectId is a self-chosen GUID (sl_core_types.h's
+    // own doc comment: "Optional - GUID (like for example 'a0f57b54-1daf-4934-
+    // 90ae-c4035c19df04')") -- nothing about it implies NVIDIA has to issue or
+    // register it, unlike applicationId. This is the real, working path an
+    // independent developer without an NVIDIA partner relationship uses --
+    // confirmed directly from NVIDIA's own source, not a guess or a forum post.
+    // GUID generated locally for this project (PowerShell [guid]::NewGuid()),
+    // not obtained from or registered with NVIDIA -- matches the doc's own
+    // example format, self-chosen per its own "Optional" framing.
+    pref.projectId = "f648f6eb-4aaf-455a-8ac9-abdcebfb9dcd";
     // 2026-09-27: real log callback wired (see StreamlineLogCallbackX64's own
     // comment) -- eWarn/eError are "Always shown regardless of LogLevel" per
     // sl_core_types.h's own doc comment on LogType, so eDefault (not eVerbose)
