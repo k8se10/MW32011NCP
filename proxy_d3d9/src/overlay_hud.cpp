@@ -7686,7 +7686,21 @@ HRESULT WINAPI Hook_EndScene(void* device)
             // dedicated backend thread has already been observed at least once --
             // excludes the known, harmless startup transient).
 #if defined(_M_X64) || defined(_WIN64)
-            if (currentThreadId == mainThreadId && s_haveSeenBackendThread) {
+            // 2026-09-26 EXTENDED: previously only captured the FALLBACK
+            // direction (backend -> main). Direct instruction to keep
+            // chasing this mechanism ("renderdoc was unuseful yesterday"),
+            // per issue #4's own still-open "identify what native condition
+            // drives the view-index burst" next step -- reasoning about the
+            // fallback stack in isolation hit a wall (several of its own
+            // frames turned out to be real functions with zero static
+            // callers, per this session's earlier console-font-init trail).
+            // Capturing the RECOVERY direction too (main -> backend, the
+            // far more common transition) gives a real comparison baseline:
+            // whatever's structurally different between the two stacks at
+            // the moment of transition is the more likely place to find the
+            // actual scheduling decision, rather than trying to explain the
+            // fallback stack with nothing to contrast it against.
+            if (s_haveSeenBackendThread) {
                 constexpr int kFallbackMaxFrames = 8;
                 void* frames[kFallbackMaxFrames];
                 // FramesToSkip=1: skips CaptureStackBackTrace's own frame, landing
@@ -7694,7 +7708,8 @@ HRESULT WINAPI Hook_EndScene(void* device)
                 // i.e. the actual native code that invoked EndScene this time.
                 WORD frameCount = CaptureStackBackTrace(1, kFallbackMaxFrames, frames, nullptr);
                 char stackBuf[600];
-                int w = sprintf_s(stackBuf, "[render-thread-diag-stack] main-thread FALLBACK caller chain:");
+                int w = sprintf_s(stackBuf, "[render-thread-diag-stack] %s caller chain:",
+                    currentThreadId == mainThreadId ? "main-thread FALLBACK" : "backend-thread RECOVERY");
                 for (WORD i = 0; i < frameCount && w > 0 && w < 560; ++i) {
                     uintptr_t ghidraAddr = ToGhidraAddressLocalX64(frames[i]);
                     w += sprintf_s(stackBuf + w, sizeof(stackBuf) - w, " 0x%llX",
