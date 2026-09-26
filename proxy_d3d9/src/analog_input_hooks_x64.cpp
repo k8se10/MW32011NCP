@@ -609,7 +609,54 @@ void __fastcall Hook_MixReverbApply(int channelIndex)
         }
         LogFromController(buf);
     }
+
+    // MW32011NCP, 2026-09-26: real, reversible EXPERIMENT for issue #10 --
+    // see reverbWetScaleX64's own comment in mod_config.h for the full
+    // context. The real mixer (g_realMixReverbApply) re-reads the live wet
+    // float at *(effectiveZone+4) fresh on every call, never caching it --
+    // so scaling it down for the duration of this ONE call, then restoring
+    // it immediately after, changes what THIS call's reverb-affected
+    // channels hear without touching the real, level-authored value stored
+    // anywhere else (the reverb-zone activate/deactivate/lerp system, the
+    // GSC-facing state, and every other reader of this same global all see
+    // the real, unscaled value again the instant this call returns). No-op
+    // (reads and writes nothing) whenever the scale is 1.0 (default) or the
+    // effective-zone pointer never resolved.
+    bool wetWasScaled = false;
+    uintptr_t scaledZoneAddr = 0;
+    float originalWetForRestore = 0.0f;
+    if (g_modConfig.reverbWetScaleX64 < 1.0f && g_reverbEffectiveZonePtrAddr != nullptr) {
+#ifdef _WIN32
+        __try {
+            uintptr_t effectiveZone = *g_reverbEffectiveZonePtrAddr;
+            if (effectiveZone != 0) {
+                float* wetPtr = reinterpret_cast<float*>(effectiveZone + 4);
+                originalWetForRestore = *wetPtr;
+                *wetPtr = originalWetForRestore * g_modConfig.reverbWetScaleX64;
+                scaledZoneAddr = effectiveZone;
+                wetWasScaled = true;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            wetWasScaled = false;
+        }
+#endif
+    }
+
     g_realMixReverbApply(channelIndex);
+
+    if (wetWasScaled) {
+#ifdef _WIN32
+        __try {
+            *reinterpret_cast<float*>(scaledZoneAddr + 4) = originalWetForRestore;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            // Nothing to do -- if this write faults, the zone pointer became
+            // invalid between the two reads, in which case there is no
+            // "real" value left to restore anyway.
+        }
+#endif
+    }
 }
 
 // MW32011NCP, 2026-09-26: real x64 console/UI font-init function -- loads

@@ -1229,6 +1229,36 @@ struct ModConfig
     // "genuinely-redundant" once tested.
     bool skipRedundantScenePostfxGuaranteedCallsX64 = false;
 
+    // MW32011NCP, 2026-09-26: real, live-confirmed root cause for the
+    // "world/AI sounds and explosions sound like they're in a room, my own
+    // weapon doesn't" report -- issue #10, known_issues_x64.md. The
+    // player's own weapon-fire audio (channel=0) never reaches the native
+    // reverb-mixing function at all (confirmed live: channel=0 never once
+    // appeared across 255 real mix-apply diagnostic fires), while nearly
+    // every other sound (NPC fire, explosions, ambience) does, and gets the
+    // level's own currently-active reverb zone wet level (this mission:
+    // wet=0.900, constant across every room type it authored) multiplied
+    // straight into its real 3D-computed output gain with NO shaping --
+    // `outputGain = x3dGain * wetLevel`, a flat linear multiply, confirmed
+    // via decompile of FUN_14030e740. x86's equivalent mixing lives inside
+    // the closed-source Miles Sound System (mss32.dll, not imported on
+    // x64 at all -- x64 replaced it with a from-scratch X3DAudioCalculate-
+    // based mixer, confirmed via import-table diff), so there's no way to
+    // statically compare how Miles itself shaped the same wet value --
+    // plausible Miles applied something gentler (e.g. a reverb-bus send
+    // curve) than this new mixer's blunt direct multiply, given the same
+    // "0.9" level data produces a much stronger, more constant effect here.
+    // This is a real, reversible, config-driven EXPERIMENT, not a
+    // confirmed fix: scales the wet level actually used by the real mixer
+    // (temporarily overwriting the live effective-zone wet float right
+    // before the real call, restoring it immediately after -- the real
+    // function re-reads this value fresh on every call, never caches it)
+    // by this factor. 1.0 = unchanged (default, off). Values below 1.0
+    // soften the reverb; the real "right" value, if any, needs live
+    // listening tests, not something RE alone can determine. See
+    // known_issues_x64.md issue #10's newest round.
+    float reverbWetScaleX64 = 1.0f;
+
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
     // migration was LIVE-CONFIRMED working, and with it confirmed that the real
