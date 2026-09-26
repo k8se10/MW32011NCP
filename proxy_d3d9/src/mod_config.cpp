@@ -1411,9 +1411,12 @@ void LoadModConfig()
     ReadBool(path, "Video", "ProjectionJitterEnabled", g_modConfig.projectionJitterEnabled);
     ReadBool(path, "Video", "SkipRedundantShadowActivation", g_modConfig.skipRedundantShadowActivationX64);
     ReadBool(path, "Video", "SkipRedundantConsoleFontInit", g_modConfig.skipRedundantConsoleFontInitX64);
-    ReadBool(path, "Experimental", "SkipRedundantMasterSequencerReactivation",
+    // Graduated 2026-09-26 (real live confirmation, see mod_config.h's own
+    // comments) from [Experimental] to [Video], matching
+    // SkipRedundantShadowActivation's own precedent.
+    ReadBool(path, "Video", "SkipRedundantMasterSequencerReactivation",
              g_modConfig.skipRedundantMasterSequencerReactivationX64);
-    ReadBool(path, "Experimental", "SkipRedundantOrchestratorExtraCalls",
+    ReadBool(path, "Video", "SkipRedundantOrchestratorExtraCalls",
              g_modConfig.skipRedundantOrchestratorExtraCallsX64);
     ReadBool(path, "Experimental", "SkipRedundantScenePostfxGuaranteedCalls",
              g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64);

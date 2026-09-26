@@ -1163,12 +1163,19 @@ struct ModConfig
     // point, +0x1B into a 27-byte anchor signature) and skips forwarding
     // ONLY there when this toggle is on -- every other one of the
     // activator's 40 real call sites, including the already-separately-
-    // gated per-light one, is completely unaffected. Experimental / OFF by
-    // default -- a real native-behavior change, not yet live-tested; the
-    // player needs to explicitly opt in and confirm no visual regression
-    // (a stale view/pass-1 state) during the same repro this whole
-    // investigation has used.
-    bool skipRedundantMasterSequencerReactivationX64 = false;
+    // gated per-light one, is completely unaffected.
+    // **GRADUATED TO DEFAULT ON, 2026-09-26** -- live-tested by the user
+    // the same day: a real, measured ~10% framerate improvement, no
+    // visual regression. Direct instruction: "all of todays fixes that
+    // have shown genuine merit should be defaults." Note this is a
+    // lighter confirmation bar than SkipRedundantShadowActivation's own
+    // three-independent-session graduation above -- one real live test,
+    // not three -- done at explicit user instruction, not a silent
+    // equivalence. Still reads from `[Video]` (moved out of
+    // `[Experimental]`) to match; still watch for `[x64-seq-reactivation-
+    // skip]` lines and any stale view/pass-1 state if further testing
+    // ever surfaces one.
+    bool skipRedundantMasterSequencerReactivationX64 = true;
 
     // [Experimental] SkipRedundantOrchestratorExtraCalls (2026-09-26, issue
     // #4's "point (a)" finding -- known_issues_x64.md). x64's per-frame
@@ -1183,9 +1190,14 @@ struct ModConfig
     // FindCallersAt.java + direct disassembly (0x14018e4b8 and 0x14018e637).
     // Fix: extends the same shared activator hook the two toggles above
     // already use, matching these two additional known return addresses and
-    // skipping forwarding only there. Experimental / OFF by default -- a
-    // real native-behavior change, not yet live-tested.
-    bool skipRedundantOrchestratorExtraCallsX64 = false;
+    // skipping forwarding only there.
+    // **GRADUATED TO DEFAULT ON, 2026-09-26** -- live-tested by the user
+    // the same day alongside the fix above: another real ~10% improvement
+    // on top (compounding to ~19-20% total), no visual regression. Same
+    // "one real live test, explicit user instruction" graduation bar as
+    // the toggle above -- see its own comment. Now reads from `[Video]`
+    // (moved out of `[Experimental]`).
+    bool skipRedundantOrchestratorExtraCallsX64 = true;
 
     // [Experimental] SkipRedundantScenePostfxGuaranteedCalls (2026-09-26,
     // issue #4's "point (c)" finding -- known_issues_x64.md). x64's
@@ -1248,16 +1260,27 @@ struct ModConfig
     // plausible Miles applied something gentler (e.g. a reverb-bus send
     // curve) than this new mixer's blunt direct multiply, given the same
     // "0.9" level data produces a much stronger, more constant effect here.
-    // This is a real, reversible, config-driven EXPERIMENT, not a
-    // confirmed fix: scales the wet level actually used by the real mixer
-    // (temporarily overwriting the live effective-zone wet float right
-    // before the real call, restoring it immediately after -- the real
-    // function re-reads this value fresh on every call, never caches it)
-    // by this factor. 1.0 = unchanged (default, off). Values below 1.0
-    // soften the reverb; the real "right" value, if any, needs live
-    // listening tests, not something RE alone can determine. See
-    // known_issues_x64.md issue #10's newest round.
-    float reverbWetScaleX64 = 1.0f;
+    // Reversible, config-driven: scales the wet level actually used by the
+    // real mixer (temporarily overwriting the live effective-zone wet float
+    // right before the real call, restoring it immediately after -- the
+    // real function re-reads this value fresh on every call, never caches
+    // it) by this factor, ADDITIONALLY divided by `sqrt(concurrentVoice-
+    // Count)` when more than one reverb-affected channel is active at once
+    // (fixes a second, separate missing-cap bug -- see
+    // g_mixReverbConcurrentCountPrevTick's own comment in
+    // analog_input_hooks_x64.cpp). 1.0 = fully unchanged.
+    // **GRADUATED TO 0.5 DEFAULT, 2026-09-26** -- live-tested by the user
+    // across both single-shot and overlapping-gunfire cases (the
+    // concurrent-voice fix landed the same day) and confirmed correct
+    // ("perfection"). Direct instruction: "all of todays fixes that have
+    // shown genuine merit should be defaults." Unlike the two boolean
+    // skip-fixes above, this is a genuinely subjective tuning value, not a
+    // provably-safe-or-not toggle -- 0.5 is what this user confirmed
+    // sounds right on their own system/session, not a value RE alone
+    // could prove universally correct. Stays overridable via
+    // `[Experimental] ReverbWetScale` for anyone who wants a different
+    // balance. See known_issues_x64.md issue #10 (now Resolved).
+    float reverbWetScaleX64 = 0.5f;
 
     // sprintStaminaBypassForTesting (task #9) REMOVED 2026-07-19: graduated to
     // unconditional the same day it was added -- Sprint's real +sprint kbutton
