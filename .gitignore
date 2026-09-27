@@ -140,6 +140,9 @@ re_notes/ghidra_project_x64/
 # above.
 re_notes/x64_migration/ghidra_project_x86_analyzed/
 re_notes/x64_migration/ghidra_project_x64_analyzed/
+# 2026-09-27, MP controls port (mp_port_plan.md step 7): new analyzed iw5mp.exe project,
+# added to this rule proactively before running Ghidra, not found unprotected after the fact.
+re_notes/x64_migration/ghidra_project_x64_mp_analyzed/
 
 # CRITICAL, found 2026-09-24: the real, copyrighted Activision game executables
 # (iw5sp.exe/iw5mp.exe, both the x64 and preserved-old-x86 copies) were tracked

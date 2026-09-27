@@ -1,5 +1,41 @@
 # MP port plan: controller pipeline and performance fixes on `iw5mp.exe` (2026-09-27)
 
+**Status update (2026-09-27, later): Step 7 (movement/look) started.** Real
+groundwork found while auditing what Sprint/Pmove actually depend on before
+touching any signature: `kAnchorSignature` (SP `FUN_14007c3a0`) is far more
+load-bearing than §2.1's own table entries suggested -- it's not just the
+kbutton dispatcher, it's the SINGLE shared anchor every one of these resolves
+from via a FIXED BYTE OFFSET into its own disassembly, using
+`SigScan::ResolveRipRelative(anchor + insnOffset, 7)`:
+`g_fireStruct` (+0x70), `g_timestampPtr` (+0x41), `g_reloadStruct` (+0x1EF),
+`g_adsStruct` (+0xAB4), `g_adsToggleFlag` (+0xA9F), `g_sprintStruct` (+0xB0D),
+`g_holdBreathStruct` (+0x8C9), plus `g_stanceDispatch` (the anchor address
+itself, called directly for CrouchProne and Jump's auto-stand). §2.1's table
+lists the anchor's MP twin (`0x1400ce950`) as LOW confidence, "only needed if
+a feature depends on it" -- in fact EVERY core button feature (Fire, ADS,
+Reload, Sprint, Hold Breath, CrouchProne, Jump auto-stand) depends on it. If
+MP's dispatcher has even slightly different codegen before any one of these
+seven offsets, that one resolve silently returns a wrong address -- this is
+the single highest-risk, highest-leverage unknown in the whole controller
+port, ahead of the movement-tick/FOV twins themselves. **Do not wire Sprint,
+Fire/ADS/Reload, or CrouchProne/Jump-auto-stand to MP until this anchor and
+all seven offsets are individually re-derived from a real MP decompile** --
+confirming the anchor FUNCTION resolves is not sufficient, per §3's own
+standing rule.
+
+A full Ghidra analysis of `iw5mp.exe` (no analyzed project existed before
+this) was started headless in the background
+(`re_notes/x64_migration/ghidra_project_x64_mp_analyzed/`, gitignored) to
+get real decompile output for this anchor and the movement-tick/FOV/mounted-
+aim LOW-tier twins -- raw capstone alone hit MSVC function-chunking (the SP
+movement-tick's own `.pdata` entry for `0x14007d9f0` is only 0x24 bytes, a
+prologue chunk; the real body continues in a separate cold-path chunk stitched
+by Ghidra's own decompiler, not resolvable from a flat linear disassembly).
+Next session: once that analysis completes, decompile the MP anchor
+candidate (`0x1400ce950`) and the movement/FOV/mounted-aim twins, confirm or
+refute each against the SP originals per §3, THEN start wiring per §6's
+implementation order.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to
