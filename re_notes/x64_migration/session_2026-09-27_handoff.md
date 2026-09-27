@@ -272,3 +272,17 @@ not captured yet. **Next:**
 - SP `.data` is 63.5 MB (MP 132 MB), not a gigabyte.
 - The old SP string `"Debugger is present."` is DirectShow HRESULT text,
   not an anti-debug check.
+
+## x64 dvar write path (later 2026-09-27) — build-ready, awaiting a live test
+- The real setters were found (`Dvar_SetVariant` `FUN_1402c5f30` plus the typed family at
+  `0x1402c52b0..0x1402c6272`), and the write path is implemented in `dvar_write_x64.cpp`. Full RE:
+  `dvar_write_path_x64.md`; status: `known_issues_x64.md` issue #6.
+- Every write is queued and applied on the main thread by a hook on the Com_Frame body
+  (`FUN_14023cf20`). The engine silently drops flagged-dvar writes from other threads.
+- The drain dispatches on the dvar's real type, because the typed setters don't convert
+  (`r_texFilterAnisoMax`/`Min` are int).
+- x64 `GetDvarBool`/`Float`/`String` in `real_settings.cpp` now read real values.
+- The F4 `SetDvarIntX64` path rides the same queue; its hardcoded addresses are removed.
+- SP only. MP's Com_Frame body isn't RE'd yet.
+- Correction: `Dvar_FindVar` has 20 direct callers plus 30 via the `JMP` thunk at `0x1402c3980`. Type 6
+  is enum and type 7 is string (older comments call type 6 "string").

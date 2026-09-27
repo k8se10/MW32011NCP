@@ -71,7 +71,7 @@ gun-type switching (confirmed GSC/data-driven, no native hook point). See
 - [#3](#3-mp-launch-crash-frame-pacings-hardcoded-dvar-lookup-address) — MP launch crash (frame pacing's hardcoded dvar-lookup address) — **Resolved, live-confirmed 2026-09-23**
 - [#4](#4-sp-damagepauselevel-transition-stutter----render-scale-proportional-real-hardcoded-memory-pool-constants-found-genuine-but-do-not-explain-the-full-4gb-ceiling-on-their-own) — SP damage/pause/level-transition stutter, render-scale-proportional — **Investigating; main driver (missing shadow-activation hardware-capability gate) found and FIXED/live-confirmed 2026-09-25 (`SkipRedundantShadowActivation`); pause-vs-live and sunny-map differential still not fully closed -- 2026-09-26: exhaustive whole-binary CPU-side sweep (SSAO, race-condition, I/O, whole-binary import diff, blur shaders, UI jump table, GSC, cl_paused refs) found nothing else, all closed negative; new in-process GPU-inclusive timing tool (`GpuSyncTimingLogging`, vkQueueWaitIdle-based) built, a real bug fixed (wrong `vkGetInstanceProcAddr` instance arg), and live-tested -- `cl_paused` itself confirmed NOT to track x64's real pause state (stayed 0 through a genuine pause); DECISIVE real per-frame data found instead directly in the existing `[x64-renderview-rate]` log (a dense fps-drop-triggered burst spanning the whole pause/unpause cycle): pause ~99ms/frame (~10.1fps) vs gameplay ~58ms/frame (~17.2fps) on the IDENTICAL repro scene, no content change between blocks -- ~1.71x slower, a fourth independent confirmation the differential is real and not fully closed by the shipped shadow-activation fix; **REAL MECHANISM FOUND via direct decompile: pause runs the entire per-light shadow-dispatch loop TWICE per frame (confirmed byte-identical `[x64-renderview-seq]` sequences except for a second, full repeat of the loop), driven by a real, pre-existing, generic "extra frame requested" reference count (`DAT_1418854d0`) in the confirmed main loop -- very likely original, shared, by-design behavior (x86 has the same structural 3-gated-call-site main loop), meaning the x64 regression isn't the double render itself, it's that each of those two renders costs more on x64 (the already-fixed shadow-activation gap) -- paid twice per frame while paused instead of once, which is why the pause differential reads larger than gameplay's own**; separately, real zone-data light-setup investigation (`tools/iw5oat`) merged a real upstream OpenAssetTools fix (PR #1007) and fixed a genuine systemic null-pointer crash in the shared dependency-marking path -- Dome/Underground/sp_dubai now progress far past their original hard blocker, current wall is the separate, pre-existing "invalid block 15" thread
 - [#5](#5-motion-blur-was-controller-only----now-reacts-to-real-per-tick-view-angle-change-from-any-input-device) — Motion blur was controller-only — **Superseded, see issue #2 for the real (hybrid) fix — this entry's own "universal capture" code regressed controller motion blur**
-- [#6](#6-forceanisotropicfilteringforcehighqualityshadowsforcehighqualitylighting-are-silent-no-ops-on-x64-sp-included-not-just-mp) — `ForceAnisotropicFiltering`/`ForceHighQualityShadows`/`ForceHighQualityLighting` are silent no-ops on x64 (SP included, not just MP) — **Open, found 2026-09-23 while scoping the MP visual-suite port**
+- [#6](#6-forceanisotropicfilteringforcehighqualityshadowsforcehighqualitylighting-are-silent-no-ops-on-x64-sp-included-not-just-mp) — `ForceAnisotropicFiltering`/`ForceHighQualityShadows`/`ForceHighQualityLighting` are silent no-ops on x64 (SP included, not just MP) — **Open, found 2026-09-23 while scoping the MP visual-suite port. 2026-09-27: the real x64 write path was found and implemented (`dvar_write_x64.cpp`, `re_notes/x64_migration/dvar_write_path_x64.md`). It's build-ready but not live-tested, so the issue stays open until the checklist passes.**
 - [#7](#7-bdanticheat-demonwares-own-separate-from-vac-re-verified-against-the-current-x64-binaries----unchanged-no-arxan-found-either) — `bdAntiCheat` re-verified against the current x64 binaries — **Verified, informational; unchanged from the x86-era finding, no Arxan present, two new undocumented strings flagged**
 - [#8](#8-real-public-report-campaign-very-very-serious-performance-problem-since-activisions-own-x64-update----vanilla-game-not-this-mod-a-real-pre-release-investigation-lead) — Real public report of Campaign performance regression since Activision's own x64 update (vanilla game, `r/mw3`) — **Investigating; real candidate mechanism already on record (the 3GB memory-detection cap, issue #4), not yet tested against this specific report**
 - [#9](#9-real-pre-existing-game-hangfreeze-during-extended-play----direct-user-report-first-live-captured-log-evidence-of-a-genuine-deadlock-not-a-crash) — Real, pre-existing game hang/freeze during extended play — **Investigating; first live log capture confirms a genuine deadlock (no clean detach, 7s of static background-thread readings), not a crash; user confirms this predates `GpuSyncTimingLogging` (now disabled as a precaution, not treated as root cause); not yet reproduced on demand**
@@ -11147,7 +11147,7 @@ Build-verified (x64 Release, 0 errors, deployed). Not yet live-tested with a key
 
 ## 6. `ForceAnisotropicFiltering`/`ForceHighQualityShadows`/`ForceHighQualityLighting` are silent no-ops on x64 (SP included, not just MP)
 
-**Status: Open.** Found 2026-09-23 while scoping the visual-enhancement-suite port to `iw5mp.exe` (see the "MP visual-suite port scoping" round below) -- a genuinely new finding, not something the MP work introduced.
+**Status: Open, fix implemented 2026-09-27, awaiting a live test** (see the 2026-09-27 update at the end of this section). Found 2026-09-23 while scoping the visual-enhancement-suite port to `iw5mp.exe` (see the "MP visual-suite port scoping" round below) -- a genuinely new finding, not something the MP work introduced.
 
 `x64_feature_parity_audit.md` rows #46-48 claimed all three of these were "PRESENT"/"confirmed firing on x64 via log evidence." That verdict is wrong, carried over uncritically from x86-era testing rather than re-verified on x64 -- the exact documentation-drift bug class this same audit file already caught itself doing once before (2026-09-13's own correction round).
 
@@ -11160,6 +11160,53 @@ This is the SAME underlying gap `x64_feature_parity_audit.md` row #64 already do
 **Deliberately NOT fixed as part of the MP-porting work that surfaced it** -- this is a genuinely separate, deeper RE task (finding real x64 `SetDvarBool`/`SetDvarFloat`/`SetDvarString` native equivalents, the same missing piece row #64 already flagged blocks the Custom Options screen too) than "port an already-working SP feature to MP." Fixing it would benefit SP, MP, AND the already-deferred Custom Options screen data layer all at once, so it's worth doing as its own dedicated pass rather than folded into the MP visual-suite port. `InternalRenderScalePercent` (a pure D3D9-level render-target override, no dvar write involved at all) and `FsrSharpenEnabled`/motion blur (once their own MP-specific gate-signature work lands, see issue #4's sibling scoping notes) are unaffected by this bug and remain real, working candidates for the MP port.
 
 **Second, independent, stronger motivation to prioritize this found the same day**: the renderer-architecture-mapping pass (`renderer_architecture_map.md` section 5b) turned up a complete, real, fully-named native SSAO feature -- `r_ssao`/`r_ssaoStrength`/`r_ssaoPower`/`r_ssaoBlurRadius`/`r_ssaoDownsample`/`r_ssaoDebug`, a real dvar set with full-res and downsampled quality tiers and its own debug visualization mode, never touched or even documented by this project before. Also directly relevant to `known_issues_x64.md` issue #2 (SMAA parked) -- `r_ssaoDebug` is a real, ready-to-use tool for testing whether native SSAO is involved in that pass's own "looks worse than off" symptom. Both this and the three forced-quality toggles above stay unforceable on x64 until this same underlying gap is closed -- fixing it once unlocks a substantially more valuable feature set than either use case alone.
+
+
+### UPDATE 2026-09-27 — real x64 setter found, write path implemented (build-ready, not live-tested)
+
+Full trail: `re_notes/x64_migration/dvar_write_path_x64.md`.
+
+**Why the 2026-09-2x search missed it:**
+- `Dvar_FindVar` has a second entry: a `JMP` thunk at `0x1402c3980` with 30 more callers.
+- The setters themselves call `FUN_1402c3890` directly, further down the same module. The direct-caller
+  count is 20, not 19.
+- This pass walked **down** from the menu script `setdvar` handler (`FUN_1402a3180`) to
+  `Dvar_SetFromStringByName` (`FUN_1402c5900`), which led to the whole setter family.
+
+**The setters:**
+- Single sink: `Dvar_SetVariant` (`FUN_1402c5f30`).
+- Typed setters that take a cached `dvar_t*`: `Dvar_SetBool` `0x1402c52b0`, `Dvar_SetInt` `0x1402c5ad0`,
+  `Dvar_SetFloat` `0x1402c5700`.
+- `Dvar_SetFromStringFromSource` `0x1402c5a30`.
+- All four signatures are unique in SP and in MP.
+
+**Three findings that shaped the implementation:**
+1. **Main-thread gate.** `Dvar_SetVariant` silently drops a write to any flagged dvar unless it's called
+   on the engine main thread. Every caller of ours runs on the render thread or the input thread. So
+   writes are queued, and a new hook drains them at the top of the **Com_Frame body** (`FUN_14023cf20`).
+   That runs once per frame in menus and gameplay, and its first action is the archive → `config.cfg`
+   write, so archived values persist in the same frame.
+2. **Type-mismatch trap.** The typed setters don't convert a non-native type: they pass a string pointer
+   as the raw value. `r_texFilterAnisoMax`/`Min` are **int** dvars (1..16), so the old
+   `SetDvarFloat(…, 16.0f)` could never have landed. The drain dispatches on the dvar's real type tag.
+3. **Internal source bypasses protections.** Source 0 (internal) skips the latch, cheat and write-protect
+   checks, matching x86's param_5 = 0. None of the five Force* dvars is latched. `sm_fastSunShadow` is
+   cheat-flagged, which only blocks console sets.
+
+**What changed:**
+- `SetDvarBool`/`SetDvarFloat`/`SetDvarString` are live on x64.
+- `GetDvarBool`/`GetDvarFloat`/`GetDvarString` read real values on x64. They previously always returned
+  0/nullptr.
+- The F4 `SetDvarIntX64` path uses the same queue. Its hardcoded `0x142005820`/`0x1402c3890` addresses
+  are gone, and it now works in the pause menu.
+- Every write logs `[x64-dvarwrite] name = value -> read-back … : OK|MISMATCH|SKIPPED|FAILED`.
+
+**Scope:**
+- SP only. MP's Com_Frame body isn't RE'd, so MP rejects writes with a single logged reason.
+- Keybind and localization writers in `real_settings.cpp` are still x86-only stubs. That's the other half
+  of row #64.
+
+**Live checklist:** `dvar_write_path_x64.md` §7.
 
 ---
 
