@@ -69,6 +69,7 @@ extern VkDevice GetDxvkVkDeviceX64(); // streamline_integration_x64.cpp
 extern VkQueue GetDxvkVkQueueX64(); // streamline_integration_x64.cpp
 extern uint32_t GetDxvkVkGraphicsQueueFamilyIndexX64(); // streamline_integration_x64.cpp
 extern bool StreamlineDLSSSetOptionsX64(uint32_t outputWidth, uint32_t outputHeight, int modeValue); // streamline_integration_x64.cpp
+extern bool StreamlineAllocateResourcesX64(sl::Feature feature); // streamline_integration_x64.cpp, 2026-09-27
 extern bool StreamlineEvaluateFeatureX64(void* vkCommandBuffer); // streamline_integration_x64.cpp
 extern bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp,
     // the real render-scale-produced INPUT resolution DLSS reads from -- see this
@@ -640,6 +641,19 @@ void PrewarmDlssOptionsX64(void* device)
         "(display=%ux%u mode=%d, ok=%d) -- real DLSS resource allocation now happens at an idle moment, "
         "not on the first real gameplay frame.", displayWidth, displayHeight, mode, ok ? 1 : 0);
     LogFromController(buf);
+
+    // REAL FIX, 2026-09-27 -- see StreamlineAllocateResourcesX64's own top
+    // comment (streamline_integration_x64.cpp) for the real GPU-hang finding
+    // this closes. Only meaningful once slDLSSSetOptions itself has actually
+    // succeeded (the feature must be configured before its resources can be
+    // meaningfully allocated).
+    if (ok) {
+        bool allocOk = StreamlineAllocateResourcesX64(sl::kFeatureDLSS);
+        char abuf[200];
+        sprintf_s(abuf, "[x64-streamline-evaluate] Pre-warmed slAllocateResources(DLSS) at "
+            "device-registration time, ok=%d.", allocOk ? 1 : 0);
+        LogFromController(abuf);
+    }
 }
 
 // 2026-09-27: public accessor for streamline_resources_x64.cpp -- the real

@@ -74,6 +74,11 @@ PFun_slIsFeatureLoaded_t* g_slIsFeatureLoaded = nullptr; // 2026-09-27, real
     // DLSS_NR detection -- resolved best-effort (not part of the FATAL
     // missing-exports check below, since it's diagnostic-only and this
     // SDK version is already confirmed to export it either way).
+using PFun_slAllocateResources_t = sl::Result(sl::CommandBuffer*, sl::Feature, const sl::ViewportHandle&);
+PFun_slAllocateResources_t* g_slAllocateResources = nullptr; // 2026-09-27, real
+    // pre-warm mechanism -- see StreamlineAllocateResourcesX64's own comment
+    // for the real GPU-hang finding this closes. Resolved best-effort, same
+    // reasoning as g_slIsFeatureLoaded above.
 bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
 sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
@@ -146,6 +151,8 @@ bool TryLoadStreamlineInterposer()
         GetProcAddress(slModule, "slGetFeatureFunction"));
     g_slIsFeatureLoaded = reinterpret_cast<PFun_slIsFeatureLoaded_t*>(
         GetProcAddress(slModule, "slIsFeatureLoaded")); // best-effort, not FATAL if missing
+    g_slAllocateResources = reinterpret_cast<PFun_slAllocateResources_t*>(
+        GetProcAddress(slModule, "slAllocateResources")); // best-effort, not FATAL if missing
     if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo
         || !g_slGetNewFrameToken || !g_slSetTagForFrame || !g_slSetConstants
         || !g_slEvaluateFeature || !g_slGetFeatureFunction) {
@@ -786,6 +793,59 @@ bool StreamlineDLSSSetOptionsX64(uint32_t outputWidth, uint32_t outputHeight, in
     char buf[250];
     sprintf_s(buf, "[streamline] slDLSSSetOptions(mode=%d, output=%ux%u) %s (result=%d)",
         modeValue, outputWidth, outputHeight, result == sl::Result::eOk ? "succeeded" : "FAILED",
+        static_cast<int>(result));
+    LogFromController(buf);
+    return result == sl::Result::eOk;
+}
+
+// 2026-09-27: real slAllocateResources wrapper -- the documented, correct
+// mechanism for pre-allocating a feature's real internal GPU resources
+// AHEAD of the first real slEvaluateFeature call. Real, live-reported
+// finding this closes: the first-ever real evaluate call (cold, mid-real-
+// gameplay) hung the GPU -- vkQueueSubmit succeeded but vkWaitForFences
+// reported VK_ERROR_DEVICE_LOST, consistent with Windows' own GPU Timeout
+// Detection and Recovery (TDR, a real, standard ~2s watchdog on any single
+// GPU command buffer) killing a legitimately slow first-time cold
+// initialization (Streamline/NGX's own internal pipeline creation, shader
+// compilation, etc.) -- the exact class of problem CUDA/ML developers hit
+// routinely on a slow first kernel launch. A registry-level TDR delay
+// increase is the standard fix for that class of problem in general, but
+// is not viable for something this project ships to other players (direct
+// user correction: "reg fix doesnt work for something publically
+// shipped") -- this API is the real, documented, code-only alternative:
+// call it once, early, at a safe/idle moment (this project's own
+// PrewarmDlssOptionsX64, streamline_evaluate_x64.cpp) so whatever cold
+// one-time cost exists happens there instead of on the first real
+// gameplay frame. `cmdBuffer` is deliberately passed as nullptr -- the
+// real doc comment on slAllocateResources explicitly allows this ("can be
+// null if not needed"), and no FrameToken is required by this function at
+// all (unlike slSetTagForFrame/slSetConstants/slEvaluateFeature), so this
+// can run before any per-frame tracking has even started.
+// HONEST, NOT YET CONFIRMED: whether slAllocateResources's own real internal
+// work is allocation-only (fast) or also includes the actual slow
+// first-time compute/compile cost this project is trying to move earlier --
+// this is inferred from its own name/doc comment, not independently
+// verified against Streamline's own closed-source internals. A real, more
+// thorough (but larger-scope) alternative -- a tiny dummy slEvaluateFeature
+// call at pre-warm time, using resources this project creates and owns
+// itself -- was considered and deliberately NOT attempted this session
+// given its real added complexity and this session's own already-repeated
+// live-hang cost; flagged as a real, scoped next step if this alone proves
+// insufficient.
+bool StreamlineAllocateResourcesX64(sl::Feature feature)
+{
+    if (!g_streamlineVulkanInfoSet) return false;
+    if (!g_slAllocateResources) {
+        LogFromController("[streamline] slAllocateResources failed to resolve -- cannot pre-warm "
+            "DLSS's own resource allocation this session.");
+        return false;
+    }
+
+    sl::ViewportHandle viewport(static_cast<uint32_t>(0));
+    sl::Result result = g_slAllocateResources(nullptr, feature, viewport);
+    char buf[200];
+    sprintf_s(buf, "[streamline] slAllocateResources(feature=%d) %s (result=%d)",
+        static_cast<int>(feature), result == sl::Result::eOk ? "succeeded" : "FAILED",
         static_cast<int>(result));
     LogFromController(buf);
     return result == sl::Result::eOk;
