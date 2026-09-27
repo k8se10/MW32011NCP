@@ -105,6 +105,49 @@ project, not yet done. Pmove tick (0x1400168a0->0x14003a890, HIGH) also not
 yet wired -- SP's own hook is still diagnostic-only (log-and-call-through),
 so porting it is low-risk but not yet done either.
 
+**Status update (2026-09-27, later still): movement + Fire/ADS/Reload SHIPPED,
+direct instruction "we need all buttons and sticks to work."** Decompiled the
+movement-tick LOW-tier twin (0x1400d0050) directly rather than leaving it as
+an unconfirmed candidate: it writes `*(undefined1*)(param_2+0x1c)` /
+`+0x1d` -- the EXACT usercmd_t forwardmove/rightmove offsets this project's
+own layout research already established for SP (and x86 before it). That
+byte-offset match is a strong independent structural confirmation on its own,
+beyond the original automated matcher's LOW "7/16 neighbours" score. Real,
+load-bearing calling-convention difference from SP found via the decompile:
+MP's version takes THREE params (`int param_1` -- a per-client context/index,
+NOT the usercmd pointer; `longlong param_2` -- the real usercmd_t*, playing
+SP's own param_1 role; `undefined4 param_3`), not SP's two -- a new
+`MovementTickFnMP` trampoline type and a dedicated `kMovementTickSignatureMP`
+(confirmed unique in iw5mp.exe) were needed, not a reuse of SP's own type/sig.
+
+**Shipped** (`Hook_MovementTickMP`, wired into `InstallMpAnchorAndSprintHooksX64`
+alongside the anchor/Sprint work above): left-stick movement, and Fire/ADS/
+Reload reusing the anchor-resolved struct addresses from the earlier status
+update (the fire/reload/ads/adsToggle groundwork flagged "not yet wired" there
+is now consumed). ADS explicitly sets the real ADS-active flag on the edge,
+matching SP's own hard-learned lesson (the kbutton call alone doesn't drive
+actual engagement) applied preemptively rather than waiting to rediscover it
+live in MP.
+
+**Deliberately NOT wired this pass, real open gaps**:
+- **LOOK (right stick)** -- MP's angle-accumulator addresses (SP's own
+  `kAngleAccumSignature` twin) are still OPEN, no candidate found. Writing
+  look before a verified address exists would mean writing to a guess, the
+  exact thing this project's signature-scanning policy exists to prevent.
+- **The sniper Fire/ADS notify-bind-dispatch fix** (`g_notifyBindDispatch`,
+  SP's own `kNotifyBindFuncOffset`) -- its MP address hasn't been researched.
+  MP Fire/ADS may reproduce SP's own pre-fix sniper-class regression
+  (`known_issues_x64.md` issue #1) until this is done.
+- **D-pad action slots, Weapnext, CrouchProne/Jump/Melee/Lethal/Tactical/
+  Interact/Scoreboard** -- all still OPEN per this document's own §2.1 table;
+  MP's action-slot cases differ structurally from SP's (killstreaks, not the
+  same layout), confirmed again by this session's own anchor decompile
+  (MP's dispatcher case numbers for the shared block are shifted +6 from SP's
+  own, see the anchor status update above).
+
+Build-verified 0 errors/0 warnings (x64 and Win32); x64 redeployed and
+confirmed via dumpbin. Not yet live-tested in a private match.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to

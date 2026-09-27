@@ -2392,6 +2392,10 @@ extern volatile uint32_t* g_timestampPtr;
 extern int* g_sprintStructMP;
 extern int* g_holdBreathStructMP;
 extern volatile uint32_t* g_timestampPtrMP;
+extern int* g_fireStructMP;
+extern int* g_reloadStructMP;
+extern int* g_adsStructMP;
+extern volatile uint8_t* g_adsToggleFlagMP;
 int GetRealStanceX64();
 void ForceStandingViaRealToggleX64();
 
@@ -2668,6 +2672,26 @@ constexpr const char* kAngleAccumSignature =
 
 using MovementTickFn = void(__fastcall*)(void* param1, unsigned int param2);
 MovementTickFn g_realMovementTick = nullptr;
+
+// MP twin (mp_port_plan.md step 7, 2026-09-27): FUN_1400d0050, confirmed via decompile
+// (Ghidra) to write to param_2+0x1c/param_2+0x1d as signed bytes -- the EXACT usercmd_t
+// forwardmove/rightmove offsets this project's own layout research already established for
+// SP (and x86 before it), a strong independent structural confirmation beyond the original
+// automated matcher's own LOW-confidence "7/16 neighbours" score. Real, load-bearing
+// calling-convention difference from SP: MP's version takes THREE params (int param_1 --
+// some per-client context/index, NOT the usercmd pointer; longlong param_2 -- the real
+// usercmd_t* SP's own param_1 is directly; undefined4 param_3), not SP's two -- MinHook's
+// trampoline type has to match this exactly for a correct call-through. LOOK (right stick)
+// is NOT wired here -- MP's own angle-accumulator addresses (SP's own kAngleAccumSignature
+// twin) are still OPEN, no candidate found yet (see mp_port_plan.md step 7's own "still
+// open" note) -- wiring look before those are found and verified would mean writing to an
+// unverified/guessed address, exactly what this project's own signature-scanning policy
+// exists to prevent. Confirmed a UNIQUE (1 occurrence) match in iw5mp.exe via a direct
+// offline pattern scan before being trusted here.
+constexpr const char* kMovementTickSignatureMP =
+    "48 89 5C 24 18 56 48 81 EC A0 00 00 00 83 3D ?? ?? ?? ?? 00 48 8B DA 44 0F 29 5C 24 70 44 0F 28 DA 48 63 F1";
+using MovementTickFnMP = void(__fastcall*)(int param1, void* param2, unsigned int param3);
+MovementTickFnMP g_realMovementTickMP = nullptr;
 
 // ---- "Needs a click to get input" gate, x64 (2026-09-04, live-reported) -----------
 //
@@ -9717,6 +9741,83 @@ void InstallMenuNavigationHooksX64()
     }
 }
 
+// MP controller pipeline (mp_port_plan.md step 7, 2026-09-27): movement (left stick) plus
+// Fire/ADS/Reload. Direct instruction: "we need all buttons and sticks to work." See
+// kMovementTickSignatureMP's own header comment for the real per-param calling-convention
+// difference from SP and the confirmation trail. Scope, explicitly NOT everything yet:
+//   - LOOK (right stick) is NOT wired -- MP's angle-accumulator addresses are still
+//     unresolved (OPEN in mp_port_plan.md), and this project's own signature-scanning
+//     policy requires a verified address before ever writing to one, not a guess.
+//   - The sniper Fire/ADS notify-bind-dispatch fix (g_notifyBindDispatch, SP-only
+//     kNotifyBindFuncOffset) is NOT ported -- its own MP address hasn't been researched.
+//     Fire/ADS may reproduce SP's own pre-fix sniper-class regression (known_issues_x64.md
+//     issue #1) until that's done; flagged here rather than silently risked.
+//   - D-pad action slots, Weapnext, CrouchProne/Jump/Melee/Lethal/Tactical/Interact/
+//     Scoreboard are NOT wired -- mp_port_plan.md marks their own signatures OPEN (no
+//     candidate found yet, MP's action slots differ structurally -- killstreaks).
+void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param3)
+{
+    GameplayHookCtxScopeX64 gameplayCtx;
+    g_lastGameplayTickMsX64 = GetTickCount();
+    g_realMovementTickMP(param1, param2, param3);
+
+    if (param2 && !g_modConfig.disableControllerInputX64) {
+        float leftX, leftY, rightX, rightY;
+        if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
+            float moveX, moveY, lookX, lookY;
+            RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
+            (void)lookX; (void)lookY; // LOOK not wired yet for MP -- see this function's own header comment
+
+            auto* cmd = reinterpret_cast<unsigned char*>(param2);
+            if (moveX != 0.0f || moveY != 0.0f) {
+                int8_t curForward = static_cast<int8_t>(cmd[0x1c]);
+                int8_t curRight   = static_cast<int8_t>(cmd[0x1d]);
+                int addForward = static_cast<int>(moveY * 127.0f);
+                int addRight   = static_cast<int>(moveX * 127.0f);
+                cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
+                cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
+            }
+        }
+
+        unsigned short xiButtons = 0;
+        unsigned char leftTrigger = 0, rightTrigger = 0;
+        if (Controller_GetRawButtonsAndTriggers(xiButtons, leftTrigger, rightTrigger)
+            && g_kbuttonActivate && g_kbuttonDeactivate) {
+            int timestamp = g_timestampPtrMP ? static_cast<int>(*g_timestampPtrMP) : 0;
+
+            if (g_fireStructMP) {
+                bool fireHeld = IsPhysicalHeld_Exported(g_buttonMap.fire, xiButtons, leftTrigger, rightTrigger);
+                if (fireHeld != g_fireHeldX64) {
+                    g_fireHeldX64 = fireHeld;
+                    if (fireHeld) g_kbuttonActivate(g_fireStructMP, kSyntheticSourceId, timestamp);
+                    else g_kbuttonDeactivate(g_fireStructMP, kSyntheticSourceId, timestamp);
+                }
+            }
+            if (g_adsStructMP) {
+                bool adsHeld = IsPhysicalHeld_Exported(g_buttonMap.ads, xiButtons, leftTrigger, rightTrigger);
+                if (adsHeld != g_adsHeldX64) {
+                    g_adsHeldX64 = adsHeld;
+                    if (adsHeld) g_kbuttonActivate(g_adsStructMP, kSyntheticSourceId, timestamp);
+                    else g_kbuttonDeactivate(g_adsStructMP, kSyntheticSourceId, timestamp);
+                    // Same real lesson SP's own kAdsToggleFlagInsnOffset comment documents:
+                    // live-tested on SP, the kbutton call alone did NOT drive actual ADS
+                    // engagement -- this explicit flag write did. Applying the same fix
+                    // preemptively for MP rather than waiting to rediscover it live.
+                    if (g_adsToggleFlagMP) *g_adsToggleFlagMP = adsHeld ? 1 : 0;
+                }
+            }
+            if (g_reloadStructMP) {
+                bool reloadHeld = IsPhysicalHeld_Exported(g_buttonMap.reloadUse, xiButtons, leftTrigger, rightTrigger);
+                if (reloadHeld != g_reloadHeldX64) {
+                    g_reloadHeldX64 = reloadHeld;
+                    if (reloadHeld) g_kbuttonActivate(g_reloadStructMP, kSyntheticSourceId, timestamp);
+                    else g_kbuttonDeactivate(g_reloadStructMP, kSyntheticSourceId, timestamp);
+                }
+            }
+        }
+    }
+}
+
 // MP controller pipeline (mp_port_plan.md step 7, 2026-09-27): Sprint, Hold Breath, and
 // CrouchProne's auto-stand-on-sprint, the first real MP gameplay hooks this project ships
 // beyond menu navigation and performance fixes. SP-only until now -- see
@@ -9817,6 +9918,37 @@ void InstallMpAnchorAndSprintHooksX64()
                         "+sprint kbutton while the controller's mapped Sprint input is held, same design as SP "
                         "(native duration/recovery timer applies automatically; vanilla keyboard sprint "
                         "untouched). Hold Breath (L3+ADS) and CrouchProne auto-stand-on-sprint share this hook.");
+                }
+            }
+        }
+    }
+
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMovementTickSignatureMP);
+        if (!r.found) {
+            LogFromController("[x64-mp-movement] FATAL: Movement-tick signature did not resolve -- controller "
+                "movement stick and Fire/ADS/Reload will not work this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MovementTickMP),
+                                                    reinterpret_cast<void**>(&g_realMovementTickMP));
+            if (createStatus != MH_OK) {
+                char buf[170];
+                sprintf_s(buf, "[x64-mp-movement] FATAL: MH_CreateHook failed for Movement tick @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[170];
+                    sprintf_s(buf, "[x64-mp-movement] FATAL: MH_EnableHook failed for Movement tick @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-mp-movement] MP Movement-tick hook installed and enabled -- controller "
+                        "left-stick movement plus Fire/ADS/Reload are active. LOOK (right stick), D-pad action "
+                        "slots, Weapnext, CrouchProne/Jump/Melee/Lethal/Tactical/Interact/Scoreboard remain "
+                        "unported (see Hook_MovementTickMP's own header comment).");
                 }
             }
         }
