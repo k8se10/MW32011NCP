@@ -909,6 +909,18 @@ bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outH
     return ComputeExpectedInternalResolutionX64(outWidth, outHeight);
 }
 
+// 2026-09-27: public accessor for the real DLSS output surface (g_outputColorSurface,
+// internal linkage above) -- streamline_evaluate_x64.cpp's own final composite step
+// (StretchRect this surface onto the current render target, before HUD/UI drawing)
+// needs the real surface pointer directly, not just its resolution. Returns nullptr
+// if the output texture hasn't been created yet this session (no successful evaluate
+// has happened, or TagStreamlineOutputColorX64 hasn't run yet this frame) -- callers
+// must check.
+void* GetDlssOutputSurfaceX64()
+{
+    return g_outputColorSurface;
+}
+
 // Called once, from InstallEndSceneHook (overlay_hud.cpp) -- same one-
 // device-for-this-game's-lifetime guard convention every other x64 hook
 // installer in this codebase uses.

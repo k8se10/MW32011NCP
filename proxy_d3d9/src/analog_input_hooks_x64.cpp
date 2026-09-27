@@ -10429,7 +10429,16 @@ void InstallAnalogInputHooksX64()
     // result -- flipping MotionBlurEnabled/FsrSharpenEnabled on after launch
     // with this hook never installed needs a restart to take effect. Revisit
     // if this isolation test doesn't confirm the theory.
-    if (g_modConfig.motionBlurEnabled || g_modConfig.fsrSharpenEnabled) {
+    // WIDENED, 2026-09-27 -- DLSS's own real final-composite step
+    // (RunDlssEvaluateAndCompositeX64, streamline_evaluate_x64.cpp) now shares
+    // this exact same trigger via TriggerMotionBlurFromEngineHook. Without
+    // StreamlineEnabled in this condition, a player with StreamlineEnabled=1
+    // but MotionBlurEnabled=0/FsrSharpenEnabled=0 would never get this hook
+    // installed at all, and DLSS's output would never reach the screen --
+    // same "install itself must be conditional on what actually needs it"
+    // reasoning the 2026-09-22 isolation test already established, just with
+    // a third real consumer added to the condition.
+    if (g_modConfig.motionBlurEnabled || g_modConfig.fsrSharpenEnabled || g_modConfig.streamlineEnabled) {
         SigScan::Result r = SigScan::FindPatternInMainModule(kMotionBlurTriggerSignature);
         if (!r.found) {
             LogFromController("[x64-motionblur] FATAL: motion-blur trigger signature did not resolve -- "

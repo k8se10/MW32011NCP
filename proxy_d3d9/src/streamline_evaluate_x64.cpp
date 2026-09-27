@@ -4,8 +4,7 @@
 // -> HERE). Everything up to this file only prepared data; this file is the
 // first thing that spends real GPU compute on DLSS itself.
 //
-// Real per-frame ordering this depends on (see overlay_hud.cpp's
-// Hook_EndScene for the actual call site): slEvaluateFeature's own doc
+// Real per-frame ordering this depends on: slEvaluateFeature's own doc
 // comment (sl_core_api.h) requires "frame and viewport must match whatever
 // is used to set common and/or feature options and constants" -- i.e. this
 // frame's own already-tagged resources/constants (all set earlier this same
@@ -14,8 +13,28 @@
 // order wrong (evaluating with a token that was already superseded) would
 // silently evaluate against stale/mismatched tags -- a real, easy-to-miss
 // correctness bug, not something that would necessarily crash or log an
-// error. EvaluateStreamlineDlssX64() must therefore be called from
-// Hook_EndScene BEFORE StreamlineFrameTick(), not after.
+// error.
+//
+// REVISED, 2026-09-27 -- moved from Hook_EndScene to the SAME earlier
+// per-viewport boundary motion blur/FSR already use (FUN_14018def0 on x64,
+// "the real boundary before the engine's per-viewport 2D/HUD command-
+// dispatch loop" per analog_input_hooks.cpp's own x86 discovery comment),
+// via TriggerMotionBlurFromEngineHook -> RunDlssEvaluateAndCompositeX64
+// (this file). Real reason: DLSS's own color-input tag is deliberately the
+// 3D-scene-only render target (TagColorResourceForFrame's own resolution-
+// match disambiguation), so its output only ever represents the enhanced 3D
+// scene, with no HUD/UI drawn on it. Evaluating from Hook_EndScene (which
+// fires AFTER the frame's own 2D/UI compositing is already done, per this
+// project's own DrawFullScreenPass comment) would mean any attempt to
+// composite DLSS's output back over the frame at that point overwrites the
+// HUD entirely, not enhances the 3D scene under it. Evaluating (and
+// compositing) at this earlier boundary instead means the composite lands
+// BEFORE HUD/UI draws, so the game's own subsequent HUD dispatch draws
+// correctly on top of DLSS's now-enhanced backbuffer -- this closes the
+// "still explicitly open" compositing gap flagged in every prior round of
+// this item. StreamlineFrameTick() (advancing the token for the NEXT frame)
+// stays at Hook_EndScene, still last in the frame -- see that call site's
+// own comment.
 //
 // Real Vulkan command-buffer plumbing: slEvaluateFeature(feature, frame,
 // inputs, numInputs, cmdBuffer) needs a REAL VkCommandBuffer to record DLSS's
@@ -55,6 +74,18 @@ extern bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_
     // the real render-scale-produced INPUT resolution DLSS reads from -- see this
     // file's own real-bug comment above EvaluateStreamlineDlssX64 for why this must
     // be checked against the output resolution before ever calling evaluate.
+extern void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp -- must run
+    // before evaluate, now that both are called from the same earlier per-frame point.
+extern void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, same reason.
+extern void* GetDlssOutputSurfaceX64(); // streamline_resources_x64.cpp, 2026-09-27 -- the
+    // real IDirect3DSurface9* this file's own final composite step reads from.
+extern "C" bool IsMenuActiveX64_Exported(); // analog_input_hooks_x64.cpp -- same real
+    // menu-active gate motion blur/FSR already require (issue #96/#97/#103/#104's own
+    // "do NOT ship with fewer than x86's own three gates" standing rule) -- a stale
+    // DLSS output from the last real gameplay frame must never get composited over a
+    // menu/loading screen.
+extern "C" bool TryGetInLevelFlagX64(int* outValue); // analog_input_hooks_x64.cpp
+extern "C" bool TryGetClcStateX64(int* outValue); // analog_input_hooks_x64.cpp
 
 namespace {
 
@@ -274,17 +305,22 @@ bool EnsureCommandResourcesX64()
 // own additional real prerequisite checks (Vulkan functions resolved,
 // command resources created, DLSS options configured for the current real
 // resolution).
-void EvaluateStreamlineDlssX64()
+// REVISED, 2026-09-27: now returns bool -- true only on a genuine, complete,
+// fence-signaled success this call, false on every early-out (including the
+// real 2s timeout below). RunDlssEvaluateAndCompositeX64 (this file) needs
+// this to know whether it's safe to composite g_outputColorTexture's content
+// this frame, or whether it holds stale/no data.
+bool EvaluateStreamlineDlssX64()
 {
-    if (!IsStreamlineInitializedX64()) return;
-    if (!ResolveVulkanFunctionsIfNeeded()) return;
-    if (!EnsureCommandResourcesX64()) return;
+    if (!IsStreamlineInitializedX64()) return false;
+    if (!ResolveVulkanFunctionsIfNeeded()) return false;
+    if (!EnsureCommandResourcesX64()) return false;
 
     void* device = GetLastKnownRenderDevice();
-    if (!device) return;
+    if (!device) return false;
     int nativeW = 1920, nativeH = 1080;
     GetRealScreenSize(device, nativeW, nativeH);
-    if (nativeW <= 0 || nativeH <= 0) return;
+    if (nativeW <= 0 || nativeH <= 0) return false;
 
     uint32_t displayWidth = static_cast<uint32_t>(nativeW);
     uint32_t displayHeight = static_cast<uint32_t>(nativeH);
@@ -356,11 +392,11 @@ void EvaluateStreamlineDlssX64()
         g_lastOptionsMode = effectiveMode;
         g_optionsEverSucceeded = g_optionsEverSucceeded || ok;
     }
-    if (!g_optionsEverSucceeded) return; // never configured successfully -- nothing to evaluate yet
+    if (!g_optionsEverSucceeded) return false; // never configured successfully -- nothing to evaluate yet
 
     VkDevice vkDevice = GetDxvkVkDeviceX64();
     VkQueue vkQueue = GetDxvkVkQueueX64();
-    if (vkDevice == VK_NULL_HANDLE || vkQueue == VK_NULL_HANDLE) return;
+    if (vkDevice == VK_NULL_HANDLE || vkQueue == VK_NULL_HANDLE) return false;
 
     g_vkResetCommandBuffer(g_commandBuffer, 0);
 
@@ -372,7 +408,7 @@ void EvaluateStreamlineDlssX64()
         char buf[150];
         sprintf_s(buf, "[x64-streamline-evaluate] vkBeginCommandBuffer FAILED (VkResult=%d).", static_cast<int>(vr));
         LogFromController(buf);
-        return;
+        return false;
     }
 
     bool evaluateOk = StreamlineEvaluateFeatureX64(reinterpret_cast<void*>(g_commandBuffer));
@@ -382,10 +418,10 @@ void EvaluateStreamlineDlssX64()
         char buf[150];
         sprintf_s(buf, "[x64-streamline-evaluate] vkEndCommandBuffer FAILED (VkResult=%d).", static_cast<int>(vr));
         LogFromController(buf);
-        return;
+        return false;
     }
 
-    if (!evaluateOk) return; // StreamlineEvaluateFeatureX64 already logged the real failure reason;
+    if (!evaluateOk) return false; // StreamlineEvaluateFeatureX64 already logged the real failure reason;
         // still submit nothing further this frame -- an empty/incomplete recording isn't worth running.
 
     VkSubmitInfo submitInfo{};
@@ -398,7 +434,7 @@ void EvaluateStreamlineDlssX64()
         char buf[150];
         sprintf_s(buf, "[x64-streamline-evaluate] vkQueueSubmit FAILED (VkResult=%d).", static_cast<int>(vr));
         LogFromController(buf);
-        return;
+        return false;
     }
 
     // v1, intentionally coarse (this file's own top comment) -- block until
@@ -437,9 +473,10 @@ void EvaluateStreamlineDlssX64()
         // genuinely stuck fence would need a full command-pool/fence recreate,
         // not attempted here since the guard above should prevent the real
         // trigger from recurring).
-        return;
+        return false;
     }
     g_vkResetFences(vkDevice, 1, &g_fence);
+    return true; // genuine, complete, fence-signaled success -- safe to composite this frame.
 }
 
 // 2026-09-27: public accessor for streamline_resources_x64.cpp -- the real
@@ -456,4 +493,122 @@ bool GetDlssEffectiveOutputResolutionX64(uint32_t& outWidth, uint32_t& outHeight
     outWidth = g_dlssEffectiveOutputWidthX64;
     outHeight = g_dlssEffectiveOutputHeightX64;
     return true;
+}
+
+// IDirect3DDevice9::GetRenderTarget (slot 38) / StretchRect (slot 34) -- the
+// same real, stable COM vtable constants overlay_hud.cpp's own
+// kGetRenderTargetVtableIndex/kStretchRectVtableIndex already use (that
+// file's DrawFullScreenPass uses the identical pattern for its own capture
+// step), redeclared here per this project's own "each file owns its own
+// copy of these fixed constants" convention rather than shared across files.
+namespace {
+constexpr int kGetRenderTargetVtableIndexX64 = 38;
+constexpr int kStretchRectVtableIndexX64 = 34;
+typedef HRESULT(WINAPI* GetRenderTargetFnX64)(void* This, DWORD RenderTargetIndex, void** ppRenderTarget);
+typedef HRESULT(WINAPI* StretchRectFnX64)(void* This, void* pSourceSurface, const RECT* pSourceRect,
+    void* pDestSurface, const RECT* pDestRect, DWORD Filter);
+constexpr DWORD kD3DTEXF_LINEAR_X64 = 2;
+
+bool g_dlssCompositeRanThisFrameX64 = false; // per-real-frame guard, same shape as
+    // overlay_hud.cpp's own g_motionBlurRanThisFrame -- FUN_14018def0 (this
+    // function's own real trigger, via TriggerMotionBlurFromEngineHook) can fire
+    // more than once per real frame (splitscreen/PIP exclusion-zone carving,
+    // per that hook's own long-documented history) -- never evaluate/composite
+    // DLSS more than once for the same real frame.
+} // namespace
+
+// 2026-09-27: real final-composite entry point -- the piece that actually
+// gets DLSS's enhanced output in front of the player, closing the "still
+// explicitly open" compositing gap every prior round of this item flagged.
+// Called from TriggerMotionBlurFromEngineHook (overlay_hud.cpp), the SAME
+// real per-viewport boundary motion blur/FSR already use (FUN_14018def0 on
+// x64) -- see this file's own top-of-file comment for why this specific
+// timing (before HUD/UI drawing, not Hook_EndScene/after) is required.
+//
+// Real gates, matching motion blur's own three ("do NOT ship with fewer than
+// x86's own three gates" -- issue #96/#97/#103/#104's own standing rule):
+// menu-active, in-level, clcState. Without these, a stale DLSS output from
+// the last real gameplay frame could get composited over a menu or loading
+// screen -- DLSS's own color-input tag only ever updates while the 3D scene
+// target is actually bound, so g_outputColorTexture can easily hold content
+// from several real frames ago by the time a menu opens.
+void RunDlssEvaluateAndCompositeX64(void* device)
+{
+    if (!IsStreamlineInitializedX64()) return;
+    if (!device) return;
+
+    if (g_dlssCompositeRanThisFrameX64) return;
+
+    if (IsMenuActiveX64_Exported()) return;
+    int inLevel = 0;
+    if (!TryGetInLevelFlagX64(&inLevel) || inLevel <= 0) return;
+    int clcState = 0;
+    if (!TryGetClcStateX64(&clcState) || clcState == 0) return;
+
+    g_dlssCompositeRanThisFrameX64 = true;
+
+    // Tag this frame's output/motion-vectors buffers (streamline_resources_x64.cpp)
+    // BEFORE evaluating -- both must be tagged with the current frame's token
+    // before slEvaluateFeature reads them. Color/depth are already tagged earlier
+    // in the frame via their own SetRenderTarget/SetDepthStencilSurface hooks,
+    // which fire naturally during the 3D scene's own rendering, well before this
+    // boundary -- no change needed there.
+    TagStreamlineOutputColorX64();
+    TagStreamlineMotionVectorsX64();
+
+    bool evaluated = EvaluateStreamlineDlssX64();
+    if (!evaluated) return; // already logged its own real failure reason -- nothing to composite
+
+    void* outputSurface = GetDlssOutputSurfaceX64();
+    if (!outputSurface) return;
+
+    void** deviceVtbl = *reinterpret_cast<void***>(device);
+    auto getRenderTarget = reinterpret_cast<GetRenderTargetFnX64>(deviceVtbl[kGetRenderTargetVtableIndexX64]);
+    auto stretchRect = reinterpret_cast<StretchRectFnX64>(deviceVtbl[kStretchRectVtableIndexX64]);
+
+    void* currentTarget = nullptr;
+    // GetRenderTarget(0) here is the real 3D-scene target the engine has bound
+    // AT THIS EXACT BOUNDARY -- confirmed by precedent, not assumed: motion
+    // blur's own full-screen pass already writes into whatever this call
+    // returns at this same trigger point, live-confirmed correct (no HUD
+    // bleed, no corruption) since 2026-09-13. StretchRect resizes automatically
+    // if source/dest dimensions differ (the DLAA-override case, where
+    // outputSurface is at the render-scale resolution, larger than this
+    // target) -- a real, standard D3D9 capability, not something built here.
+    if (FAILED(getRenderTarget(device, 0, &currentTarget)) || !currentTarget) return;
+
+    HRESULT hr = stretchRect(device, outputSurface, nullptr, currentTarget, nullptr, kD3DTEXF_LINEAR_X64);
+    reinterpret_cast<IUnknown*>(currentTarget)->Release();
+
+    static long long s_compositeCount = 0;
+    ++s_compositeCount;
+    bool heartbeat = s_compositeCount <= 5 || (s_compositeCount % 5000) == 0;
+    if (FAILED(hr)) {
+        static bool s_failureLogged = false;
+        if (!s_failureLogged || heartbeat) {
+            s_failureLogged = true;
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-composite] StretchRect FAILED (hr=0x%08lX, count=%lld) -- "
+                "DLSS's own enhanced output was NOT composited this frame.", static_cast<unsigned long>(hr),
+                s_compositeCount);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    if (heartbeat) {
+        char buf[150];
+        sprintf_s(buf, "[x64-streamline-composite] StretchRect succeeded (count=%lld) -- DLSS's "
+            "enhanced output composited before this frame's HUD/UI draws.", s_compositeCount);
+        LogFromController(buf);
+    }
+}
+
+// Reset hook for the per-real-frame guard above -- called from Hook_EndScene
+// (overlay_hud.cpp), same real "exactly once per real frame, always after
+// every FUN_14018def0 call this frame already happened" reasoning
+// g_motionBlurRanThisFrame's own reset already documents.
+void ResetDlssCompositeFrameGuardX64()
+{
+    g_dlssCompositeRanThisFrameX64 = false;
 }

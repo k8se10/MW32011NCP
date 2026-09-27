@@ -53,17 +53,19 @@ void StreamlineFrameTick(); // streamline_integration_x64.cpp, 2026-09-24 -- rea
     // exactly-once-per-real-frame hook point this project already uses for
     // every other per-frame diagnostic. No-ops (returns immediately) until
     // Streamline has actually registered a device via slSetVulkanInfo.
-void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp, 2026-09-24 --
-    // real DLSS output buffer (kBufferTypeScalingOutputColor). Unlike depth/color
-    // input this isn't hooked off a real game call (the game never touches this
-    // resource -- we own it), so it needs an explicit per-frame call site here.
-void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, 2026-09-24 --
-    // real motion-vectors buffer (kBufferTypeMotionVectors), same "we own this
-    // resource" rationale as the output buffer above.
-void EvaluateStreamlineDlssX64(); // streamline_evaluate_x64.cpp, 2026-09-26 -- the
-    // real slEvaluateFeature(DLSS) call. MUST run after this frame's own tagging
-    // (above) but BEFORE StreamlineFrameTick() advances the frame token for the
-    // NEXT frame -- see that file's own header comment for why the order matters.
+void RunDlssEvaluateAndCompositeX64(void* device); // streamline_evaluate_x64.cpp,
+    // 2026-09-27 -- REPLACES the separate TagStreamlineOutputColorX64/
+    // TagStreamlineMotionVectorsX64/EvaluateStreamlineDlssX64 call sites that used
+    // to live here (all three, plus the real final composite step, now run
+    // together from TriggerMotionBlurFromEngineHook instead -- see this file's
+    // own comment there, and streamline_evaluate_x64.cpp's top-of-file comment,
+    // for why that earlier per-viewport boundary is required rather than
+    // Hook_EndScene). Still tags this frame's own token before evaluating, still
+    // runs before StreamlineFrameTick() advances that token for the NEXT frame --
+    // just from an earlier real per-frame trigger than before.
+void ResetDlssCompositeFrameGuardX64(); // streamline_evaluate_x64.cpp, 2026-09-27 --
+    // per-real-frame guard reset, same shape/reason as g_motionBlurRanThisFrame's
+    // own reset below (FUN_14018def0 can fire more than once per real frame).
 extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
     // 2026-09-26 -- the single correct "is it safe/meaningful to do real
     // Streamline-adjacent work right now" gate (false unless StreamlineEnabled,
@@ -4581,7 +4583,15 @@ void RunPreOverlayMotionBlurPassIfEnabled(void* device)
 extern "C" void TriggerMotionBlurFromEngineHook()
 {
     void* device = GetLastKnownRenderDevice();
-    if (device) RunPreOverlayMotionBlurPassIfEnabled(device);
+    if (!device) return;
+    RunPreOverlayMotionBlurPassIfEnabled(device);
+    // 2026-09-27: DLSS's own real final-composite step shares this exact same
+    // real per-viewport boundary (FUN_14018def0 on x64) -- see
+    // RunDlssEvaluateAndCompositeX64's own header comment (streamline_evaluate_x64.cpp)
+    // for why this timing (before HUD/UI drawing) is required, not Hook_EndScene.
+    // Independently gated/guarded inside -- a no-op unless StreamlineEnabled=1 and
+    // this frame's own real gameplay gates (menu/in-level/clcState) all pass.
+    RunDlssEvaluateAndCompositeX64(device);
 }
 
 // Phase A/B's shared entry point, called from the very end of Hook_EndScene
@@ -7883,45 +7893,42 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // Streamline-adjacent entry point fixed the same session (see
     // IsStreamlineInitializedX64's own comment, streamline_integration_x64.cpp).
     if (IsStreamlineInitializedX64()) {
-        // REORDERED, 2026-09-26 (real correctness fix, not just a perf/logging
-        // change): StreamlineFrameTick() advances g_streamlineCurrentFrameToken
-        // to the token for the UPCOMING frame -- it must run LAST, after this
-        // frame's own tagging AND evaluation are both done with the token that
-        // was actually current while this frame rendered. The previous order
-        // called StreamlineFrameTick() FIRST, which was harmless while nothing
-        // downstream depended on token/tag consistency within a single frame
-        // (pure diagnostics), but would have silently evaluated DLSS against a
-        // token that no longer matched this frame's own tags/constants once
-        // EvaluateStreamlineDlssX64 was added -- caught and fixed before this
-        // ever ran live. Wrong tags for a token is possible even set to
-        // eValidUntilPresent per docs, so getting this file's own scope wrong
-        // was the specific real risk being closed here.
-        LARGE_INTEGER freq{}, t0{}, t1{}, t2{}, t3{}, t4{}, t5{};
+        // REVISED, 2026-09-27: output/motion-vector tagging and the real
+        // slEvaluateFeature/composite call all moved OFF this call site,
+        // onto the earlier per-viewport boundary TriggerMotionBlurFromEngineHook
+        // already fires at (FUN_14018def0 on x64) -- see
+        // RunDlssEvaluateAndCompositeX64's own header comment
+        // (streamline_evaluate_x64.cpp) for why. This call site's own real
+        // remaining job is just what's left: the per-real-frame composite
+        // guard reset (must happen exactly once per frame, and this is still
+        // the one confirmed exactly-once-per-real-frame hook point) and
+        // StreamlineFrameTick() itself, which must still run LAST -- after
+        // this frame's own tagging/evaluation (now earlier in the frame, but
+        // still earlier than this point) is done with the token that was
+        // actually current while this frame rendered, before advancing to
+        // the next one.
+        LARGE_INTEGER freq{}, t0{}, t1{}, t2{};
         QueryPerformanceFrequency(&freq);
         auto ms = [&](LARGE_INTEGER a, LARGE_INTEGER b) {
             return (static_cast<double>(b.QuadPart - a.QuadPart) * 1000.0) / static_cast<double>(freq.QuadPart);
         };
 
         QueryPerformanceCounter(&t0);
-        TagStreamlineOutputColorX64();
-        QueryPerformanceCounter(&t1);
-        TagStreamlineMotionVectorsX64();
-        QueryPerformanceCounter(&t2);
         CaptureObjectMotionSnapshotX64();
-        QueryPerformanceCounter(&t3);
-        EvaluateStreamlineDlssX64();
-        QueryPerformanceCounter(&t4);
+        QueryPerformanceCounter(&t1);
         StreamlineFrameTick();
-        QueryPerformanceCounter(&t5);
+        QueryPerformanceCounter(&t2);
+        ResetDlssCompositeFrameGuardX64();
 
-        double msOutputTag = ms(t0, t1), msMvecTag = ms(t1, t2), msDobj = ms(t2, t3),
-            msEvaluate = ms(t3, t4), msFrameTick = ms(t4, t5);
-        double msTotal = msOutputTag + msMvecTag + msDobj + msEvaluate + msFrameTick;
+        double msDobj = ms(t0, t1), msFrameTick = ms(t1, t2);
+        double msTotal = msDobj + msFrameTick;
         if (msTotal >= 1.0) {
-            char buf[280];
-            sprintf_s(buf, "[x64-streamline-timing] outputTag=%.3fms mvecTag=%.3fms "
-                "dobjCapture=%.3fms evaluate=%.3fms frameTick=%.3fms total=%.3fms",
-                msOutputTag, msMvecTag, msDobj, msEvaluate, msFrameTick, msTotal);
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-timing] dobjCapture=%.3fms frameTick=%.3fms total=%.3fms "
+                "(outputTag/mvecTag/evaluate/composite timing now logged separately by "
+                "[x64-streamline-composite]/[x64-streamline-evaluate] -- moved to the earlier "
+                "per-viewport trigger, see RunDlssEvaluateAndCompositeX64)",
+                msDobj, msFrameTick, msTotal);
             LogFromController(buf);
         }
     }
