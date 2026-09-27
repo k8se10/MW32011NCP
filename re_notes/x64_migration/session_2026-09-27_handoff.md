@@ -149,6 +149,13 @@ committed on `claude/confident-mendel-hyoqkw`.
 - The earlier "GENERAL layout" theory is unlikely: the ≤100% path uses the
   identical texture and composite and works.
 
+**Update (ROUND 22):** the black viewport was traced statically. Five
+engine targets (FLOAT_Z, PINGPONG_0/1, POST_EFFECT_0/1) are created at the
+supersampled size, and post-FX binds the glow/blur ones after the scene, so
+the size-only "last match" fed DLSS a bloom/blur intermediate. The input is
+now selected by engine render-target ID via the existing `R_SetRenderTarget`
+hook. Needs a Windows build and one test at 200%.
+
 ### Decisions needed from the user (all open, with recommendations)
 
 1. **Aim slowdown near targets in MP** (`adsCloseRangeSlowdownStrength`

@@ -7143,6 +7143,17 @@ uintptr_t* g_scenePostfxActivePassBasePtr = nullptr; // &PTR_DAT_14040ec18 (hold
 // global (file) scope, before this namespace even opens -- see the
 // top-of-file declaration.
 
+// 2026-09-27, DLSS above-100% black viewport (vulkan_dlss_pipeline_research.md
+// ROUND 22): the engine render-target ID (R_RENDERTARGET_*, renderer reference
+// §8.3) being activated, published ONLY while the real FUN_1401dfd80 runs --
+// the engine's single D3D9 SetRenderTarget caller -- so the DLSS colour-input
+// tagger (streamline_resources_x64.cpp) can tell WHICH engine target a
+// SetRenderTarget(0, ...) belongs to instead of guessing by size. -1 outside
+// the call. g_renderViewSelectHookLiveX64 goes true once the hook is enabled;
+// while false the tagger keeps its legacy size-only behaviour.
+volatile int g_engineRenderTargetSelectIdX64 = -1;
+bool g_renderViewSelectHookLiveX64 = false;
+
 void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
 {
     static int s_lastLoggedIndex = -12345; // sentinel, guaranteed to differ from any real first value
@@ -7271,7 +7282,22 @@ void __fastcall Hook_RenderViewSelectDiag(void* param_1, int param_2)
         }
     }
 
+    g_engineRenderTargetSelectIdX64 = param_2;
     g_origRenderViewSelect(param_1, param_2);
+    g_engineRenderTargetSelectIdX64 = -1;
+}
+
+// 2026-09-27 (ROUND 22): see g_engineRenderTargetSelectIdX64. Returns false
+// when the render-view-select hook isn't live (caller must fall back to its
+// legacy behaviour). Otherwise returns true and writes the engine
+// render-target ID currently being activated, or -1 when the caller is not
+// inside the engine's FUN_1401dfd80 (e.g. this proxy's own passes).
+// Render-backend thread only, same as every SetRenderTarget.
+extern "C" bool TryGetEngineRenderTargetSelectX64(int* outId)
+{
+    if (!g_renderViewSelectHookLiveX64 || !outId) return false;
+    *outId = g_engineRenderTargetSelectIdX64;
+    return true;
 }
 
 // In-level time-delta flag -- x64 equivalent of x86's kInLevelFlagAddr
@@ -10927,6 +10953,7 @@ void InstallAnalogInputHooksX64()
                                static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
                     LogFromController(buf);
                 } else {
+                    g_renderViewSelectHookLiveX64 = true;
                     LogFromController("[x64-renderview-select-diag] Diagnostic hook installed on FUN_1401dfd80, the real "
                         "render-view-select dispatcher (read-only, changes no behavior).");
                 }
