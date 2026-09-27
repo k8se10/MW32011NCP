@@ -187,16 +187,31 @@ bool g_vulkanFunctionsResolveFailed = false;
 // they're two independent resources.
 VkImage g_cachedDepthImage = VK_NULL_HANDLE;
 VkImageView g_cachedDepthView = VK_NULL_HANDLE;
-// Raw D3D9 surface pointer dedup, 2026-09-24 -- same "huge fps cost" bug
-// class as TagColorResourceForFrame's own fix (see that function's header
-// comment): GetVulkanImageInfo flushes pending Vulkan commands, and
-// SetDepthStencilSurface fires many times per real frame even though (per
-// this comment block's own existing note, above) it's usually the SAME 1-2
-// real images repeating. Unlike color, depth has no resolution-based
-// disambiguation target to pre-filter against -- this is a plain "skip the
-// flush entirely when it's literally the same D3D9 surface object as last
-// time" dedup instead.
-void* g_lastProcessedDepthSurfaceX64 = nullptr;
+// This frame's real scene depth/color D3D9 surfaces -- the last depth-stencil
+// surface the game bound, and the last render target 0 that passed
+// TagColorResourceForFrame's resolution match, both recorded by the hooks
+// below. 2026-09-27 (ROUND 19): RetagStreamlineInputsAfterFlushX64 re-resolves
+// them to their CURRENT VkImage right before evaluate -- see its own comment
+// for the real relocation bug this closes. Raw, non-owning pointers, valid
+// only for the frame they were recorded in (the game never releases a bound
+// scene target mid-frame): cleared every frame by
+// ClearStreamlineFrameSurfacesX64 (called from ResetDlssCompositeFrameGuardX64,
+// Hook_EndScene). Deliberately NOT AddRef'd -- holding a reference to a
+// D3DPOOL_DEFAULT game resource past its owner's Release would make a later
+// IDirect3DDevice9::Reset fail.
+//
+// REMOVED, 2026-09-27 (ROUND 19): g_lastProcessedDepthSurfaceX64 and its
+// g_lastDepthImage/Layout/Info cache, which skipped GetVulkanImageInfo when
+// the same D3D9 depth surface was bound again. It assumed a surface's VkImage
+// never changes -- false: DXVK's memory defragmentation (on by default on
+// NVIDIA, dxvk_memory.cpp enableDefrag/pickDefragChunk) relocates images to
+// new VkImage handles, so the cache tagged a stale, eventually-destroyed image
+// forever after the first relocation. Its stated reason ("GetVulkanImageInfo
+// flushes pending Vulkan commands") does not hold for the DXVK this mod ships:
+// D3D9VkInteropTexture::GetVulkanImageInfo (dxvk/src/d3d9/d3d9_interop.cpp)
+// only reads the image's handle/create-info, no flush, no CS-thread sync.
+void* g_frameSceneDepthSurfaceX64 = nullptr;
+void* g_frameSceneColorSurfaceX64 = nullptr;
 VkImage g_cachedColorImage = VK_NULL_HANDLE;
 VkImageView g_cachedColorView = VK_NULL_HANDLE;
 
@@ -343,14 +358,6 @@ VkImageView GetOrCreateViewX64(VkImage image, VkFormat format, uint32_t mipLevel
     return view;
 }
 
-// Cached result of the last REAL (non-deduped) resolve -- reused when
-// TagDepthResourceForFrame sees the identical D3D9 surface pointer again,
-// to avoid a second real GetVulkanImageInfo flush for state that hasn't
-// actually changed. See g_lastProcessedDepthSurfaceX64's own comment.
-VkImage g_lastDepthImage = VK_NULL_HANDLE;
-VkImageLayout g_lastDepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-VkImageCreateInfo g_lastDepthInfo{};
-
 void TagDepthResourceForFrame(void* depthSurface)
 {
     ++g_resolveAttemptCount;
@@ -361,51 +368,34 @@ void TagDepthResourceForFrame(void* depthSurface)
     VkImageCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 
-    // REAL, LIVE, SEVERE BUG FIXED, 2026-09-24 -- same class as
-    // TagColorResourceForFrame's own fix (see that function's header
-    // comment): GetVulkanImageInfo flushes pending Vulkan commands, and
-    // SetDepthStencilSurface fires many times per real frame even though
-    // (per g_cachedDepthImage's own existing comment, above) it's usually
-    // the SAME 1-2 real images repeating. When the identical D3D9 surface
-    // pointer is seen again, reuse the cached result from the last REAL
-    // resolve instead of forcing another flush.
-    if (depthSurface == g_lastProcessedDepthSurfaceX64 && g_lastDepthImage != VK_NULL_HANDLE) {
-        image = g_lastDepthImage;
-        layout = g_lastDepthLayout;
-        info = g_lastDepthInfo;
-    } else {
-        IUnknown* depthSurfaceUnknown = reinterpret_cast<IUnknown*>(depthSurface);
-        ID3D9VkInteropTextureX64* interopTexture = nullptr;
-        HRESULT hr = depthSurfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
-            reinterpret_cast<void**>(&interopTexture));
-        if (FAILED(hr) || !interopTexture) {
-            if (heartbeat) {
-                char buf[200];
-                sprintf_s(buf, "[x64-streamline-depth] QueryInterface for ID3D9VkInteropTexture FAILED "
-                    "(hr=0x%08lX) -- this device isn't DXVK, or the interop interface changed.", hr);
-                LogFromController(buf);
-            }
-            return;
+    IUnknown* depthSurfaceUnknown = reinterpret_cast<IUnknown*>(depthSurface);
+    ID3D9VkInteropTextureX64* interopTexture = nullptr;
+    HRESULT hr = depthSurfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
+        reinterpret_cast<void**>(&interopTexture));
+    if (FAILED(hr) || !interopTexture) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-depth] QueryInterface for ID3D9VkInteropTexture FAILED "
+                "(hr=0x%08lX) -- this device isn't DXVK, or the interop interface changed.", hr);
+            LogFromController(buf);
         }
-
-        hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
-        interopTexture->Release();
-
-        if (FAILED(hr) || image == VK_NULL_HANDLE) {
-            if (heartbeat) {
-                char buf[200];
-                sprintf_s(buf, "[x64-streamline-depth] GetVulkanImageInfo FAILED (hr=0x%08lX) -- no "
-                    "real Vulkan image behind this depth-stencil surface.", hr);
-                LogFromController(buf);
-            }
-            return;
-        }
-
-        g_lastProcessedDepthSurfaceX64 = depthSurface;
-        g_lastDepthImage = image;
-        g_lastDepthLayout = layout;
-        g_lastDepthInfo = info;
+        return;
     }
+
+    hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
+    interopTexture->Release();
+
+    if (FAILED(hr) || image == VK_NULL_HANDLE) {
+        if (heartbeat) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-depth] GetVulkanImageInfo FAILED (hr=0x%08lX) -- no "
+                "real Vulkan image behind this depth-stencil surface.", hr);
+            LogFromController(buf);
+        }
+        return;
+    }
+
+    g_frameSceneDepthSurfaceX64 = depthSurface;
 
     if (heartbeat) {
         char buf[350];
@@ -544,6 +534,8 @@ void TagColorResourceForFrame(void* renderTarget)
     }
 
     if (!resolutionMatches) return; // a real, different render target this frame -- not the scene color
+
+    g_frameSceneColorSurfaceX64 = renderTarget;
 
     if (!ResolveVulkanFunctionsIfNeeded()) return;
 
@@ -916,6 +908,79 @@ void TagMotionVectorsResourceForFrame()
     StreamlineSetTagForFrameX64(&mvecTag, 1);
 }
 
+// 2026-09-27 (ROUND 19): resolves a D3D9 surface to its CURRENT backing
+// VkImage and (re-)tags it for this frame -- the shared step behind
+// RetagStreamlineInputsAfterFlushX64 below. Same QueryInterface/
+// GetVulkanImageInfo/GetOrCreateViewX64/slSetTagForFrame chain every
+// per-buffer tag function above already uses; returns false (and tags
+// nothing) on any failure so the caller can skip evaluate instead of letting
+// DLSS read a stale tag. Tagging the same buffer type more than once in a
+// frame is already the live-proven norm here (the depth hook tags on every
+// SetDepthStencilSurface fire) -- the last tag before evaluate wins.
+bool ResolveAndTagCurrentImageX64(void* surface, sl::BufferType bufferType, VkImageAspectFlags aspect,
+    VkImage& cachedImage, VkImageView& cachedView, const char* logPrefix, const char* label)
+{
+    static long long s_failureCount = 0;
+    static long long s_imageChangeCount = 0;
+
+    IUnknown* surfaceUnknown = reinterpret_cast<IUnknown*>(surface);
+    ID3D9VkInteropTextureX64* interopTexture = nullptr;
+    HRESULT hr = surfaceUnknown->QueryInterface(IID_ID3D9VkInteropTexture_X64,
+        reinterpret_cast<void**>(&interopTexture));
+    VkImage image = VK_NULL_HANDLE;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    if (SUCCEEDED(hr) && interopTexture) {
+        hr = interopTexture->GetVulkanImageInfo(&image, &layout, &info);
+        interopTexture->Release();
+    }
+    if (FAILED(hr) || image == VK_NULL_HANDLE) {
+        ++s_failureCount;
+        if (s_failureCount <= 10 || (s_failureCount % 1000) == 0) {
+            char buf[250];
+            sprintf_s(buf, "%s post-flush re-resolve FAILED for %s (hr=0x%08lX, count=%lld) -- "
+                "skipping DLSS evaluate this frame rather than use a stale tag.",
+                logPrefix, label, hr, s_failureCount);
+            LogFromController(buf);
+        }
+        return false;
+    }
+
+    // Live evidence for the relocation fix: logs whenever the image this
+    // buffer resolves to differs from the one its view cache last held. For
+    // color/output/motion vectors that means DXVK relocated it (or the game
+    // recreated the target); depth also changes when the game alternates its
+    // real 4x-MSAA and resolved 1x depth surfaces, so depth lines alone are
+    // not proof of relocation.
+    if (cachedImage != VK_NULL_HANDLE && image != cachedImage) {
+        ++s_imageChangeCount;
+        if (s_imageChangeCount <= 20 || (s_imageChangeCount % 1000) == 0) {
+            char buf[250];
+            sprintf_s(buf, "%s post-flush re-resolve: %s image changed 0x%llx -> 0x%llx (count=%lld).",
+                logPrefix, label, reinterpret_cast<unsigned long long>(cachedImage),
+                reinterpret_cast<unsigned long long>(image), s_imageChangeCount);
+            LogFromController(buf);
+        }
+    }
+
+    VkImageView view = GetOrCreateViewX64(image, info.format, info.mipLevels, info.arrayLayers,
+        aspect, cachedImage, cachedView, logPrefix, label);
+    if (view == VK_NULL_HANDLE) return false;
+
+    sl::Resource resource(sl::ResourceType::eTex2d, reinterpret_cast<void*>(image),
+        /*mem*/ nullptr, reinterpret_cast<void*>(view), static_cast<uint32_t>(layout));
+    resource.width = info.extent.width;
+    resource.height = info.extent.height;
+    resource.nativeFormat = static_cast<uint32_t>(info.format);
+    resource.mipLevels = info.mipLevels;
+    resource.arrayLayers = info.arrayLayers;
+    resource.usage = info.usage;
+
+    sl::ResourceTag tag(&resource, bufferType, sl::ResourceLifecycle::eValidUntilPresent);
+    return StreamlineSetTagForFrameX64(&tag, 1);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurfaceX64(void* device, void* pNewZStencil)
 {
     if (pNewZStencil) TagDepthResourceForFrame(pNewZStencil);
@@ -972,6 +1037,57 @@ bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outH
 void* GetDlssOutputSurfaceX64()
 {
     return g_outputColorSurface;
+}
+
+// 2026-09-27 (ROUND 19): REAL FIX for DLSS running for a while and then
+// hanging/losing the device, sooner on heavier levels. DXVK relocates images
+// to new VkImage handles in the background -- memory defragmentation, on by
+// default on NVIDIA and engaged under exactly the memory pressure heavy
+// levels (plus DLSS's own allocations) create (dxvk_memory.cpp
+// enableDefrag/pickDefragChunk). Relocations are recorded at the end of every
+// DXVK command list (DxvkContext::endRecording -> relocateQueuedResources),
+// INCLUDING the one FlushRenderingCommands() closes right before our own
+// evaluate. Every tag set earlier in the frame (the SetRenderTarget/
+// SetDepthStencilSurface hooks, and our own output/motion-vector tags) can
+// therefore name a VkImage DXVK has just retired; its memory is freed once
+// DXVK's copy completes, and DLSS then reads/writes freed GPU memory -- a
+// page fault, i.e. the hang/device loss. Called by EvaluateStreamlineDlssX64
+// AFTER FlushRenderingCommands (the CS thread is idle, so nothing can be
+// relocated again before our submit) and BEFORE LockSubmissionQueue (no D3D9
+// or interop call is made while the queue is locked): re-resolves all four
+// required DLSS inputs to their current VkImage and re-tags them for this
+// frame. Returns false -- caller skips evaluate this frame -- if this frame's
+// scene color/depth were never recorded or any re-resolve fails.
+bool RetagStreamlineInputsAfterFlushX64()
+{
+    if (!g_frameSceneDepthSurfaceX64 || !g_frameSceneColorSurfaceX64 ||
+        !g_outputColorSurface || !g_motionVectorsSurface) {
+        return false;
+    }
+    if (!ResolveVulkanFunctionsIfNeeded()) return false;
+
+    return ResolveAndTagCurrentImageX64(g_frameSceneDepthSurfaceX64, sl::kBufferTypeDepth,
+               VK_IMAGE_ASPECT_DEPTH_BIT, g_cachedDepthImage, g_cachedDepthView,
+               "[x64-streamline-depth]", "depth-only") &&
+        ResolveAndTagCurrentImageX64(g_frameSceneColorSurfaceX64, sl::kBufferTypeScalingInputColor,
+               VK_IMAGE_ASPECT_COLOR_BIT, g_cachedColorImage, g_cachedColorView,
+               "[x64-streamline-color]", "color") &&
+        ResolveAndTagCurrentImageX64(g_outputColorSurface, sl::kBufferTypeScalingOutputColor,
+               VK_IMAGE_ASPECT_COLOR_BIT, g_cachedOutputColorImage, g_cachedOutputColorView,
+               "[x64-streamline-output]", "output-color") &&
+        ResolveAndTagCurrentImageX64(g_motionVectorsSurface, sl::kBufferTypeMotionVectors,
+               VK_IMAGE_ASPECT_COLOR_BIT, g_cachedMotionVectorsImage, g_cachedMotionVectorsView,
+               "[x64-streamline-mvec]", "motion-vectors");
+}
+
+// 2026-09-27 (ROUND 19): per-real-frame reset for the raw, non-owning scene
+// surface pointers above -- called from ResetDlssCompositeFrameGuardX64
+// (streamline_evaluate_x64.cpp), itself called once per real frame from
+// Hook_EndScene, so a pointer recorded in one frame is never used in the next.
+void ClearStreamlineFrameSurfacesX64()
+{
+    g_frameSceneDepthSurfaceX64 = nullptr;
+    g_frameSceneColorSurfaceX64 = nullptr;
 }
 
 // Called once, from InstallEndSceneHook (overlay_hud.cpp) -- same one-

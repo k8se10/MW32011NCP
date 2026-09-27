@@ -93,6 +93,9 @@ extern bool IsStreamlineCameraStableX64(); // streamline_camera_x64.cpp, 2026-09
     // evaluate gameplay-gate above can open on a frame that is still mid-camera-transition
     // (map-dependent: Dome hung faster, mid-transition; Underground reached first-person
     // first) -- the single-frame teleport-reset flag alone doesn't cover that race.
+extern bool RetagStreamlineInputsAfterFlushX64(); // streamline_resources_x64.cpp,
+    // 2026-09-27 ROUND 19 -- re-resolves all four DLSS buffers after DXVK's flush.
+extern void ClearStreamlineFrameSurfacesX64(); // streamline_resources_x64.cpp, same round.
 extern bool HasStreamlineCameraDataX64(); // streamline_camera_x64.cpp -- true once the
     // real per-frame camera path has validly set sl::Constants at least once. 2026-09-27
     // ROUND 17 correction: an earlier version of the menu warm-up below tried to build its
@@ -169,8 +172,6 @@ public:
             return;
         }
         m_device->FlushRenderingCommands();
-        m_device->LockSubmissionQueue();
-        m_locked = true;
     }
     ~ScopedDxvkSubmissionLockX64()
     {
@@ -179,7 +180,18 @@ public:
     }
     ScopedDxvkSubmissionLockX64(const ScopedDxvkSubmissionLockX64&) = delete;
     ScopedDxvkSubmissionLockX64& operator=(const ScopedDxvkSubmissionLockX64&) = delete;
-    bool IsValid() const { return m_locked; }
+    // REVISED, 2026-09-27 (ROUND 19): flush (constructor) and lock (Lock())
+    // are now two steps, so RetagStreamlineInputsAfterFlushX64 can run
+    // between them -- after the flush, so it sees every relocation that flush
+    // recorded; before the lock, since no D3D9/interop call may run on this
+    // thread while the queue is locked (DXVK's own LockSubmissionQueue doc).
+    bool IsValid() const { return m_device != nullptr; } // flushed, not yet locked
+    void Lock()
+    {
+        if (!m_device || m_locked) return;
+        m_device->LockSubmissionQueue();
+        m_locked = true;
+    }
 
 private:
     ID3D9VkInteropDeviceX64* m_device = nullptr;
@@ -209,6 +221,7 @@ PFN_vkCreateFence g_vkCreateFence = nullptr;
 PFN_vkDestroyFence g_vkDestroyFence = nullptr;
 PFN_vkWaitForFences g_vkWaitForFences = nullptr;
 PFN_vkResetFences g_vkResetFences = nullptr;
+PFN_vkCmdPipelineBarrier g_vkCmdPipelineBarrier = nullptr; // 2026-09-27, ROUND 19
 
 bool g_vulkanFunctionsResolved = false;
 bool g_vulkanFunctionsResolveFailed = false;
@@ -319,11 +332,12 @@ bool ResolveVulkanFunctionsIfNeeded()
     g_vkDestroyFence = reinterpret_cast<PFN_vkDestroyFence>(getDeviceProcAddr(device, "vkDestroyFence"));
     g_vkWaitForFences = reinterpret_cast<PFN_vkWaitForFences>(getDeviceProcAddr(device, "vkWaitForFences"));
     g_vkResetFences = reinterpret_cast<PFN_vkResetFences>(getDeviceProcAddr(device, "vkResetFences"));
+    g_vkCmdPipelineBarrier = reinterpret_cast<PFN_vkCmdPipelineBarrier>(getDeviceProcAddr(device, "vkCmdPipelineBarrier"));
 
     if (!g_vkCreateCommandPool || !g_vkDestroyCommandPool || !g_vkAllocateCommandBuffers ||
         !g_vkFreeCommandBuffers || !g_vkResetCommandBuffer || !g_vkBeginCommandBuffer ||
         !g_vkEndCommandBuffer || !g_vkQueueSubmit || !g_vkCreateFence || !g_vkDestroyFence ||
-        !g_vkWaitForFences || !g_vkResetFences) {
+        !g_vkWaitForFences || !g_vkResetFences || !g_vkCmdPipelineBarrier) {
         LogFromController("[x64-streamline-evaluate] One or more required Vulkan command-buffer/"
             "fence functions failed to resolve -- DLSS evaluation will not work this session.");
         g_vulkanFunctionsResolveFailed = true;
@@ -516,6 +530,16 @@ bool EvaluateStreamlineDlssX64()
         return false;
     }
 
+    // REAL FIX, 2026-09-27 (ROUND 19) -- see RetagStreamlineInputsAfterFlushX64's
+    // own comment (streamline_resources_x64.cpp): the flush the guard above just
+    // did can relocate any of DLSS's four input/output images to a new VkImage,
+    // so every tag set earlier this frame may now name a retired image. Re-resolve
+    // and re-tag all four here, then lock.
+    if (!RetagStreamlineInputsAfterFlushX64()) return false; // failures already
+        // logged (rate-limited) by the re-resolve itself; a frame whose scene
+        // color/depth weren't recorded is skipped silently.
+    dxvkLock.Lock();
+
     g_vkResetCommandBuffer(g_commandBuffer, 0);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -529,7 +553,29 @@ bool EvaluateStreamlineDlssX64()
         return false;
     }
 
+    // 2026-09-27 (ROUND 19): full memory barriers around DLSS's own recorded
+    // work -- the cross-API hand-off neither side performs for us. DXVK's
+    // barriers only cover access DXVK itself knows about, and a plain fence
+    // wait between two submissions is an execution dependency, not a memory
+    // one. The leading barrier's first scope (ALL_COMMANDS, in submission
+    // order) covers every DXVK command list submitted before ours on this
+    // queue -- the scene color/depth writes and any relocation copies the
+    // guard's flush just recorded -- making them visible to DLSS's reads. The
+    // trailing one makes DLSS's output writes visible to whatever DXVK
+    // submits next (the composite StretchRect's blit). Global memory barriers
+    // only, no layout changes: Streamline performs its own transitions from/
+    // back to each tag's reported layout.
+    VkMemoryBarrier handoffBarrier{};
+    handoffBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    handoffBarrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    handoffBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    g_vkCmdPipelineBarrier(g_commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &handoffBarrier, 0, nullptr, 0, nullptr);
+
     bool evaluateOk = StreamlineEvaluateFeatureX64(reinterpret_cast<void*>(g_commandBuffer));
+
+    g_vkCmdPipelineBarrier(g_commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &handoffBarrier, 0, nullptr, 0, nullptr);
 
     vr = g_vkEndCommandBuffer(g_commandBuffer);
     if (vr != VK_SUCCESS) {
@@ -822,6 +868,8 @@ void RunDlssEvaluateAndCompositeX64(void* device)
 void ResetDlssCompositeFrameGuardX64()
 {
     g_dlssCompositeRanThisFrameX64 = false;
+    ClearStreamlineFrameSurfacesX64(); // 2026-09-27 (ROUND 19) -- same once-per-real-frame
+        // point; this frame's recorded scene color/depth surfaces must never carry over.
 }
 
 // 2026-09-27, ROUND 17 (corrected same day): real, one-shot menu-active DLSS
