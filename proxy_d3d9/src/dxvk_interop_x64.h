@@ -35,6 +35,27 @@
 static const IID IID_ID3D9VkInteropDevice_X64 =
     { 0x2eaa4b89, 0x0107, 0x4bdb, { 0x87, 0xf7, 0x0f, 0x54, 0x1c, 0x49, 0x3c, 0xe0 } };
 
+struct ID3D9VkInteropTextureX64; // forward decl -- TransitionTextureLayout's own
+    // first parameter type, real struct declared further down this file.
+
+// EXTENDED, 2026-09-27: real, live-confirmed root cause of a genuine
+// VK_ERROR_DEVICE_LOST fault (this project's own live testing) -- this
+// project's raw vkQueueSubmit calls (streamline_evaluate_x64.cpp) were
+// submitting directly to the SAME VkQueue DXVK uses internally, with ZERO
+// synchronization against DXVK's own internal submission thread.
+// Concurrent vkQueueSubmit calls on one VkQueue from different threads
+// with no external synchronization is undefined behavior per the Vulkan
+// spec itself -- DXVK's own real doc comments on FlushRenderingCommands/
+// LockSubmissionQueue/ReleaseSubmissionQueue below say exactly this is
+// the correct, required pattern for exactly this situation ("Must be
+// called before submitting Vulkan commands to the rendering queue if
+// those commands use the backing resource of a D3D9 object" /
+// "immediately before submitting Vulkan commands... in order to prevent
+// DXVK from using the queue"). Extending the vtable declaration up
+// through these three real methods (TransitionTextureLayout must also be
+// declared, even though never called, to keep the vtable layout correct
+// -- a COM vtable is laid out in declaration order, so every slot before
+// the one you actually need must exist).
 struct ID3D9VkInteropDeviceX64 : public IUnknown {
     // Vtable slot 3 -- DXVK: "Queries Vulkan handles used by DXVK".
     virtual void STDMETHODCALLTYPE GetVulkanHandles(
@@ -48,8 +69,39 @@ struct ID3D9VkInteropDeviceX64 : public IUnknown {
         uint32_t* pQueueIndex,
         uint32_t* pQueueFamilyIndex) = 0;
 
-    // Later slots (TransitionTextureLayout, FlushRenderingCommands, ...)
-    // intentionally not declared -- never call anything beyond slot 4
+    // Vtable slot 5 -- DXVK: "Executes an explicit image layout transition...
+    // Synchronization is left up to the caller." Never called by this
+    // project -- declared only to keep the vtable layout correct for the
+    // real slots below that ARE called.
+    virtual void STDMETHODCALLTYPE TransitionTextureLayout(
+        ID3D9VkInteropTextureX64*      pTexture,
+        const VkImageSubresourceRange* pSubresources,
+        VkImageLayout                  OldLayout,
+        VkImageLayout                  NewLayout) = 0;
+
+    // Vtable slot 6 -- DXVK: "Must be called before submitting Vulkan
+    // commands to the rendering queue if those commands use the backing
+    // resource of a D3D9 object." Every resource this project's own
+    // evaluate/composite pipeline touches (color/depth/output/motion-vector
+    // buffers) IS a D3D9 object's backing resource -- this must be called
+    // before our own vkQueueSubmit.
+    virtual void STDMETHODCALLTYPE FlushRenderingCommands() = 0;
+
+    // Vtable slot 7 -- DXVK: "Should be called immediately before submitting
+    // Vulkan commands to the rendering queue in order to prevent DXVK from
+    // using the queue. While the submission queue is locked, no D3D9 methods
+    // must be called from the locking thread, or otherwise a deadlock might
+    // occur." -- this last point matters: our own composite StretchRect (a
+    // real D3D9 method) must only ever run AFTER ReleaseSubmissionQueue.
+    virtual void STDMETHODCALLTYPE LockSubmissionQueue() = 0;
+
+    // Vtable slot 8 -- DXVK: "Should be called immediately after submitting
+    // Vulkan commands to the rendering queue in order to allow DXVK to
+    // submit new commands."
+    virtual void STDMETHODCALLTYPE ReleaseSubmissionQueue() = 0;
+
+    // Later slots (LockDevice, UnlockDevice, WaitForResource, CreateImage)
+    // intentionally not declared -- never call anything beyond slot 8
     // through this type without first declaring it here in DXVK's order.
 };
 

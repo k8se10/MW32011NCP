@@ -108,6 +108,61 @@ namespace {
 // device entirely, not keep trying.
 bool g_dlssDeviceLostX64 = false;
 
+// REAL FIX, 2026-09-27: real, decisive root cause of the VK_ERROR_DEVICE_LOST
+// fault found via live testing (see g_dlssDeviceLostX64's own comment) --
+// this file's own raw vkQueueSubmit calls were submitting directly to the
+// SAME VkQueue DXVK uses internally, with ZERO synchronization against
+// DXVK's own internal submission thread. Concurrent vkQueueSubmit calls on
+// one VkQueue from different threads with no external synchronization is
+// undefined behavior per the Vulkan spec itself. DXVK's own real interop
+// interface (dxvk_interop_x64.h, ID3D9VkInteropDeviceX64, extended this
+// session to include the real FlushRenderingCommands/LockSubmissionQueue/
+// ReleaseSubmissionQueue methods, per DXVK's own doc comments word for
+// word) exists specifically for this. This RAII guard QueryInterfaces the
+// real interop device, calls FlushRenderingCommands() (DXVK's own doc:
+// "Must be called before submitting Vulkan commands to the rendering queue
+// if those commands use the backing resource of a D3D9 object" -- every
+// resource this pipeline touches is one) then LockSubmissionQueue() on
+// construction, and ReleaseSubmissionQueue()+Release() on destruction --
+// guaranteeing the lock is always released on every return path (including
+// the several early-return failure paths already in EvaluateStreamlineDlssX64),
+// without needing to touch each one individually. DXVK's own doc comment on
+// LockSubmissionQueue is explicit: "While the submission queue is locked,
+// no D3D9 methods must be called from the locking thread, or otherwise a
+// deadlock might occur" -- this project's own composite StretchRect call
+// (a real D3D9 method) must therefore only ever run AFTER this guard's
+// destructor has already fired, i.e. after EvaluateStreamlineDlssX64 itself
+// has returned, which is exactly how RunDlssEvaluateAndCompositeX64 already
+// calls it (evaluate first, composite only after evaluate returns).
+class ScopedDxvkSubmissionLockX64 {
+public:
+    explicit ScopedDxvkSubmissionLockX64(void* d3d9Device)
+    {
+        if (!d3d9Device) return;
+        HRESULT hr = reinterpret_cast<IUnknown*>(d3d9Device)->QueryInterface(
+            IID_ID3D9VkInteropDevice_X64, reinterpret_cast<void**>(&m_device));
+        if (FAILED(hr) || !m_device) {
+            m_device = nullptr;
+            return;
+        }
+        m_device->FlushRenderingCommands();
+        m_device->LockSubmissionQueue();
+        m_locked = true;
+    }
+    ~ScopedDxvkSubmissionLockX64()
+    {
+        if (m_locked) m_device->ReleaseSubmissionQueue();
+        if (m_device) m_device->Release();
+    }
+    ScopedDxvkSubmissionLockX64(const ScopedDxvkSubmissionLockX64&) = delete;
+    ScopedDxvkSubmissionLockX64& operator=(const ScopedDxvkSubmissionLockX64&) = delete;
+    bool IsValid() const { return m_locked; }
+
+private:
+    ID3D9VkInteropDeviceX64* m_device = nullptr;
+    bool m_locked = false;
+};
+
 // Real Vulkan functions this file needs, resolved dynamically -- same
 // rationale as streamline_resources_x64.cpp's own top comment (no Vulkan
 // import library linked in this project; every Vulkan function is resolved
@@ -417,6 +472,26 @@ bool EvaluateStreamlineDlssX64()
     VkDevice vkDevice = GetDxvkVkDeviceX64();
     VkQueue vkQueue = GetDxvkVkQueueX64();
     if (vkDevice == VK_NULL_HANDLE || vkQueue == VK_NULL_HANDLE) return false;
+
+    // REAL FIX, 2026-09-27 -- see ScopedDxvkSubmissionLockX64's own top
+    // comment for the full real root-cause record. Must be acquired before
+    // the command-buffer reset/record/submit/wait sequence below (all of it
+    // is "Vulkan commands submitted to the rendering queue" in DXVK's own
+    // terms) and must stay held for the ENTIRE sequence, including the fence
+    // wait -- releasing early would reopen the exact race this exists to
+    // close. The guard's destructor releases it automatically on every
+    // return path below.
+    ScopedDxvkSubmissionLockX64 dxvkLock(device);
+    if (!dxvkLock.IsValid()) {
+        static bool s_lockFailureLogged = false;
+        if (!s_lockFailureLogged) {
+            s_lockFailureLogged = true;
+            LogFromController("[x64-streamline-evaluate] Could not acquire DXVK's submission queue lock "
+                "(QueryInterface(ID3D9VkInteropDevice) failed) -- skipping DLSS evaluation this frame "
+                "for safety rather than submitting unsynchronized.");
+        }
+        return false;
+    }
 
     g_vkResetCommandBuffer(g_commandBuffer, 0);
 
