@@ -16,6 +16,10 @@
 #include "d3d9_names.h"
 #include "d3d9_format_helpers.h"
 
+#ifdef _WIN32
+#include "iw5_render_target_bridge.h"
+#endif
+
 #include "../dxvk/dxvk_adapter.h"
 #include "../dxvk/dxvk_instance.h"
 
@@ -25,6 +29,7 @@
 #include "d3d9_initializer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #ifdef MSC_VER
 #pragma fenv_access (on)
@@ -151,6 +156,11 @@ namespace dxvk {
     BindFFUbershader<D3D9ShaderType::PixelShader>();
 
     m_unlockAdditionalFormats = m_parent->HasFormatsUnlocked();
+
+#ifdef _WIN32
+    if (m_d3d9Options.iw5RenderPassBridge)
+      iw5::initializeRenderTargetBridge();
+#endif
   }
 
 
@@ -1708,6 +1718,16 @@ namespace dxvk {
         m_dirty.set(D3D9DeviceDirtyFlag::SpecializationEntries);
     }
 
+    if (RenderTargetIndex == 0) {
+      // The game target-selector calls SetRenderTarget synchronously on this
+      // thread, pairing its scoped pass ID with this color-target binding.
+#ifdef _WIN32
+      m_state.engineRenderTargetId = iw5::getPendingRenderTargetId();
+#else
+      m_state.engineRenderTargetId = -1;
+#endif
+    }
+
     if (m_state.renderTargets[RenderTargetIndex] == rt)
       return D3D_OK;
 
@@ -3083,6 +3103,17 @@ namespace dxvk {
 
     if (unlikely(!PrimitiveCount || !NumVertices))
       return D3D_OK;
+
+#ifdef _WIN32
+    if (m_d3d9Options.iw5RenderPassBridge && GetEngineRenderTargetId() == 2) {
+      static std::atomic<uint64_t> scenePassDrawCount = 0;
+      const uint64_t count = scenePassDrawCount.fetch_add(1, std::memory_order_relaxed) + 1;
+      if (count <= 5 || count % 2000 == 0)
+        Logger::debug(str::format(
+          "IW5 render-pass bridge: indexed draw observed with engine target 2 (candidate scene pass), sample ",
+          count));
+    }
+#endif
 
     bool dynamicSysmemVBOs = false;
     bool dynamicSysmemIBO = false;

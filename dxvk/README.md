@@ -9,6 +9,11 @@ DXVK build/usage/architecture documentation, entirely unmodified, now lives at
 [`DXVK_UPSTREAM_README.md`](DXVK_UPSTREAM_README.md) instead) — see
 `LICENSE` for DXVK's own real, unchanged license (zlib/libpng).
 
+The optional IW5 render-pass bridge uses upstream MinHook v1.3.4
+(commit `c3fcafdc10146beb5919319d0683e44e3c30d537`) under its BSD 2-Clause
+license; the complete upstream notice and HDE attributions are in
+[`third_party/minhook/LICENSE.txt`](third_party/minhook/LICENSE.txt).
+
 ## Why this fork exists
 
 Forked 2026-09-23, direct instruction, mid-investigation into a real,

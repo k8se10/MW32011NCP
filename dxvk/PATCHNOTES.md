@@ -11,7 +11,7 @@ investigation/reverse-engineering trail behind each entry.
 
 ## Unreleased
 
-**Summary:** Two patches on top of upstream `v3.1.1`, both real build/host
+**Summary:** Two patches on top of upstream `v3.1.1` are build/host
 prerequisites for NVIDIA Streamline/DLSS integration: an opt-in
 `dxvk.enableNvCudaInteropNative` option (live-confirmed enabling the real
 `VK_NVX_*` extensions DLSS needs), and `DXVK_VULKAN_LOADER_OVERRIDE`, an
@@ -19,7 +19,9 @@ opt-in env var that lets a host point DXVK's Vulkan loader at a specific
 file instead of the normal winevulkan/vulkan-1 search — needed so
 Streamline's own `sl.interposer.dll` can sit in front of DXVK's
 `vkCreateInstance`/`vkCreateDevice` calls for its mandatory swapchain hooks.
-Both off by default, so behavior is unchanged unless set.
+Both off by default, so behavior is unchanged unless set. A third,
+experimental IW5-SP-only render-pass bridge prerequisite is also included;
+it is disabled by default and does not enable tessellation.
 
 ### What's New
 1. **`dxvk.enableNvCudaInteropNative` (default `False`).** Upstream enables
@@ -47,6 +49,15 @@ Both off by default, so behavior is unchanged unless set.
    it. Not game-specific. Not yet build-verified against a real Streamline
    session (built clean; the interposer itself hasn't been exercised through
    this path live yet).
+3. **`d3d9.iw5RenderPassBridge` (default `False`, Windows only).** When
+   explicitly enabled, this experimental bridge first requires the verified
+   `iw5sp.exe` PE identity and then a unique render-target dispatcher
+   signature before using vendored MinHook to scope the engine's target ID
+   around its original call. DXVK associates that ID with its RT0 state and
+   can emit a rate-limited scene-pass diagnostic. This is an IW5-specific
+   research prerequisite, not tessellation: no TCS/TES stages are injected,
+   and the hook has not been live-tested. See `re_notes/known_issues.md`
+   issue #3.
 
 ### Groundwork
 1. **Issue #1 resolved as not a DXVK bug.** A motion-blur post-process pass

@@ -159,6 +159,9 @@ namespace dxvk {
     /// Enable emulation of device loss when a fullscreen app loses focus
     bool deviceLossOnFocusLoss;
 
+    /// Enable the experimental, SP-build-gated IW5 render-target ID bridge
+    bool iw5RenderPassBridge;
+
     /// Disable counting losable resources and rejecting calls to Reset() if any are still alive
     bool countLosableResources;
 
