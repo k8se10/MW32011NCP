@@ -175,3 +175,17 @@ struct ID3D9VkInteropTextureX64 : public IUnknown {
         VkImageLayout*      pLayout,
         VkImageCreateInfo*  pInfo) = 0;
 };
+
+// 2026-09-27: what one DLSS input/output image looked like at the moment it
+// was tagged for this frame's evaluate (post-flush re-resolve,
+// streamline_resources_x64.cpp). Used by the read-only pixel readback
+// diagnostic in streamline_evaluate_x64.cpp. image == VK_NULL_HANDLE means
+// "not tagged this frame".
+struct DlssTaggedImageX64 {
+    VkImage image = VK_NULL_HANDLE;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    VkImageUsageFlags usage = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};

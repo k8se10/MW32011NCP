@@ -231,6 +231,11 @@ void* g_outputColorSurface = nullptr; // real IDirect3DSurface9*, GetSurfaceLeve
 uint32_t g_outputColorWidth = 0;
 uint32_t g_outputColorHeight = 0;
 VkImage g_cachedOutputColorImage = VK_NULL_HANDLE;
+// 2026-09-27: snapshots of the scene-color input and DLSS output exactly as
+// tagged by the post-flush re-resolve (see DlssTaggedImageX64), for the
+// readback diagnostic. Reset each frame by ClearStreamlineFrameSurfacesX64.
+DlssTaggedImageX64 g_taggedInputColorX64;
+DlssTaggedImageX64 g_taggedOutputColorX64;
 VkImageView g_cachedOutputColorView = VK_NULL_HANDLE;
 
 // Real motion-vectors buffer (kBufferTypeMotionVectors) -- required per the
@@ -977,6 +982,17 @@ bool ResolveAndTagCurrentImageX64(void* surface, sl::BufferType bufferType, VkIm
     resource.arrayLayers = info.arrayLayers;
     resource.usage = info.usage;
 
+    if (bufferType == sl::kBufferTypeScalingInputColor || bufferType == sl::kBufferTypeScalingOutputColor) {
+        DlssTaggedImageX64& snap = (bufferType == sl::kBufferTypeScalingInputColor)
+            ? g_taggedInputColorX64 : g_taggedOutputColorX64;
+        snap.image = image;
+        snap.layout = layout;
+        snap.format = info.format;
+        snap.usage = info.usage;
+        snap.width = info.extent.width;
+        snap.height = info.extent.height;
+    }
+
     sl::ResourceTag tag(&resource, bufferType, sl::ResourceLifecycle::eValidUntilPresent);
     return StreamlineSetTagForFrameX64(&tag, 1);
 }
@@ -1039,6 +1055,17 @@ void* GetDlssOutputSurfaceX64()
     return g_outputColorSurface;
 }
 
+// 2026-09-27: size of the DLSS output texture as actually created, so the
+// evaluate can refuse to run when it disagrees with the options' output size.
+// Returns false if no output texture exists yet.
+bool GetDlssOutputTextureSizeX64(uint32_t& outWidth, uint32_t& outHeight)
+{
+    if (!g_outputColorSurface) return false;
+    outWidth = g_outputColorWidth;
+    outHeight = g_outputColorHeight;
+    return true;
+}
+
 // 2026-09-27 (ROUND 19): REAL FIX for DLSS running for a while and then
 // hanging/losing the device, sooner on heavier levels. DXVK relocates images
 // to new VkImage handles in the background -- memory defragmentation, on by
@@ -1088,6 +1115,17 @@ void ClearStreamlineFrameSurfacesX64()
 {
     g_frameSceneDepthSurfaceX64 = nullptr;
     g_frameSceneColorSurfaceX64 = nullptr;
+    g_taggedInputColorX64 = DlssTaggedImageX64{};
+    g_taggedOutputColorX64 = DlssTaggedImageX64{};
+}
+
+// 2026-09-27: the scene-color input and DLSS output as tagged for this
+// frame's evaluate (post-flush). Only meaningful after
+// RetagStreamlineInputsAfterFlushX64 succeeded this frame.
+void GetDlssTaggedImagesX64(DlssTaggedImageX64& inputColor, DlssTaggedImageX64& outputColor)
+{
+    inputColor = g_taggedInputColorX64;
+    outputColor = g_taggedOutputColorX64;
 }
 
 // Called once, from InstallEndSceneHook (overlay_hud.cpp) -- same one-

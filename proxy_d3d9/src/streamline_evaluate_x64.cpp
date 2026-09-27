@@ -56,6 +56,8 @@
 
 #include <windows.h>
 #include <cstdio>
+#include <cstring> // memcpy -- readback diagnostic decoding
+#include <cstdint> // UINT32_MAX -- readback diagnostic memory-type search
 #include "dxvk_interop_x64.h" // real Vulkan SDK types -- must come BEFORE sl.h,
     // which uses Vulkan types without including a Vulkan header itself.
 #include "../third_party/streamline/include/sl.h"
@@ -78,6 +80,9 @@ extern bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_
 extern void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp -- must run
     // before evaluate, now that both are called from the same earlier per-frame point.
 extern void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, same reason.
+extern bool GetDlssOutputTextureSizeX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp, 2026-09-27
+extern void GetDlssTaggedImagesX64(DlssTaggedImageX64& inputColor, DlssTaggedImageX64& outputColor); // streamline_resources_x64.cpp, 2026-09-27
+extern VkPhysicalDevice GetDxvkVkPhysicalDeviceX64(); // streamline_integration_x64.cpp, 2026-09-27
 extern void* GetDlssOutputSurfaceX64(); // streamline_resources_x64.cpp, 2026-09-27 -- the
     // real IDirect3DSurface9* this file's own final composite step reads from.
 extern "C" bool IsMenuActiveX64_Exported(); // analog_input_hooks_x64.cpp -- same real
@@ -421,14 +426,366 @@ bool EnsureCommandResourcesX64()
 // real 2s timeout below). RunDlssEvaluateAndCompositeX64 (this file) needs
 // this to know whether it's safe to composite g_outputColorTexture's content
 // this frame, or whether it holds stale/no data.
-bool EvaluateStreamlineDlssX64()
-{
-    if (g_dlssDeviceLostX64) return false; // see this flag's own comment -- permanent for this session
-    if (!IsStreamlineInitializedX64()) return false;
-    if (!ResolveVulkanFunctionsIfNeeded()) return false;
-    if (!EnsureCommandResourcesX64()) return false;
+// ---------------------------------------------------------------------------
+// 2026-09-27: read-only DLSS pixel readback diagnostic.
+//
+// Live report: at InternalRenderScalePercent > 100 (the DLAA override) the
+// gameplay viewport is black while every evaluate/composite call logs
+// success; pausing (which skips the composite) shows the real scene. Three
+// different faults produce exactly that picture, and logging API results
+// cannot tell them apart:
+//   1. the surface tagged as DLSS's scene-color input is black or the wrong
+//      target (above 100% every scene-sized target shares the tagged size,
+//      so the "last bound target of that size" choice is ambiguous);
+//   2. DLSS/DLAA writes black into its output;
+//   3. the output is fine and the composite StretchRect is what fails.
+// This copies a 4x4 block from the centre of the tagged input and output
+// images into a host-visible buffer, inside the SAME command buffer as the
+// evaluate (after its trailing barrier), and logs both after the fence wait.
+// It changes nothing that is drawn: images are only transitioned to
+// TRANSFER_SRC_OPTIMAL when their tagged layout can't be copied from
+// directly, and are always transitioned straight back. Runs for the first 3
+// evaluates after any change of DLSS mode/output size, then every 600th.
+// Any setup failure disables only the diagnostic, never DLSS.
+// ---------------------------------------------------------------------------
+namespace {
 
-    void* device = GetLastKnownRenderDevice();
+PFN_vkCreateBuffer g_rbCreateBuffer = nullptr;
+PFN_vkGetBufferMemoryRequirements g_rbGetBufferMemoryRequirements = nullptr;
+PFN_vkAllocateMemory g_rbAllocateMemory = nullptr;
+PFN_vkBindBufferMemory g_rbBindBufferMemory = nullptr;
+PFN_vkMapMemory g_rbMapMemory = nullptr;
+PFN_vkCmdCopyImageToBuffer g_rbCmdCopyImageToBuffer = nullptr;
+
+VkBuffer g_rbBuffer = VK_NULL_HANDLE;
+VkDeviceMemory g_rbMemory = VK_NULL_HANDLE;
+void* g_rbMapped = nullptr;
+bool g_rbSetupFailed = false;
+
+constexpr VkDeviceSize kRbBufferSize = 4096;
+constexpr VkDeviceSize kRbInputOffset = 0;
+constexpr VkDeviceSize kRbOutputOffset = 1024;
+constexpr uint32_t kRbBlock = 4; // 4x4 texels
+
+long long g_rbEvaluateCount = 0;
+int g_rbForcedRemaining = 3;
+int g_rbLastMode = -1;
+uint32_t g_rbLastWidth = 0, g_rbLastHeight = 0;
+
+// Per-frame record of what was copied, consumed after the fence wait.
+struct RbCopyRecord {
+    bool valid = false;
+    DlssTaggedImageX64 img;
+    uint32_t texelSize = 0;
+    VkDeviceSize offset = 0;
+};
+RbCopyRecord g_rbInput, g_rbOutput;
+bool g_rbPendingThisFrame = false;
+
+uint32_t RbTexelSize(VkFormat f)
+{
+    switch (f) {
+    case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM: case VK_FORMAT_B8G8R8A8_SRGB:
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32: case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+        return 4;
+    case VK_FORMAT_R16G16B16A16_SFLOAT: case VK_FORMAT_R16G16B16A16_UNORM:
+        return 8;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return 16;
+    default:
+        return 0;
+    }
+}
+
+float RbHalfToFloat(uint16_t h)
+{
+    uint32_t sign = (h >> 15) & 1u, exp = (h >> 10) & 0x1Fu, mant = h & 0x3FFu;
+    float v;
+    if (exp == 0) v = static_cast<float>(mant) * (1.0f / 16777216.0f); // 2^-24
+    else if (exp == 31) v = 65504.0f; // inf/nan: clamp for logging
+    else {
+        uint32_t bits = ((exp + 112u) << 23) | (mant << 13);
+        memcpy(&v, &bits, sizeof(v));
+    }
+    return sign ? -v : v;
+}
+
+// Average RGBA of the copied block, in 0..1 (or HDR range for float formats).
+// Returns false for formats this decoder doesn't handle (raw hex is logged instead).
+bool RbDecodeAverage(const uint8_t* data, VkFormat f, uint32_t count, float rgba[4])
+{
+    rgba[0] = rgba[1] = rgba[2] = rgba[3] = 0.0f;
+    for (uint32_t i = 0; i < count; ++i) {
+        float r = 0, g = 0, b = 0, a = 0;
+        switch (f) {
+        case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_R8G8B8A8_SRGB: {
+            const uint8_t* p = data + i * 4;
+            r = p[0] / 255.0f; g = p[1] / 255.0f; b = p[2] / 255.0f; a = p[3] / 255.0f; break; }
+        case VK_FORMAT_B8G8R8A8_UNORM: case VK_FORMAT_B8G8R8A8_SRGB: {
+            const uint8_t* p = data + i * 4;
+            b = p[0] / 255.0f; g = p[1] / 255.0f; r = p[2] / 255.0f; a = p[3] / 255.0f; break; }
+        case VK_FORMAT_A2B10G10R10_UNORM_PACK32: {
+            uint32_t v; memcpy(&v, data + i * 4, 4);
+            r = (v & 0x3FF) / 1023.0f; g = ((v >> 10) & 0x3FF) / 1023.0f; b = ((v >> 20) & 0x3FF) / 1023.0f;
+            a = (v >> 30) / 3.0f; break; }
+        case VK_FORMAT_A2R10G10B10_UNORM_PACK32: {
+            uint32_t v; memcpy(&v, data + i * 4, 4);
+            b = (v & 0x3FF) / 1023.0f; g = ((v >> 10) & 0x3FF) / 1023.0f; r = ((v >> 20) & 0x3FF) / 1023.0f;
+            a = (v >> 30) / 3.0f; break; }
+        case VK_FORMAT_R16G16B16A16_SFLOAT: {
+            uint16_t h[4]; memcpy(h, data + i * 8, 8);
+            r = RbHalfToFloat(h[0]); g = RbHalfToFloat(h[1]); b = RbHalfToFloat(h[2]); a = RbHalfToFloat(h[3]); break; }
+        case VK_FORMAT_R16G16B16A16_UNORM: {
+            uint16_t h[4]; memcpy(h, data + i * 8, 8);
+            r = h[0] / 65535.0f; g = h[1] / 65535.0f; b = h[2] / 65535.0f; a = h[3] / 65535.0f; break; }
+        case VK_FORMAT_R32G32B32A32_SFLOAT: {
+            float v[4]; memcpy(v, data + i * 16, 16);
+            r = v[0]; g = v[1]; b = v[2]; a = v[3]; break; }
+        default:
+            return false;
+        }
+        rgba[0] += r; rgba[1] += g; rgba[2] += b; rgba[3] += a;
+    }
+    for (int c = 0; c < 4; ++c) {
+        rgba[c] /= static_cast<float>(count);
+        // Clamp for printing: a garbage float would otherwise print dozens of
+        // digits through %.3f and overflow the caller's sprintf_s buffer
+        // (fatal -- this project's standing sprintf_s lesson). NaN -> -1.
+        if (!(rgba[c] == rgba[c])) rgba[c] = -1.0f;
+        else if (rgba[c] > 9999.0f) rgba[c] = 9999.0f;
+        else if (rgba[c] < -9999.0f) rgba[c] = -9999.0f;
+    }
+    return true;
+}
+
+bool EnsureReadbackResourcesX64()
+{
+    if (g_rbMapped) return true;
+    if (g_rbSetupFailed) return false;
+
+    VkInstance instance = GetDxvkVkInstanceX64();
+    VkDevice device = GetDxvkVkDeviceX64();
+    VkPhysicalDevice phys = GetDxvkVkPhysicalDeviceX64();
+    if (instance == VK_NULL_HANDLE || device == VK_NULL_HANDLE || phys == VK_NULL_HANDLE) return false;
+
+    HMODULE vulkanModule = GetModuleHandleA("vulkan-1.dll");
+    if (!vulkanModule) vulkanModule = GetModuleHandleA("winevulkan.dll");
+    auto getInstanceProcAddr = vulkanModule ? reinterpret_cast<PFN_vkGetInstanceProcAddr_local>(
+        GetProcAddress(vulkanModule, "vkGetInstanceProcAddr")) : nullptr;
+    auto getDeviceProcAddr = getInstanceProcAddr ? reinterpret_cast<PFN_vkGetDeviceProcAddr_local>(
+        getInstanceProcAddr(instance, "vkGetDeviceProcAddr")) : nullptr;
+    auto getMemProps = getInstanceProcAddr ? reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
+        getInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties")) : nullptr;
+    if (!getDeviceProcAddr || !getMemProps) {
+        LogFromController("[x64-streamline-readback] Vulkan loader entry points unavailable -- readback "
+            "diagnostic disabled (DLSS unaffected).");
+        g_rbSetupFailed = true;
+        return false;
+    }
+    g_rbCreateBuffer = reinterpret_cast<PFN_vkCreateBuffer>(getDeviceProcAddr(device, "vkCreateBuffer"));
+    g_rbGetBufferMemoryRequirements = reinterpret_cast<PFN_vkGetBufferMemoryRequirements>(
+        getDeviceProcAddr(device, "vkGetBufferMemoryRequirements"));
+    g_rbAllocateMemory = reinterpret_cast<PFN_vkAllocateMemory>(getDeviceProcAddr(device, "vkAllocateMemory"));
+    g_rbBindBufferMemory = reinterpret_cast<PFN_vkBindBufferMemory>(getDeviceProcAddr(device, "vkBindBufferMemory"));
+    g_rbMapMemory = reinterpret_cast<PFN_vkMapMemory>(getDeviceProcAddr(device, "vkMapMemory"));
+    g_rbCmdCopyImageToBuffer = reinterpret_cast<PFN_vkCmdCopyImageToBuffer>(
+        getDeviceProcAddr(device, "vkCmdCopyImageToBuffer"));
+    if (!g_rbCreateBuffer || !g_rbGetBufferMemoryRequirements || !g_rbAllocateMemory ||
+        !g_rbBindBufferMemory || !g_rbMapMemory || !g_rbCmdCopyImageToBuffer) {
+        LogFromController("[x64-streamline-readback] Buffer/memory functions failed to resolve -- readback "
+            "diagnostic disabled (DLSS unaffected).");
+        g_rbSetupFailed = true;
+        return false;
+    }
+
+    VkBufferCreateInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bi.size = kRbBufferSize;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (g_rbCreateBuffer(device, &bi, nullptr, &g_rbBuffer) != VK_SUCCESS) {
+        LogFromController("[x64-streamline-readback] vkCreateBuffer failed -- readback diagnostic disabled.");
+        g_rbBuffer = VK_NULL_HANDLE;
+        g_rbSetupFailed = true;
+        return false;
+    }
+    VkMemoryRequirements req{};
+    g_rbGetBufferMemoryRequirements(device, g_rbBuffer, &req);
+    VkPhysicalDeviceMemoryProperties mp{};
+    getMemProps(phys, &mp);
+    const VkMemoryPropertyFlags want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    uint32_t typeIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < mp.memoryTypeCount; ++i) {
+        if ((req.memoryTypeBits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & want) == want) {
+            typeIndex = i;
+            break;
+        }
+    }
+    VkMemoryAllocateInfo ai{};
+    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ai.allocationSize = req.size;
+    ai.memoryTypeIndex = typeIndex;
+    if (typeIndex == UINT32_MAX || g_rbAllocateMemory(device, &ai, nullptr, &g_rbMemory) != VK_SUCCESS ||
+        g_rbBindBufferMemory(device, g_rbBuffer, g_rbMemory, 0) != VK_SUCCESS ||
+        g_rbMapMemory(device, g_rbMemory, 0, VK_WHOLE_SIZE, 0, &g_rbMapped) != VK_SUCCESS || !g_rbMapped) {
+        // The buffer/memory are deliberately leaked on this one-time failure
+        // path (a few KB, once per session): destroying them would need two
+        // more resolved entry points for a path that should never run.
+        LogFromController("[x64-streamline-readback] host-visible memory setup failed -- readback "
+            "diagnostic disabled (DLSS unaffected).");
+        g_rbMapped = nullptr;
+        g_rbSetupFailed = true;
+        return false;
+    }
+    LogFromController("[x64-streamline-readback] Readback buffer ready (4 KB host-visible).");
+    return true;
+}
+
+// Decides whether this evaluate gets a readback.
+bool ShouldReadbackThisEvaluateX64(int mode, uint32_t outW, uint32_t outH)
+{
+    ++g_rbEvaluateCount;
+    if (mode != g_rbLastMode || outW != g_rbLastWidth || outH != g_rbLastHeight) {
+        g_rbLastMode = mode;
+        g_rbLastWidth = outW;
+        g_rbLastHeight = outH;
+        g_rbForcedRemaining = 3;
+    }
+    if (g_rbForcedRemaining > 0) { --g_rbForcedRemaining; return true; }
+    return (g_rbEvaluateCount % 600) == 0;
+}
+
+// Records the centre-block copy of one image into the readback buffer.
+void RecordCenterCopyX64(VkCommandBuffer cmd, const DlssTaggedImageX64& img, VkDeviceSize offset,
+    RbCopyRecord& rec, const char* label)
+{
+    rec = RbCopyRecord{};
+    if (img.image == VK_NULL_HANDLE || img.width < kRbBlock || img.height < kRbBlock) return;
+    uint32_t texel = RbTexelSize(img.format);
+    if (texel == 0 || !(img.usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ||
+        img.layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+        char buf[240];
+        sprintf_s(buf, "[x64-streamline-readback] %s not copyable (format=%d usage=0x%X layout=%d) -- skipped.",
+            label, static_cast<int>(img.format), img.usage, static_cast<int>(img.layout));
+        LogFromController(buf);
+        return;
+    }
+    const bool directCopy = (img.layout == VK_IMAGE_LAYOUT_GENERAL ||
+        img.layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    const VkImageLayout copyLayout = directCopy ? img.layout : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+    VkImageMemoryBarrier b{};
+    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = img.image;
+    b.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    if (!directCopy) {
+        b.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        b.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        b.oldLayout = img.layout;
+        b.newLayout = copyLayout;
+        g_vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &b);
+    }
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = offset;
+    region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    region.imageOffset = { static_cast<int32_t>(img.width / 2 - kRbBlock / 2),
+                           static_cast<int32_t>(img.height / 2 - kRbBlock / 2), 0 };
+    region.imageExtent = { kRbBlock, kRbBlock, 1 };
+    g_rbCmdCopyImageToBuffer(cmd, img.image, copyLayout, g_rbBuffer, 1, &region);
+
+    if (!directCopy) {
+        b.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        b.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        b.oldLayout = copyLayout;
+        b.newLayout = img.layout;
+        g_vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &b);
+    }
+
+    rec.valid = true;
+    rec.img = img;
+    rec.texelSize = texel;
+    rec.offset = offset;
+}
+
+void LogCopyResultX64(const RbCopyRecord& rec, const char* label, char* out, size_t outSize)
+{
+    if (!rec.valid) { sprintf_s(out, outSize, "%s=<not copied>", label); return; }
+    const uint8_t* data = static_cast<const uint8_t*>(g_rbMapped) + rec.offset;
+    uint32_t first = 0;
+    memcpy(&first, data, 4);
+    float rgba[4];
+    if (RbDecodeAverage(data, rec.img.format, kRbBlock * kRbBlock, rgba)) {
+        sprintf_s(out, outSize, "%s %ux%u fmt=%d layout=%d avgRGBA=(%.3f,%.3f,%.3f,%.3f) first=0x%08X",
+            label, rec.img.width, rec.img.height, static_cast<int>(rec.img.format),
+            static_cast<int>(rec.img.layout), rgba[0], rgba[1], rgba[2], rgba[3], first);
+    } else {
+        sprintf_s(out, outSize, "%s %ux%u fmt=%d layout=%d first=0x%08X (format not decoded)",
+            label, rec.img.width, rec.img.height, static_cast<int>(rec.img.format),
+            static_cast<int>(rec.img.layout), first);
+    }
+}
+
+// Records both copies (if this evaluate is sampled). Call after the evaluate's
+// trailing barrier, before vkEndCommandBuffer.
+void RecordDlssReadbackIfDueX64(VkCommandBuffer cmd, int mode, uint32_t outW, uint32_t outH)
+{
+    g_rbPendingThisFrame = false;
+    if (!ShouldReadbackThisEvaluateX64(mode, outW, outH)) return;
+    if (!EnsureReadbackResourcesX64()) return;
+    DlssTaggedImageX64 input, output;
+    GetDlssTaggedImagesX64(input, output);
+    RecordCenterCopyX64(cmd, input, kRbInputOffset, g_rbInput, "input-color");
+    RecordCenterCopyX64(cmd, output, kRbOutputOffset, g_rbOutput, "dlss-output");
+    if (!g_rbInput.valid && !g_rbOutput.valid) return;
+    VkMemoryBarrier hb{};
+    hb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    hb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    hb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    // HOST: makes the copied texels visible to the CPU after the fence wait.
+    // ALL_COMMANDS: execution dependency so nothing submitted after this
+    // (DXVK's next write to either image) can overtake our transfer reads --
+    // needed on the direct-copy path, which has no transition-back barrier.
+    g_vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+        0, 1, &hb, 0, nullptr, 0, nullptr);
+    g_rbPendingThisFrame = true;
+}
+
+// Logs the sampled pixels. Call only after the evaluate's fence has signaled.
+void LogDlssReadbackIfPendingX64(int mode)
+{
+    if (!g_rbPendingThisFrame) return;
+    g_rbPendingThisFrame = false;
+    char in[200], outp[200], buf[520];
+    LogCopyResultX64(g_rbInput, "input", in, sizeof(in));
+    LogCopyResultX64(g_rbOutput, "output", outp, sizeof(outp));
+    sprintf_s(buf, "[x64-streamline-readback] evaluate #%lld mode=%d | %s | %s",
+        g_rbEvaluateCount, mode, in, outp);
+    LogFromController(buf);
+}
+
+} // namespace
+
+// 2026-09-27: computes this frame's effective DLSS mode and output size and
+// publishes them in g_dlssEffectiveModeX64 / g_dlssEffectiveOutputWidthX64 /
+// g_dlssEffectiveOutputHeightX64. Split out of EvaluateStreamlineDlssX64 so
+// RunDlssEvaluateAndCompositeX64 can run it BEFORE TagStreamlineOutputColorX64:
+// the output texture is sized from these globals, and computing them only
+// inside the evaluate (after the tag) left the texture one frame behind the
+// options whenever the effective size changed. Live-confirmed consequence at
+// InternalRenderScalePercent > 100: NGX "Output subrect base and size exceed
+// the dimensions of the output Color image" on the first DLAA frame (options
+// already 5120x2880, texture still 2560x1440). Idempotent; the edge-detected
+// log line and overlay notice fire once per transition.
+static bool UpdateDlssEffectiveOutputX64(void* device)
+{
     if (!device) return false;
     int nativeW = 1920, nativeH = 1080;
     GetRealScreenSize(device, nativeW, nativeH);
@@ -495,6 +852,21 @@ bool EvaluateStreamlineDlssX64()
     g_dlssEffectiveModeX64 = effectiveMode;
     g_dlssEffectiveOutputWidthX64 = effectiveOutputWidth;
     g_dlssEffectiveOutputHeightX64 = effectiveOutputHeight;
+    return true;
+}
+
+bool EvaluateStreamlineDlssX64()
+{
+    if (g_dlssDeviceLostX64) return false; // see this flag's own comment -- permanent for this session
+    if (!IsStreamlineInitializedX64()) return false;
+    if (!ResolveVulkanFunctionsIfNeeded()) return false;
+    if (!EnsureCommandResourcesX64()) return false;
+
+    void* device = GetLastKnownRenderDevice();
+    if (!UpdateDlssEffectiveOutputX64(device)) return false;
+    int effectiveMode = g_dlssEffectiveModeX64;
+    uint32_t effectiveOutputWidth = g_dlssEffectiveOutputWidthX64;
+    uint32_t effectiveOutputHeight = g_dlssEffectiveOutputHeightX64;
 
     if (effectiveOutputWidth != g_lastOptionsWidth || effectiveOutputHeight != g_lastOptionsHeight ||
         effectiveMode != g_lastOptionsMode) {
@@ -505,6 +877,27 @@ bool EvaluateStreamlineDlssX64()
         g_optionsEverSucceeded = g_optionsEverSucceeded || ok;
     }
     if (!g_optionsEverSucceeded) return false; // never configured successfully -- nothing to evaluate yet
+
+    // 2026-09-27: never evaluate while the output texture and the options
+    // disagree on size -- NGX rejects the frame ("Output subrect base and
+    // size exceed the dimensions of the output Color image"). With the
+    // effective size now computed before the output tag this should not
+    // happen, but a failed texture (re)creation would otherwise reproduce it
+    // every frame.
+    uint32_t outputTextureWidth = 0, outputTextureHeight = 0;
+    if (!GetDlssOutputTextureSizeX64(outputTextureWidth, outputTextureHeight) ||
+        outputTextureWidth != effectiveOutputWidth || outputTextureHeight != effectiveOutputHeight) {
+        static long long s_sizeMismatchCount = 0;
+        ++s_sizeMismatchCount;
+        if (s_sizeMismatchCount <= 10 || (s_sizeMismatchCount % 1000) == 0) {
+            char buf[260];
+            sprintf_s(buf, "[x64-streamline-evaluate] Skipping evaluate: DLSS output texture is %ux%u but "
+                "the options expect %ux%u (count=%lld).", outputTextureWidth, outputTextureHeight,
+                effectiveOutputWidth, effectiveOutputHeight, s_sizeMismatchCount);
+            LogFromController(buf);
+        }
+        return false;
+    }
 
     VkDevice vkDevice = GetDxvkVkDeviceX64();
     VkQueue vkQueue = GetDxvkVkQueueX64();
@@ -576,6 +969,9 @@ bool EvaluateStreamlineDlssX64()
 
     g_vkCmdPipelineBarrier(g_commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &handoffBarrier, 0, nullptr, 0, nullptr);
+
+    if (evaluateOk) RecordDlssReadbackIfDueX64(g_commandBuffer, effectiveMode, effectiveOutputWidth,
+        effectiveOutputHeight); // read-only diagnostic, see its own block comment
 
     vr = g_vkEndCommandBuffer(g_commandBuffer);
     if (vr != VK_SUCCESS) {
@@ -656,6 +1052,7 @@ bool EvaluateStreamlineDlssX64()
         return false;
     }
     g_vkResetFences(vkDevice, 1, &g_fence);
+    LogDlssReadbackIfPendingX64(effectiveMode);
     return true; // genuine, complete, fence-signaled success -- safe to composite this frame.
 }
 
@@ -808,6 +1205,9 @@ void RunDlssEvaluateAndCompositeX64(void* device)
     // in the frame via their own SetRenderTarget/SetDepthStencilSurface hooks,
     // which fire naturally during the 3D scene's own rendering, well before this
     // boundary -- no change needed there.
+    // Effective mode/size first, so the output texture below is created at the
+    // size this frame's options will use (see UpdateDlssEffectiveOutputX64).
+    if (!UpdateDlssEffectiveOutputX64(device)) return;
     TagStreamlineOutputColorX64();
     TagStreamlineMotionVectorsX64();
 
@@ -943,6 +1343,9 @@ void RunDlssMainMenuWarmupOnceX64(void* device)
     // whether any real 3D scene is currently rendering (see streamline_resources_x64.cpp's
     // own TagStreamlineOutputColorX64/TagStreamlineMotionVectorsX64 -- this project
     // creates and owns both textures itself, sized off the real display resolution).
+    // Effective mode/size first, so the output texture below is created at the
+    // size this frame's options will use (see UpdateDlssEffectiveOutputX64).
+    if (!UpdateDlssEffectiveOutputX64(device)) return;
     TagStreamlineOutputColorX64();
     TagStreamlineMotionVectorsX64();
 

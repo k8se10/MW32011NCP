@@ -599,6 +599,14 @@ VkQueue GetDxvkVkQueueX64()
     return g_dxvkVkQueueX64;
 }
 
+// 2026-09-27: the physical device behind DXVK's VkDevice -- needed by
+// streamline_evaluate_x64.cpp's readback diagnostic to pick a host-visible
+// memory type. VK_NULL_HANDLE before registration; callers must check.
+VkPhysicalDevice GetDxvkVkPhysicalDeviceX64()
+{
+    return g_dxvkVkPhysDeviceX64;
+}
+
 // 2026-09-26 -- needed by streamline_evaluate_x64.cpp to create a real
 // VkCommandPool against the same queue family Streamline's own registered
 // queue belongs to (a command pool is created FOR a specific queue family;
