@@ -62,12 +62,100 @@ committed on `claude/confident-mendel-hyoqkw`.
 | `b43d97a5a` | Stage 4: `rt_design_dxvk.md`, the ray-tracing design on the DXVK fork |
 | `dd85406aa` | Stage 5: `mp_port_plan.md` + `mp_twins_2026-09-27.txt` (18 HIGH SP→MP twins) |
 
-**All five renderer-reference stages are now complete.** Still waiting on
-the user:
-- the dev-only anti-anti-debug switch and the memory-limit hooks (§C below);
-- MP decisions (`mp_port_plan.md` §7: aim slowdown in MP, defaults);
-- go-ahead to start implementing any of: the RT milestone 0/1 fork patch,
-  the MP step 1 descriptor refactor, the memory-limit hooks.
+**All five renderer-reference stages are now complete.**
+
+### Summary of the post-compaction findings
+
+**Audio (parked by the user)**
+- The dup-pair diagnostic (`6df133be8`) is read-only and has **never been
+  compiled**: there's no Windows toolchain in the cloud container, and CI
+  only builds `main`/PRs. It was syntax-checked with clang in MSVC mode
+  against stand-in Win32 declarations, and its format strings were checked
+  by hand.
+- The XAudio2 layer is cleared. Loaded-sound start picks a channel
+  (`FUN_140270570`), stops and destroys that channel's old voice
+  (`FUN_14030f150`), then creates the new one (`FUN_14030dea0`). The
+  source-voice array has only two writers. So duplicate voices must be
+  **started twice upstream** of `FUN_140274100`.
+- The per-frame re-issue of entity loop sounds (`FUN_14003f3d0`) is by
+  design; the sound system deduplicates it.
+- **Resume:** one play session with AI gunfire and a red barrel, then
+  `grep DUP proxy_d3d9.log`. If nothing fires while the echo is audible, the
+  next targets are `FUN_140270570` and the restart pair
+  `FUN_140279880`/`FUN_1402799e0`.
+
+**Renderer stage 2b** (`renderer_end_to_end.md` §8)
+- The 7 k-way-merge sources: BSP pre-tessellated, BSP world VB, cached
+  static models (×2), rigid static models, skinned static models, and
+  generic draw-surfs.
+- The 64-bit draw-surf key: primary sort key in bits 57–62, surfType 53–56,
+  light 44–51, material 29–40. The surfType table fills only types 6–9.
+- All 15 `R_RENDERTARGET_*` IDs with the engine's own names (table
+  `0x1404d0740`).
+- The engine code-material table (`0x14041fb80`).
+- The post-FX order (`FUN_1401939f0`), and the frame submit/sync handshake
+  with its exact event handles.
+
+**Renderer stage 3: UI/menu pipeline** (§9)
+- Init and menu load: `ui/code.txt` → `menus.txt` → `patch_menus.txt`.
+- The UI context `0x142605050` and the menu stack; the active-menu state
+  machine.
+- The paint chain: `UI_Refresh` → `Menu_PaintAll` → `Menu_Paint` → item
+  painters → text/pic leaves → RC emitters (op 17/9, header constants
+  recovered).
+- The input path: `CL_KeyEvent` → `UI_KeyEvent` → `Menu_HandleKey` → the
+  event interpreter (89 commands).
+- The expression language: 356 ops, evaluator `FUN_14028c670`, executor
+  `FUN_14028f3c0`.
+- Correction: `FUN_1401d2930` only emits `PROJECTION_SET(3D)`; it isn't a
+  generic allocator.
+
+**Renderer stage 4: ray tracing** (`rt_design_dxvk.md`, §10)
+- One generic, opt-in fork change: `dxvk.enableRayQueryInterop` (acceleration
+  structure, ray query, deferred host operations). Everything else lives in
+  the proxy, using the Streamline interop seam.
+- Geometry is read from zone memory (the 44/32/88-byte strides are confirmed
+  in the binary).
+- Milestone 1 is RTAO written into `R_RENDERTARGET_SSAO_BLURRED`, so the
+  engine composites it with no shader changes.
+- RT sun shadows come second, gated on validating how the IW5 sun-shadow
+  shaders sample the shadow map. Bounded shader replacement is the fallback.
+
+**Renderer stage 5: MP port** (`mp_port_plan.md`, `mp_twins_2026-09-27.txt`, §11)
+- 31 of 63 signatures already hit in MP.
+- For the other 32, the static matcher gives 18 HIGH twins (Pmove, sprint,
+  missile steering, `UI_KeyEvent`, `UI_Refresh`, the wait-coalescing sleeps,
+  the IWD read, post-FX, saved-screen capture, the audio functions), plus 2
+  MED, 4 LOW, 2 rejected and 6 open.
+- The real work is the per-feature MP data-offset audit.
+- Planned structure: per-exe hook descriptors that fail closed, with SP
+  unchanged.
+
+### Decisions needed from the user (all open, with recommendations)
+
+1. **Aim slowdown near targets in MP** (`adsCloseRangeSlowdownStrength`
+   and any target-based slowdown). **Recommendation: keep it SP-only** for
+   competitive integrity. Port analog look and ADS sensitivity scaling only.
+   (`mp_port_plan.md` §5/§7)
+2. **Default state of MP features once ported.** **Recommendation: all off
+   by default**, each behind its own config key, documented as
+   "use at your own risk online", validated in private matches first.
+   Alternative: controller features auto-on when a controller is detected.
+   (`mp_port_plan.md` §5/§7)
+3. **The two older offers (§C below):**
+   - (a) a **dev-only anti-anti-debug switch**: hook `NtSetInformationThread`
+     class 0x11 and clear `PEB->BeingDebugged` from `DllMain`, before the
+     SteamStub stub runs. Off by default, never in release builds;
+   - (b) **memory-limit config options** `ZonePoolMB` (≤2032),
+     `ImageScratchMB` and DXGI VRAM detection, vanilla by default, with a
+     zone-pool usage diagnostic first.
+4. **What to implement first.** Options:
+   - (a) the **DXVK fork RT change** (`rt_design_dxvk.md` §2, step 1 of §8);
+   - (b) the **MP per-exe hook-descriptor refactor** (`mp_port_plan.md` §6
+     step 1, SP unchanged);
+   - (c) the **memory-limit options** (3b).
+
+   No recommendation recorded; it's the user's priority call.
 
 ## Open threads, in the user's priority order (as of before the compaction)
 
