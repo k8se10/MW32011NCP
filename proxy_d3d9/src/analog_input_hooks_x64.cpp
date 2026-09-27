@@ -7387,9 +7387,25 @@ extern "C" bool TryGetClcStateX64(int* outValue)
     return true;
 }
 
+extern "C" bool IsRealEngineViewActiveX64(void* engineState); // streamline_camera_x64.cpp, 2026-09-27
+extern "C" void* GetEngineMainCmdBufStateX64(); // this file, ROUND 24
+
+// 2026-09-27, MP port (mp_port_plan.md step 6): kInLevelFlagSignature's own
+// MP twin search came back REJECTED (0/16 neighbours, mp_twins_2026-09-27.txt)
+// -- MP genuinely has no direct equivalent of this SP-specific global. Rather
+// than chase a brand-new MP "in level" flag from scratch, MP uses
+// IsRealEngineViewActiveX64() instead: a real perspective 3D view with an
+// orthonormal rotation can only exist while genuinely in a level with a live
+// camera, the same real signal ROUND 24's DLSS ghosting fix already built and
+// verified. SP behavior is completely unchanged.
 extern "C" bool TryGetInLevelFlagX64(int* outValue)
 {
-    if (!g_inLevelFlag || !outValue) return false;
+    if (!outValue) return false;
+    if (GetDetectedGameExecutable() == GameExecutable::MP) {
+        *outValue = IsRealEngineViewActiveX64(GetEngineMainCmdBufStateX64()) ? 1 : 0;
+        return true;
+    }
+    if (!g_inLevelFlag) return false;
     *outValue = *g_inLevelFlag;
     return true;
 }
@@ -9897,6 +9913,49 @@ void InstallConsoleFontInitSkipHooksX64()
     LogFromController(buf);
 }
 
+// 2026-09-27, MP port (mp_port_plan.md step 6): extracted from the SP-only
+// InstallAnalogInputHooksX64() -- kProjectionMatrixBuildSignature already
+// hits identically in both exes, and this hook is a pure log-and-forward
+// diagnostic, independent of every other hook (zero SP-specific data). It's
+// also the real vehicle for g_engineMainCmdBufStateX64, which
+// IsRealEngineViewActiveX64() (streamline_camera_x64.cpp) needs as MP's own
+// substitute "in level" signal -- see TryGetInLevelFlagX64's own comment.
+void InstallProjectionMatrixDiagHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kProjectionMatrixBuildSignature);
+    if (!r.found) {
+        LogFromController("[x64-proj-matrix-diag] FATAL: signature did not resolve -- projection-matrix "
+            "diagnostic not installed this session (no gameplay impact either way, this hook is "
+            "diagnostic-only)");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ProjectionMatrixBuild),
+                                            reinterpret_cast<void**>(&g_realProjectionMatrixBuild));
+    if (createStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-proj-matrix-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-proj-matrix-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[x64-proj-matrix-diag] Diagnostic hook installed and enabled -- "
+        "log-and-call-through only, zero behavior change. Watch the log for "
+        "'[x64-proj-matrix-diag]' lines during play (expect ~2 fires per frame, once for the "
+        "shadow-map pass and once for the main scene pass) to confirm the RE trail: row0 should "
+        "show a real X-scale term with 0 elsewhere, row1 a real Y-scale term with 0 elsewhere -- "
+        "this confirms the real hook point for future jitter injection before any perturbation "
+        "is written here.");
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -10740,47 +10799,13 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    // Real projection-matrix-build diagnostic (Hook_ProjectionMatrixBuild, see
-    // kProjectionMatrixBuildSignature's own big comment above for the full
-    // RE trail -- vulkan_dlss_pipeline_research.md item 2). Log-and-forward
-    // only, zero behavior change -- independent of every other hook in this
-    // function; a failure here costs only this one diagnostic, nothing else.
-    // This is groundwork for the DLSS/Streamline and FSR 3.1 jitter-injection
-    // work, not itself a gameplay feature.
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kProjectionMatrixBuildSignature);
-        if (!r.found) {
-            LogFromController("[x64-proj-matrix-diag] FATAL: signature did not resolve -- projection-matrix "
-                "diagnostic not installed this session (no gameplay impact either way, this hook is "
-                "diagnostic-only)");
-        } else {
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ProjectionMatrixBuild),
-                                                    reinterpret_cast<void**>(&g_realProjectionMatrixBuild));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-proj-matrix-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-proj-matrix-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    LogFromController("[x64-proj-matrix-diag] Diagnostic hook installed and enabled -- "
-                        "log-and-call-through only, zero behavior change. Watch the log for "
-                        "'[x64-proj-matrix-diag]' lines during play (expect ~2 fires per frame, once for the "
-                        "shadow-map pass and once for the main scene pass) to confirm the RE trail: row0 should "
-                        "show a real X-scale term with 0 elsewhere, row1 a real Y-scale term with 0 elsewhere -- "
-                        "this confirms the real hook point for future jitter injection before any perturbation "
-                        "is written here.");
-                }
-            }
-        }
-    }
+    // 2026-09-27, MP port: extracted into InstallProjectionMatrixDiagHookX64()
+    // above, called for both SP and MP -- kProjectionMatrixBuildSignature
+    // already hits identically in both exes, and this hook is what populates
+    // g_engineMainCmdBufStateX64, the real vehicle IsRealEngineViewActiveX64()
+    // (streamline_camera_x64.cpp) needs for MP's own "in level" substitute
+    // signal (mp_port_plan.md step 6).
+    InstallProjectionMatrixDiagHookX64();
 
     // Resolve (no hook, just cache -- same pattern as kFindDvarX64Signature
     // etc.) the real caller that invokes the projection-matrix builder for

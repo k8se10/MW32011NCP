@@ -745,3 +745,26 @@ bool HasStreamlineCameraDataX64()
     return g_haveStreamlinePrevFrameX64;
 }
 
+// 2026-09-27, MP port (mp_port_plan.md step 6): a real, exe-agnostic "is the
+// engine actively rendering a genuine 3D camera view right now" check, reusing
+// ROUND 24's already-verified real-view read/validate helpers
+// (ReadEngineViewMatricesRawX64/ValidateEngineViewX64, this file's own
+// anonymous namespace above) -- NO new signature work, since
+// kProjectionMatrixBuildSignature (the real vehicle for engineState, via
+// GetEngineMainCmdBufStateX64) already hits identically in both exes
+// (signature_resolution_sp_mp_2026-09-27.txt). A real perspective view with an
+// orthonormal rotation can only exist while genuinely in a level with a live
+// camera -- never at a menu, loading screen, or main menu -- making this a
+// real, verified substitute for MP's own missing "in level" signal
+// (kInLevelFlagSignature's own MP twin search came back REJECTED, 0/16
+// neighbours, mp_twins_2026-09-27.txt -- this sidesteps that dead end
+// entirely rather than re-attempting it). Pure query, no side effects, safe
+// to call from anywhere at any time -- does NOT touch the per-frame
+// dedup/reset state UpdateStreamlineCameraFromEngineViewX64 above owns.
+extern "C" bool IsRealEngineViewActiveX64(void* engineState)
+{
+    if (!engineState) return false;
+    float rawView[16] = {}, rawProj[16] = {};
+    return ReadEngineViewMatricesRawX64(engineState, rawView, rawProj) && ValidateEngineViewX64(rawView, rawProj);
+}
+
