@@ -14,17 +14,24 @@
 
 ## Current release
 
-> **`v0.0.3-x64` is out now** — the biggest release in the project's history: native Vulkan rendering by default in
-> Campaign/Survival, opt-in NVIDIA DLSS/DLAA for RTX GPUs, major performance fixes (up to ~3x FPS at high render
-> scale), the "everything sounds like it's in a room" reverb fix, and controller menu navigation in Multiplayer.
-> Survival is the recommended way to use the mod (Gameplay Complete — every core control, including Predator Missile
-> guidance, is live-confirmed); Campaign ships best-effort, and Multiplayer has controller menu navigation but no
-> in-game controller movement/aiming yet (render scale and the performance fixes also run there). The netcode security
-> fixes protect every mode, Multiplayer included. Still early software — expect hidden bugs and unfinished or unported
-> features. Known gaps are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+> **🚀 `v0.0.3-x64` is out now — the biggest release in the project's history.**
 >
-> **Planned development break: 2026-09-27 to 2026-10-04.** `v0.0.3-x64` is the LTS candidate for the `0.0.x` line
-> ([`LTS_POLICY.md`](LTS_POLICY.md)), and this week lets it settle under real play with nothing new landing on top.
+> - 🌋 **Native Vulkan rendering**, on by default in Campaign/Survival
+> - 🟩 **NVIDIA DLSS/DLAA** for RTX GPUs (opt-in)
+> - ⚡ **Major performance fixes** — up to ~3x FPS at high render scale
+> - 🔊 **The "everything sounds like it's in a room" reverb fix**
+> - 🎮 **Controller menu navigation in Multiplayer**
+>
+> ✅ **Survival** is the recommended way to use the mod (Gameplay Complete — every core control, including Predator
+> Missile guidance, is live-confirmed). 🟡 **Campaign** ships best-effort, and 🟡 **Multiplayer** has controller menu
+> navigation but no in-game controller movement/aiming yet (render scale and the performance fixes also run there).
+> 🛡️ **The netcode security fixes protect every mode**, Multiplayer included.
+>
+> ⚠️ Still early software — expect hidden bugs and unfinished or unported features. Known gaps are listed below and
+> in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+>
+> 🏖️ **Planned development break: 2026-09-27 to 2026-10-04.** `v0.0.3-x64` is the LTS candidate for the `0.0.x`
+> line ([`LTS_POLICY.md`](LTS_POLICY.md)), and this week lets it settle under real play with nothing new landing on top.
 
 ## About
 
