@@ -48,6 +48,12 @@ void InstallPauseBlurStepCapX64(); // defined in analog_input_hooks_x64.cpp -- M
     // The hook body's own menu-active check (IsMenuActiveX64_Exported) is a known no-op
     // under MP for now (separate, bigger problem, not fixed here) -- MP gets the
     // liveBlurStepCapX64 branch only, a real but graceful degradation, not a crash risk.
+void InstallCrossExePerformanceHooksX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-27, MP port, mp_port_plan.md step 2: sqrt-domain-error diag, screen-capture-
+    // cmd diag, the render-view-select hook, and its three real skip optimizations
+    // (shadow-activation/master-sequencer/orchestrator-extras), plus the memdetect fix --
+    // every signature here already hits identically in both exes with no SP-specific
+    // data dependency. See that function's own header comment for the full confirmation.
 #endif
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 #if defined(_M_X64) || defined(_WIN64)
@@ -883,6 +889,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // function's own extern declaration comment above for the confirmation.
             InstallOcclusionLodScaleFixX64();
             InstallPauseBlurStepCapX64();
+            InstallCrossExePerformanceHooksX64();
 #endif
 #if defined(_M_X64) || defined(_WIN64)
             // 2026-09-23, direct instruction ("time to make the graphics enhancements

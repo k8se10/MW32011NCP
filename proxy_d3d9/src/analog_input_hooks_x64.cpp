@@ -9602,6 +9602,211 @@ void InstallMenuNavigationHooksX64()
     }
 }
 
+// 2026-09-27, MP port (mp_port_plan.md step 2): extracted from InstallAnalogInputHooksX64
+// (SP-only) into its own standalone, exe-agnostic function -- every signature here
+// (kSqrtDomainErrorSignature, kScreenCaptureCmdSignature, kRenderViewSelectSignature,
+// kPerLightShadowDispatchSignature, kMasterSequencerReactivationSignature,
+// kOrchestratorExtraCallA/BSignature, kMemDetectSignature) already resolves with the
+// SAME literal bytes in both iw5sp.exe and iw5mp.exe (confirmed via
+// signature_resolution_sp_mp_2026-09-27.txt -- 1 hit each, or 6/6 for the master-
+// sequencer one), and every hook body here touches only its own signature-resolved
+// return addresses / RIP-relative globals / g_modConfig -- no per-player struct, UI
+// context, or other SP-specific data. Safe to call for both exes unchanged.
+void InstallCrossExePerformanceHooksX64()
+{
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kSqrtDomainErrorSignature);
+        if (!r.found) {
+            LogFromController("[x64-sqrt-domain-error-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SqrtDomainErrorDiag),
+                                                    reinterpret_cast<void**>(&g_origSqrtDomainError));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-sqrt-domain-error-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-sqrt-domain-error-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-sqrt-domain-error-diag] Diagnostic hook installed on FUN_140395608 (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kScreenCaptureCmdSignature);
+        if (!r.found) {
+            LogFromController("[x64-screencapture-cmd-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ScreenCaptureCmdDiag),
+                                                    reinterpret_cast<void**>(&g_origScreenCaptureCmd));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-screencapture-cmd-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-screencapture-cmd-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-screencapture-cmd-diag] Diagnostic hook installed on FUN_14018b6c0, opcode 13 in the "
+                        "per-viewport 2D/HUD command stream (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kRenderViewSelectSignature);
+        if (!r.found) {
+            LogFromController("[x64-renderview-select-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_RenderViewSelectDiag),
+                                                    reinterpret_cast<void**>(&g_origRenderViewSelect));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-renderview-select-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-renderview-select-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    g_renderViewSelectHookLiveX64 = true;
+                    LogFromController("[x64-renderview-select-diag] Diagnostic hook installed on FUN_1401dfd80, the real "
+                        "render-view-select dispatcher (read-only, changes no behavior).");
+                }
+            }
+        }
+    }
+    {
+        // Resolve FUN_140196ad0's own known call site into the activator, once,
+        // for SkipRedundantShadowActivationX64's own gate above -- deliberately
+        // NOT a MinHook install (nothing gets hooked at this address itself),
+        // just a signature resolution so the expected return address can be
+        // computed. Never fatal if this doesn't resolve -- the toggle simply
+        // has no effect (g_perLightShadowDispatchReturnAddr stays nullptr,
+        // which the gate above already treats as "never match").
+        SigScan::Result r = SigScan::FindPatternInMainModule(kPerLightShadowDispatchSignature);
+        if (!r.found) {
+            LogFromController("[x64-shadow-activation-skip] FATAL: FUN_140196ad0 signature did not resolve -- "
+                "SkipRedundantShadowActivationX64 will have no effect this session even if enabled");
+        } else {
+            g_perLightShadowDispatchReturnAddr = reinterpret_cast<void*>(
+                r.address + kPerLightShadowDispatchCallOffset + kPerLightShadowDispatchCallLen);
+            char buf[180];
+            sprintf_s(buf, "[x64-shadow-activation-skip] FUN_140196ad0 resolved @ 0x%llX, expected return addr 0x%llX "
+                "(SkipRedundantShadowActivationX64=%d)",
+                static_cast<unsigned long long>(r.address),
+                reinterpret_cast<unsigned long long>(g_perLightShadowDispatchReturnAddr),
+                g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+    {
+        // Resolve FUN_14018a240's own known call site into the activator, once,
+        // for SkipRedundantMasterSequencerReactivationX64's own gate above --
+        // same non-hooking resolve-only pattern as the shadow-activation block
+        // directly above. Never fatal if this doesn't resolve.
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMasterSequencerReactivationSignature);
+        if (!r.found) {
+            LogFromController("[x64-seq-reactivation-skip] FATAL: FUN_14018a240 call-site signature did not "
+                "resolve -- SkipRedundantMasterSequencerReactivationX64 will have no effect this session "
+                "even if enabled");
+        } else {
+            g_masterSequencerReactivationReturnAddr = reinterpret_cast<void*>(
+                r.address + kMasterSequencerReactivationSigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-seq-reactivation-skip] FUN_14018a240 call site resolved @ 0x%llX, expected "
+                "return addr 0x%llX (SkipRedundantMasterSequencerReactivationX64=%d)",
+                static_cast<unsigned long long>(r.address),
+                reinterpret_cast<unsigned long long>(g_masterSequencerReactivationReturnAddr),
+                g_modConfig.skipRedundantMasterSequencerReactivationX64 ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+    {
+        // Resolve issue #4 "point (a)"'s two known call sites, once, for
+        // SkipRedundantOrchestratorExtraCallsX64's own gate above. Same
+        // resolve-only pattern, never fatal if either fails to resolve.
+        SigScan::Result rA = SigScan::FindPatternInMainModule(kOrchestratorExtraCallASignature);
+        if (!rA.found) {
+            LogFromController("[x64-orch-extra-skip] FATAL: call-site A signature did not resolve -- "
+                "that half of SkipRedundantOrchestratorExtraCallsX64 will have no effect this session");
+        } else {
+            g_orchestratorExtraCallAReturnAddr = reinterpret_cast<void*>(rA.address + kOrchestratorExtraCallASigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-orch-extra-skip] call site A resolved @ 0x%llX, expected return addr 0x%llX",
+                static_cast<unsigned long long>(rA.address),
+                reinterpret_cast<unsigned long long>(g_orchestratorExtraCallAReturnAddr));
+            LogFromController(buf);
+        }
+        SigScan::Result rB = SigScan::FindPatternInMainModule(kOrchestratorExtraCallBSignature);
+        if (!rB.found) {
+            LogFromController("[x64-orch-extra-skip] FATAL: call-site B signature did not resolve -- "
+                "that half of SkipRedundantOrchestratorExtraCallsX64 will have no effect this session");
+        } else {
+            g_orchestratorExtraCallBReturnAddr = reinterpret_cast<void*>(rB.address + kOrchestratorExtraCallBSigLen);
+            char buf[200];
+            sprintf_s(buf, "[x64-orch-extra-skip] call site B resolved @ 0x%llX, expected return addr 0x%llX "
+                "(SkipRedundantOrchestratorExtraCallsX64=%d)",
+                static_cast<unsigned long long>(rB.address),
+                reinterpret_cast<unsigned long long>(g_orchestratorExtraCallBReturnAddr),
+                g_modConfig.skipRedundantOrchestratorExtraCallsX64 ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+
+    // sys_sysMB hardcoded 3072MB cap fix -- MinHook detour on FUN_1402ea710. See
+    // Hook_MemDetectFix's own comment for the full mechanism/rationale. Always
+    // calls the real trampoline first (unmodified); only overrides the exact
+    // 0xc00 (3072) cap-fired result.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMemDetectSignature);
+        if (!r.found) {
+            LogFromController("[x64-memdetect-fix] FATAL: signature did not resolve -- the sys_sysMB "
+                "hardcoded-cap fix will not run this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MemDetectFix),
+                                                    reinterpret_cast<void**>(&g_origMemDetect));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-memdetect-fix] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-memdetect-fix] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-memdetect-fix] Fix hook installed on FUN_1402ea710 -- corrects the "
+                        "hardcoded 3072MB sys_sysMB cap to a real, uncapped detected value.");
+                }
+            }
+        }
+    }
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -10879,164 +11084,11 @@ void InstallAnalogInputHooksX64()
             }
         }
     }
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kSqrtDomainErrorSignature);
-        if (!r.found) {
-            LogFromController("[x64-sqrt-domain-error-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
-        } else {
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SqrtDomainErrorDiag),
-                                                    reinterpret_cast<void**>(&g_origSqrtDomainError));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-sqrt-domain-error-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-sqrt-domain-error-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    LogFromController("[x64-sqrt-domain-error-diag] Diagnostic hook installed on FUN_140395608 (read-only, changes no behavior).");
-                }
-            }
-        }
-    }
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kScreenCaptureCmdSignature);
-        if (!r.found) {
-            LogFromController("[x64-screencapture-cmd-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
-        } else {
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ScreenCaptureCmdDiag),
-                                                    reinterpret_cast<void**>(&g_origScreenCaptureCmd));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-screencapture-cmd-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-screencapture-cmd-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    LogFromController("[x64-screencapture-cmd-diag] Diagnostic hook installed on FUN_14018b6c0, opcode 13 in the "
-                        "per-viewport 2D/HUD command stream (read-only, changes no behavior).");
-                }
-            }
-        }
-    }
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kRenderViewSelectSignature);
-        if (!r.found) {
-            LogFromController("[x64-renderview-select-diag] FATAL: signature did not resolve -- this diagnostic will not run this session");
-        } else {
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_RenderViewSelectDiag),
-                                                    reinterpret_cast<void**>(&g_origRenderViewSelect));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-renderview-select-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-renderview-select-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    g_renderViewSelectHookLiveX64 = true;
-                    LogFromController("[x64-renderview-select-diag] Diagnostic hook installed on FUN_1401dfd80, the real "
-                        "render-view-select dispatcher (read-only, changes no behavior).");
-                }
-            }
-        }
-    }
-    {
-        // Resolve FUN_140196ad0's own known call site into the activator, once,
-        // for SkipRedundantShadowActivationX64's own gate above -- deliberately
-        // NOT a MinHook install (nothing gets hooked at this address itself),
-        // just a signature resolution so the expected return address can be
-        // computed. Never fatal if this doesn't resolve -- the toggle simply
-        // has no effect (g_perLightShadowDispatchReturnAddr stays nullptr,
-        // which the gate above already treats as "never match").
-        SigScan::Result r = SigScan::FindPatternInMainModule(kPerLightShadowDispatchSignature);
-        if (!r.found) {
-            LogFromController("[x64-shadow-activation-skip] FATAL: FUN_140196ad0 signature did not resolve -- "
-                "SkipRedundantShadowActivationX64 will have no effect this session even if enabled");
-        } else {
-            g_perLightShadowDispatchReturnAddr = reinterpret_cast<void*>(
-                r.address + kPerLightShadowDispatchCallOffset + kPerLightShadowDispatchCallLen);
-            char buf[180];
-            sprintf_s(buf, "[x64-shadow-activation-skip] FUN_140196ad0 resolved @ 0x%llX, expected return addr 0x%llX "
-                "(SkipRedundantShadowActivationX64=%d)",
-                static_cast<unsigned long long>(r.address),
-                reinterpret_cast<unsigned long long>(g_perLightShadowDispatchReturnAddr),
-                g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0);
-            LogFromController(buf);
-        }
-    }
-    {
-        // Resolve FUN_14018a240's own known call site into the activator, once,
-        // for SkipRedundantMasterSequencerReactivationX64's own gate above --
-        // same non-hooking resolve-only pattern as the shadow-activation block
-        // directly above. Never fatal if this doesn't resolve.
-        SigScan::Result r = SigScan::FindPatternInMainModule(kMasterSequencerReactivationSignature);
-        if (!r.found) {
-            LogFromController("[x64-seq-reactivation-skip] FATAL: FUN_14018a240 call-site signature did not "
-                "resolve -- SkipRedundantMasterSequencerReactivationX64 will have no effect this session "
-                "even if enabled");
-        } else {
-            g_masterSequencerReactivationReturnAddr = reinterpret_cast<void*>(
-                r.address + kMasterSequencerReactivationSigLen);
-            char buf[200];
-            sprintf_s(buf, "[x64-seq-reactivation-skip] FUN_14018a240 call site resolved @ 0x%llX, expected "
-                "return addr 0x%llX (SkipRedundantMasterSequencerReactivationX64=%d)",
-                static_cast<unsigned long long>(r.address),
-                reinterpret_cast<unsigned long long>(g_masterSequencerReactivationReturnAddr),
-                g_modConfig.skipRedundantMasterSequencerReactivationX64 ? 1 : 0);
-            LogFromController(buf);
-        }
-    }
-    {
-        // Resolve issue #4 "point (a)"'s two known call sites, once, for
-        // SkipRedundantOrchestratorExtraCallsX64's own gate above. Same
-        // resolve-only pattern, never fatal if either fails to resolve.
-        SigScan::Result rA = SigScan::FindPatternInMainModule(kOrchestratorExtraCallASignature);
-        if (!rA.found) {
-            LogFromController("[x64-orch-extra-skip] FATAL: call-site A signature did not resolve -- "
-                "that half of SkipRedundantOrchestratorExtraCallsX64 will have no effect this session");
-        } else {
-            g_orchestratorExtraCallAReturnAddr = reinterpret_cast<void*>(rA.address + kOrchestratorExtraCallASigLen);
-            char buf[200];
-            sprintf_s(buf, "[x64-orch-extra-skip] call site A resolved @ 0x%llX, expected return addr 0x%llX",
-                static_cast<unsigned long long>(rA.address),
-                reinterpret_cast<unsigned long long>(g_orchestratorExtraCallAReturnAddr));
-            LogFromController(buf);
-        }
-        SigScan::Result rB = SigScan::FindPatternInMainModule(kOrchestratorExtraCallBSignature);
-        if (!rB.found) {
-            LogFromController("[x64-orch-extra-skip] FATAL: call-site B signature did not resolve -- "
-                "that half of SkipRedundantOrchestratorExtraCallsX64 will have no effect this session");
-        } else {
-            g_orchestratorExtraCallBReturnAddr = reinterpret_cast<void*>(rB.address + kOrchestratorExtraCallBSigLen);
-            char buf[200];
-            sprintf_s(buf, "[x64-orch-extra-skip] call site B resolved @ 0x%llX, expected return addr 0x%llX "
-                "(SkipRedundantOrchestratorExtraCallsX64=%d)",
-                static_cast<unsigned long long>(rB.address),
-                reinterpret_cast<unsigned long long>(g_orchestratorExtraCallBReturnAddr),
-                g_modConfig.skipRedundantOrchestratorExtraCallsX64 ? 1 : 0);
-            LogFromController(buf);
-        }
-    }
+    // 2026-09-27, MP port: extracted into InstallCrossExePerformanceHooksX64()
+    // (above InstallAnalogInputHooksX64 in this file), called for both SP and MP
+    // from dllmain.cpp -- see that function's own header comment. SP's own
+    // behavior/call order here is completely unchanged.
+    InstallCrossExePerformanceHooksX64();
     {
         // Resolve issue #4 "point (c)"'s two known call sites, once, for
         // SkipRedundantScenePostfxGuaranteedCallsX64's own gate above.
@@ -11130,38 +11182,8 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    // sys_sysMB hardcoded 3072MB cap fix -- MinHook detour on FUN_1402ea710. See
-    // Hook_MemDetectFix's own comment for the full mechanism/rationale. Always
-    // calls the real trampoline first (unmodified); only overrides the exact
-    // 0xc00 (3072) cap-fired result.
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kMemDetectSignature);
-        if (!r.found) {
-            LogFromController("[x64-memdetect-fix] FATAL: signature did not resolve -- the sys_sysMB "
-                "hardcoded-cap fix will not run this session");
-        } else {
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_MemDetectFix),
-                                                    reinterpret_cast<void**>(&g_origMemDetect));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-memdetect-fix] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-memdetect-fix] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    LogFromController("[x64-memdetect-fix] Fix hook installed on FUN_1402ea710 -- corrects the "
-                        "hardcoded 3072MB sys_sysMB cap to a real, uncapped detected value.");
-                }
-            }
-        }
-    }
+    // (sys_sysMB hardcoded 3072MB cap fix moved into InstallCrossExePerformanceHooksX64()
+    // above, called earlier in this function -- see its own header comment.)
 
     // Weapnext -- same direct-call pattern as Buttons/Pause above.
     {
