@@ -301,7 +301,26 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // real system d3d9.dll's Direct3DCreate9On12 entry point instead of the ordinary
 // one -- a real, Microsoft-documented alternate export, not a third-party DLL swap.
 // See mod_config.h's own forceD3D9On12 field comment for the full design.
-constexpr unsigned long kCurrentConfigVersion = 45; // v44->v45: [Video] GraphicsApi (LegacyD3D9/Vulkan selector)
+// v45->v46 (2026-09-27): REAL BUG FOUND AND FIXED -- 13 real v0.0.3-x64 config keys
+// (SkipRedundantShadowActivation/ConsoleFontInit/MasterSequencerReactivation/
+// OrchestratorExtraCalls, PauseBlurStepCap, SkipRedundantScenePostfxGuaranteedCalls,
+// ReverbWetScale, LiveBlurStepCap, OcclusionLodScaleFix, DLSSModeX64,
+// DlssNeuralRenderingEnabled, GpuCaptureEnabled, GpuSyncTimingLogging) were added to
+// LoadModConfig's own ReadXxx calls across the DLSS/performance work but never added
+// to WriteDefaultConfig's template -- direct report: "a lot of our new config options
+// arent self geenrating in the config." Exactly the failure mode this comment block's
+// own v3->v4 entry already documented and warned against (a version bump is required
+// for every new key or it silently never appears for anyone already on the current
+// version) -- violated 13 times in a row this release because none of those additions
+// bumped kCurrentConfigVersion. Worse than just "missing from a fresh ini": for any
+// EXISTING user whose file's ConfigVersion was already >= 45 for any other reason, an
+// unrelated migration firing (or a future one) would run WriteDefaultConfig() and
+// silently DROP any of these 13 keys the player had manually added/customized, since
+// the template had no line to preserve them -- the actual "custom settings replaced"
+// symptom reported. All 13 keys added to the template now, each sourced from
+// g_modConfig (never a hardcoded literal), so a real customized value already loaded
+// from the old file is what gets written back, not a fresh default.
+constexpr unsigned long kCurrentConfigVersion = 46; // v44->v45: [Video] GraphicsApi (LegacyD3D9/Vulkan selector)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering
@@ -921,6 +940,30 @@ void WriteDefaultConfig(const char* path)
         "; value-to-pixel scale is not yet calibrated, and there's no temporal\n"
         "; resolve pass (DLSS/FSR3.1) yet to consume real jitter. 0 = off (default).\n"
         "ProjectionJitterEnabled=%d\n"
+        "; v0.0.3-x64 (issue #4): x64 lost a real hardware-capability gate the original\n"
+        "; x86 binary had on the per-light shadow-activation call -- a genuine, confirmed\n"
+        "; extra cost x64 introduced, not a missing feature. Live-confirmed real gains.\n"
+        "; 1 = on (default), 0 = off.\n"
+        "SkipRedundantShadowActivation=%d\n"
+        "; v0.0.3-x64 (issue #4): skips a redundant console-font/UI-localization reload\n"
+        "; (~90-100ms) the engine's own \"already initialized\" state already says is\n"
+        "; unnecessary. 1 = on (default), 0 = off.\n"
+        "SkipRedundantConsoleFontInit=%d\n"
+        "; v0.0.3-x64 (issue #4): skips a confirmed-unconditional extra per-frame\n"
+        "; render-view reactivation x86 never had at this exact position. Live-confirmed\n"
+        "; ~10%% framerate improvement, no visual regression. 1 = on (default), 0 = off.\n"
+        "SkipRedundantMasterSequencerReactivation=%d\n"
+        "; v0.0.3-x64 (issue #4): skips two more confirmed-unconditional extra per-frame\n"
+        "; render-view-activator calls x86 never had. Live-confirmed ~10%% more on top of\n"
+        "; the fix above, no visual regression. 1 = on (default), 0 = off.\n"
+        "SkipRedundantOrchestratorExtraCalls=%d\n"
+        "; v0.0.3-x64 \"the 67 bug\" (issue #4): caps the real substep count of a\n"
+        "; render-scale-coupled blur/downsample loop (shared by SSAO and cascade-shadow\n"
+        "; softening) WHILE PAUSED ONLY -- the pause menu already draws its own separate\n"
+        "; blur over the dimmed background, so this loop's own output is invisible while\n"
+        "; paused. Live-confirmed: Dome went from 24fps to over 80fps while paused, no\n"
+        "; visible change. 0 = off/uncapped, a real substep count (default 2) = capped.\n"
+        "PauseBlurStepCap=%d\n"
         "\n"
         "[Plugins]\n"
         "; Loads plugin DLLs from a \"plugins\" subfolder next to this DLL at startup.\n"
@@ -1130,6 +1173,47 @@ void WriteDefaultConfig(const char* path)
         "; a temporary plumbing-validation toggle, not a real feature. DEFAULT OFF.\n"
         "; 0 = off, 1 = on.\n"
         "FullScreenPassthroughTest=%d\n"
+        "; v0.0.3-x64: 0 = off (default) -- a genuine scene-wide post-effect function has\n"
+        "; two \"guaranteed\" calls this project's own real, live dedup check inside the\n"
+        "; activator can safely skip when they're already no-ops. Build-verified, not yet\n"
+        "; live-tested. 1 = on.\n"
+        "SkipRedundantScenePostfxGuaranteedCalls=%d\n"
+        "; v0.0.3-x64 (issue #10): scales the real native reverb wet level, reversibly and\n"
+        "; per-call, normalized by sqrt(concurrent voice count) so overlapping gunfire no\n"
+        "; longer piles up reverb energy. 1.0 = unscaled (the original bug). Live-\n"
+        "; confirmed correct at 0.5, now the default.\n"
+        "ReverbWetScale=%g\n"
+        "; v0.0.3-x64 (issue #4, \"the 67 bug\"): same mechanism as PauseBlurStepCap\n"
+        "; ([Video] above) but DURING LIVE GAMEPLAY, where the quality trade-off is\n"
+        "; genuinely visible -- a real quality/performance choice, not universally safe,\n"
+        "; hence [Experimental] rather than [Video]. Live-confirmed: ~3.3x FPS at 250%%\n"
+        "; render scale on the hardest tested map, no reported visual regression at 3.\n"
+        "; 0 = off/uncapped, a real substep count (default 3) = capped.\n"
+        "LiveBlurStepCap=%d\n"
+        "; 2026-09-14 follow-up fix: a real occlusion/LOD-scale correction. 0 = off\n"
+        "; (default), 1 = on. See known_issues_x64.md for the full RE trail.\n"
+        "OcclusionLodScaleFix=%d\n"
+        "; NVIDIA DLSS mode, opt-in ([Video] StreamlineEnabled=1 also required, SP +\n"
+        "; Vulkan only). 0=eMaxPerformance 1=eBalanced 2=eMaxQuality... 3=eMaxQuality\n"
+        "; (default, matches the compiled struct default) ... 6=eDLAA. Out-of-range\n"
+        "; values fall back to 3 (this mod's own config validation report will say so).\n"
+        "; Above 100%% render scale, DLSS's upscaling modes can't run at all -- this mod\n"
+        "; auto-switches to DLAA for that session only, with an on-screen notice, and\n"
+        "; never rewrites this value itself.\n"
+        "DLSSModeX64=%d\n"
+        "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
+        "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
+        "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
+        "; detection only, no functional effect either way yet.\n"
+        "DlssNeuralRenderingEnabled=%d\n"
+        "; Dev-only diagnostic (F11): real GPU-side frame capture via RenderDoc's\n"
+        "; official in-application API. 0 = off (default), 1 = on -- only takes effect\n"
+        "; if a compatible RenderDoc is actually present; otherwise a harmless no-op.\n"
+        "GpuCaptureEnabled=%d\n"
+        "; Dev-only diagnostic: real, GPU-inclusive (vkQueueWaitIdle-based) per-frame\n"
+        "; timing, used to find and confirm the pause-vs-gameplay render regression\n"
+        "; (issue #4). Vulkan/DXVK only. 0 = off (default), 1 = on.\n"
+        "GpuSyncTimingLogging=%d\n"
         "\n"
         "[Gyro]\n"
         "; PREVIEW/WIP (issue #76) -- native gyro-aim, read directly from a raw-HID\n"
@@ -1210,6 +1294,11 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.projectionMatrixJitterProbeEnabled ? 1 : 0,
         g_modConfig.projectionMatrixJitterProbeCandidateIndex,
         g_modConfig.projectionJitterEnabled ? 1 : 0,
+        g_modConfig.skipRedundantShadowActivationX64 ? 1 : 0,
+        g_modConfig.skipRedundantConsoleFontInitX64 ? 1 : 0,
+        g_modConfig.skipRedundantMasterSequencerReactivationX64 ? 1 : 0,
+        g_modConfig.skipRedundantOrchestratorExtraCallsX64 ? 1 : 0,
+        g_modConfig.pauseBlurStepCapX64,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0,
         g_modConfig.vibrationFireIntensity,
@@ -1239,6 +1328,14 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.frametimeBenchmarkLogging ? 1 : 0,
         g_modConfig.resourceUsageLogging ? 1 : 0,
         g_modConfig.fullScreenPassthroughTest ? 1 : 0,
+        g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64 ? 1 : 0,
+        g_modConfig.reverbWetScaleX64,
+        g_modConfig.liveBlurStepCapX64,
+        g_modConfig.occlusionLodScaleFixX64 ? 1 : 0,
+        g_modConfig.dlssModeX64,
+        g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
+        g_modConfig.gpuCaptureEnabled ? 1 : 0,
+        g_modConfig.gpuSyncTimingLogging ? 1 : 0,
         g_modConfig.gyroEnabled ? 1 : 0,
         g_modConfig.gyroSensitivity,
         g_modConfig.gyroInvertPitch ? 1 : 0,
