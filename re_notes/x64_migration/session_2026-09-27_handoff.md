@@ -131,6 +131,24 @@ committed on `claude/confident-mendel-hyoqkw`.
 - Planned structure: per-exe hook descriptors that fail closed, with SP
   unchanged.
 
+### DLSS above 100% render scale: black viewport (continued from another session)
+
+- Branch fast-forwarded to `main` (`b255bad96`) first, since the earlier
+  work was already merged.
+- `a35cb5481`:
+  - fixes the one-frame lag between the DLAA options and the output
+    texture (the NGX "Output subrect … exceed" error);
+  - adds a read-only readback of the tagged input colour and the DLSS output
+    centre pixels.
+- Full write-up: `vulkan_dlss_pipeline_research.md`, ROUND 21.
+- **Next:** build on Windows, run once at `InternalRenderScalePercent=200`,
+  and read the `[x64-streamline-readback]` lines:
+  - input black → the colour-input selection;
+  - output black → DLAA at this size;
+  - both fine → the composite `StretchRect`.
+- The earlier "GENERAL layout" theory is unlikely: the ≤100% path uses the
+  identical texture and composite and works.
+
 ### Decisions needed from the user (all open, with recommendations)
 
 1. **Aim slowdown near targets in MP** (`adsCloseRangeSlowdownStrength`
