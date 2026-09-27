@@ -25,7 +25,7 @@ chosen to match id-Tech/IW naming, not recovered symbols.
 
 **Stage plan:**
 1. ✅ Device lifecycle, frame orchestration, backend command list, D3D9 usage map, material/draw funnel (this commit)
-2. Draw path deep dive: scene passes, draw-surf lists, shadows, post-FX chain, render targets
+2. ✅ Draw path deep dive: scene passes, draw-surf lists, key layout, render targets, code materials, post-FX chain, frame submit (§7–§8)
 3. UI/menu pipeline end to end
 4. Ray tracing design on the DXVK fork
 5. MP port plan (controller + performance fixes)
@@ -456,10 +456,194 @@ uses 0x0B–0x18 by light; emissive/trans use 5–8; thermal vision uses 0x33.
   (`FUN_1401dbb70`/`FUN_1401dbef0`) and the single draw funnel
   `FUN_1401de7d0` (§4).
 
-🔴 Remaining for stage 2b: name the six surface-type sources, the draw-surf
-key bitfield in use, the post-FX chain internals (`FUN_1401939f0`), and the
-render-target activation IDs (target 2/5/14 → names).
+Stage 2b below resolves the open items from this section.
 
-*Next stage: draw path deep dive (scene passes inside `FUN_14018e720`,
-draw-surf list layout, shadow pipeline, post-FX chain, render-target
-lifecycle).*
+---
+
+## 8. Draw path, stage 2b — sources, key layout, render targets, post-FX, submit 🟢
+
+### 8.1 The seven draw-surf sources of the k-way merge
+
+`FUN_14018c650` builds a merge context and calls one registration routine per
+non-empty list. Each routine is a leaf (no `.pdata`) that appends a 24-byte
+entry at `ctx + 0x130 + n*24`:
+
+| Field | Offset in entry | Meaning |
+|---|---|---|
+| type tag | `+0x00` (`ctx+0x130`) | passed in `edx` by the caller |
+| sort key | `+0x04` (`ctx+0x134`) | the 6-bit primary sort key of the list head |
+| `nextFn` | `+0x08` (`ctx+0x138`) | advances the list and refreshes the key |
+| `drawFn` | `+0x10` (`ctx+0x140`) | draws the head run |
+
+`ctx+4` is the source count. The merge always draws the source with the
+lowest key next, which gives IW's global primary-sort-key order across all
+list types.
+
+| # | Register | List (`begin`/`end` in ctx) | Key source | `drawFn` → drawer → inner loop | Vertex decl set | What it draws |
+|---|---|---|---|---|---|---|
+| 1 | `FUN_140184090` | `+0x08/+0x10`, 4-byte items | item `u16 @+2` → 64-bit draw-surf table `[*0x141888648 + 0x90]`, bits 57–62 | `0x140184990` → `FUN_140199760` → `FUN_1401b1540`/`FUN_1401b1660` | `VERTDECL_WORLD + worldVertFormat` | BSP surfaces through an index list copied into a dynamic IB (`FUN_1401daf10` from `[*0x141888660 + 0xA0]`): world pre-tessellated batches 🟡 |
+| 2 | `FUN_140184110` | `+0xB8/+0xC0`, raw 64-bit draw-surfs | bits 57–62 of the item | `0x140184c20` → surfType jump table `0x14040e5b0` | per type | generic draw-surfs: brush models, XModels, code meshes (see 8.2) |
+| 3 | `FUN_140184190` | `+0x20/+0x28`, 4-byte items | `item & 0x3FFF` → byte table `0x1415e5200` | `0x140184f30` → `FUN_140199080` → `FUN_140197ba0`/`FUN_140197d70` | `VERTDECL_WORLD + worldVertFormat` | BSP surfaces from the static world VB (stride **44** = `GfxWorldVertex`) and the world IB (`SetIndices` when `backEnd+0x419E0` changes) |
+| 4 | `FUN_140184210` | `+0x80/+0x88` | `(item >> 16) & 0xFFF` → `0x1415e5200` | `0x140185000` → `FUN_1401993e0` → `FUN_1401b34f0`/`FUN_1401b3670` | `VERTDECL_STATICMODELCACHE` (15) | cached static models (smodel cache VB `0x1415f30f0`, stride 32, IB `0x1415f30e8`) |
+| 5 | `FUN_1401842a0` | `+0xA0/+0xA8` | same | `0x1401850e0` → `FUN_1401994c0` → `FUN_1401b3800` (→ `FUN_1401b3e50`)/`FUN_1401b3870` | 15 | cached static models, second variant (instanced path) 🟡 |
+| 6 | `FUN_140184330` | `+0x40/+0x48` | same | `0x1401851c0` → `FUN_1401995a0` → `FUN_1401b3b80`/`FUN_1401b3d20` | `VERTDECL_PACKED` (1) | rigid static models from their own XSurface VB/IB (`FUN_1400a6020`/`FUN_1400a61f0`), per-instance data at `[0x141887c30]+0x340 + idx*88` |
+| 7 | `FUN_1401843b0` | `+0x60/+0x68` | same | `0x1401852a0` → `FUN_140199690` → `FUN_1401b38f0`/`FUN_1401b3ad0` | 1 | skinned static models: vertices copied into the dynamic ring VB `0x1415f31a8` (stride 32, wraps to 0) and drawn from there |
+
+- `0x1415e5200` is a byte per sorted material (12-bit index; 14-bit for the
+  BSP list): the material's primary sort key, precomputed so the merge
+  doesn't have to dereference materials.
+- Every `drawFn` follows the same shape: `FUN_1401b2210` (select material
+  from the packed key; returns 0 to skip), `FUN_1401b2450` (select
+  technique), `R_SetupPass(0)` (`FUN_1401dbb70`), the drawer; then, when the
+  technique has a second pass (`technique+0xA != 1`), `FUN_1401b2450` and
+  `R_SetupPass(1)` again and a second drawer call. Each drawer has two inner
+  loops, one for technique type 9 and one for everything else.
+- Drawers 1 and 3–5 set `state+0x1778` (stream-source cache) to
+  `0x1415e5140` and drawers 6–7 set it to `3`, then set the vertex type in
+  `state+0x120` and call `R_SetVertexShaderAndDecl` (`FUN_1401dbef0`).
+
+### 8.2 64-bit draw-surf key layout
+
+Read directly off `0x140184c20`, `FUN_140184090` and `FUN_140184110`:
+
+| Bits | Field | Evidence |
+|---|---|---|
+| 57–62 | primary sort key (6) | `shr 0x39; and 0x3f` in all merge sources 🟢 |
+| 53–56 | surfType (4) | `shr 0x35; and 0xf` → jump table index 🟢 |
+| 52 | 1-bit flag carried into bit 31 of the packed material word 🟢 (meaning 🔴) |
+| 44–51 | scene light index (8) | `shr 0x2c; movzx al` 🟢 |
+| 43 | 1-bit flag (hero lighting in the IW5 layout) | `shr 0x2b; and 1` 🟢/🟡 |
+| 29–40 | material sorted index (12) | `shr 0x1d; and 0xfff` 🟢 |
+| 24 | has-GfxEntity-index flag, only consulted for surfTypes 7 and 9 | `bt rdx, 0x18` after `surfType-7 ∈ {0,2}` 🟢/🟡 |
+| 0–23 | object id (16) + reflection probe index (8) | IW5 lineage 🟡 |
+
+The generic list's surfType table `0x14040e5b0` has only entries 6–9 filled:
+6 `FUN_140198480`, 7 `FUN_140199890`, 8 `FUN_140199a70`, 9 `FUN_140199de0`.
+In the IW4/IW5 enum these are `SF_BMODEL`, `SF_XMODEL_RIGID`,
+`SF_XMODEL_SKINNED`, `SF_CODEMESH`. World triangles (0–1) and static models
+(2–5) never reach this list, because they have the dedicated sources above.
+
+### 8.3 Render targets (IDs recovered from the binary) 🟢
+
+Name table `0x1404d0740` (used by the creation helper `FUN_1401d4440` for
+debug names):
+
+| ID | Name | Seen in |
+|---|---|---|
+| 0 | `R_RENDERTARGET_SAVED_SCREEN` | |
+| 1 | `R_RENDERTARGET_FRAME_BUFFER` | post-FX output (`FUN_1401939f0` binds 1 throughout) |
+| 2 | `R_RENDERTARGET_SCENE` | alternate clear path `FUN_14018e010` |
+| 3 | `R_RENDERTARGET_RESOLVED_POST_SUN` | |
+| 4 | `R_RENDERTARGET_RESOLVED_SCENE` | |
+| 5 | `R_RENDERTARGET_FLOAT_Z` | depth / float-Z pass in `RB_DrawView` |
+| 6, 7 | `R_RENDERTARGET_PINGPONG_0/1` | |
+| 8, 9 | `R_RENDERTARGET_POST_EFFECT_0/1` | |
+| 10, 11 | `R_RENDERTARGET_SHADOWMAP_LARGE/SMALL` | sun / spot shadow maps |
+| 12 | `R_RENDERTARGET_SSAO` | |
+| 13 | `R_RENDERTARGET_SSAO_BLURRED` | |
+| 14 | `R_RENDERTARGET_SSAO_FLOAT_Z` | full-res SSAO path `FUN_140196df0` |
+
+- Table `0x141bb6e00`, 32 bytes per ID: `{GfxImage* image, IDirect3DSurface9*
+  color, IDirect3DSurface9* depthStencil, u32 width, u32 height}`. The
+  creation helper `FUN_1401d4440(…, w, h, format, isColor, rt)` allocates the
+  image (`FUN_1401b8c80` + `FUN_1401b92d0`), takes surface level 0
+  (`FUN_1401b91b0`) and stores it as colour (`+0x08`) or depth (`+0x10`).
+  All targets are created by `FUN_1401d4f60`, called from `FUN_1401bd730`
+  during device setup.
+- **`FUN_1401dff30(state, id)`** only records the target for the frontend
+  state: `state[0x181C/4..]` = `{0x140421ad0[id], width, height}`.
+- **`FUN_1401dfd80(ctx, id)` = `R_SetRenderTarget(id)`**: no-op if `id` is
+  already current (`prim+0xBD8`, 16 = none). It clears the sRGB-write state
+  bit (render state 194) if set, unbinds any sampler still bound to this
+  target's image (stages 0–15 and vertex samplers 241+ via `SetTexture(…,
+  NULL)`), then `SetRenderTarget(0, color)` (+0x128) and
+  `SetDepthStencilSurface(depth)` (+0x138) only when they differ from the
+  current target's. It then resets the viewport cache (`bd0/bd4` = size,
+  `184 = -1`, `188 = 0`, `18c = 1.0`) and marks the projection dirty
+  (`state+0x17C0 = 0`, `+0x181C = 1`).
+
+### 8.4 Engine code materials (`rgp`) 🟢
+
+Every engine-owned material is loaded by name from the pair table at
+`0x14041fb80` (`{const char* name, Material** dest}`), so post-FX,
+shadow and debug passes can be named precisely. Selection:
+
+| Global | Material | Global | Material |
+|---|---|---|---|
+| `0x141887b58` | `$default` | `0x141887c40` | `blur_apply` |
+| `0x141887b60` | `white` | `0x141887c48`/`c50` | `blur_apply_film` / `_color2` |
+| `0x141887b88` | `shadowclear` | `0x141887c38` | `feedbackreplace` |
+| `0x141887b98`/`ba0` | `w/shadowcaster`, `m/shadowcaster` | `0x141887c58` | `cinematic` |
+| `0x141887bb0` | `depthprepass` | `0x141887c60`/`c68`/`c70` | `dof_downsample`, `dof_near_coc`, `small_blur` |
+| `0x141887bf8`/`c00` | `stencilshadow`, `stencildisplay` | `0x141887c78`/`c80`/`c88` | `postfx`, `postfx_color`, `postfx_color2` |
+| `0x141887c08` | `floatz_display` | `0x141887c98`/`ca0`/`ca8` | `postfx_dof`, `_color`, `_color2` |
+| `0x141887c10` | `color_channel_mixer` | `0x141887cb8`…`ce8` | `postfx_grain*` (6 variants) |
+| `0x141887c18`/`c20` | `frame_color_debug`, `frame_alpha_debug` | `0x141887cf8`…`d38` | `ssao_calc_slow/fast`, `ssao_apply_*`, `ssao_zdownsample` |
+| `0x141887dd0`/`dd8` | `shellshock`, `shellshock_flashed` | `0x141887d40`…`dc0` | `filter_symmetric_1..8` and `_lin` variants |
+| `0x141887de0`/`de8` | `glow_consistent_setup` / `_color2` | `0x141887df0` | `glow_apply_bloom` |
+| `0x141887df8` | `m/thermalbody_default` | `0x141887e00` | `watersheeting_color_distort_blur` |
+| `0x141887e10` | `nightvision_grain` | `0x141887e18` | `digital_distort` |
+
+### 8.5 Post-FX chain `FUN_1401939f0(view, …)` 🟢/🟡
+
+Runs per view that rendered into `$scene`, called from `RB_PostFxAndFinish`.
+Full-screen material quads are drawn by `FUN_14018bbc0(material, …)`.
+
+1. Seed `GfxCmdBufState` from the view, clear the 0xA00 scratch block, and
+   select `R_RENDERTARGET_FRAME_BUFFER` (1). Set the resolved-scene code
+   image `0x1415e9000` to the image of target `view+0xA10`.
+2. **Depth of field / blur parameters** (`view+0x32C`): cache focus
+   near/far/bias (`view+0x300..0x310`, compared with
+   `0x1415e8e30..0x1415e8e3c`, bumping a generation counter when they change),
+   re-select target 1, then the water-sheeting distortion pass
+   (`FUN_140189990(watersheeting_color_distort_blur)`), then the DOF
+   downsample/blur via `FUN_1401949c0` / the plain composite `FUN_14018bbc0`.
+3. **Bloom/glow** (`view+0x264`, glow dvar `0x141884f80`, and the two glow
+   intensities `view+0x270/0x274`): `FUN_14018fb70` (glow setup and
+   downsample into the ping-pong targets), re-select target 1, then
+   `glow_apply_bloom` composite.
+4. **Digital distortion** when its amount is > 0 (`digital_distort`).
+5. **Film blur** when `blur_apply_film` (or `_color2` for the second view
+   set) is loaded and the blur radius > 0: `FUN_14018f190` (blur into the
+   ping-pong targets) and `FUN_14018b960` composite.
+6. **Night vision** (`FUN_140194910` decides) → `nightvision_grain`; a
+   further overlay pass for the thermal/pip case (`0x141887e08`).
+7. Re-select target 1. Debug views driven by `0x141884e30`
+   (1 = frame colour/alpha debug via `frame_color_debug`/`frame_alpha_debug`,
+   rebuilding the projection with `FUN_1401e13e0`; 2 = `FUN_1401945a0`) and
+   `0x141884e38` (float-Z display).
+
+Motion blur is triggered separately afterwards (`FUN_14018def0`, §7.1).
+
+### 8.6 Frame submit (the mailbox producer) 🟢
+
+- **`FUN_14024aa90(backEndData)` = submit to render thread**: `lock inc` of a
+  frame counter, `backEndData` → mailbox `0x142005990`, then two event
+  calls on the handles at `0x142005978`/`0x142005990+…` (reset "backend idle",
+  set "work ready"). The backend takes it with `InterlockedExchange`
+  (`0x14024a393`, inside `FUN_14024a390`).
+- **`FUN_140249f80` = wait for backend idle**: `WaitForSingleObject(…,
+  INFINITE)` on `0x142005978`, then resets/sets the pair around
+  `0x142005968`. It's called from `FUN_1401d3360`, `FUN_1401d2bb0`,
+  `FUN_1401d3950` and three times from `FUN_1401d3d30` (the frontend's
+  "must own the device now" points).
+- **`FUN_14024a2a0`** = "is the current thread the render thread"
+  (`GetCurrentThreadId() == [0x142005824]`), used by 30 functions as an
+  ownership assert.
+- **`FUN_1401d32a0(flags)` = begin/issue**: sets `backEnd+0x41A6C` = SMP
+  enabled (two dvars `0x141884d60`/`0x141efb808`, and not `0x1418854ca`),
+  stores `flags` at `+0x41A68` (bit 1 → `FUN_1401bd650`). In SMP mode it
+  acquires the next frontend buffer (`FUN_14024a240` → `0x141896ba0`) and
+  submits the current one (`FUN_14024aa90`).
+- **`FUN_1401d3360()` = end-of-frame issue**: marks the frame complete
+  (`+0x41A7C = 1`). In SMP mode it submits if not already submitted. Without
+  SMP it runs the backend **inline on the main thread**: device check
+  `FUN_1401bc190`, then `FUN_1401866a0`, `FUN_140186cc0`, `FUN_140186a60` and
+  the end-of-frame/swap `FUN_1401898c0(flags)`. It also latches
+  `0x141888624` = "command buffer used ≥ 0x410000 bytes" (`backEnd+0x419C0`).
+- Callers: the client screen update `FUN_140083700` (issue once, end twice)
+  and the shadow pipeline state machine `FUN_1401d6ed0`.
+
+---
+
+*Next stage: UI/menu pipeline end to end (§9).*
