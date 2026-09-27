@@ -89,6 +89,25 @@ extern "C" bool TryGetClcStateX64(int* outValue); // analog_input_hooks_x64.cpp
 
 namespace {
 
+// REAL BUG FIX, 2026-09-27: live-reported device loss + hang (AppHangB1,
+// confirmed via Windows Error Reporting -- no crash dump, since a hang
+// produces none). The actual log evidence: `vkQueueSubmit FAILED
+// (VkResult=-4)` -- VK_ERROR_DEVICE_LOST, a real GPU/driver-level fault
+// (most likely triggered by DLAA processing a full render-scale-resolution
+// buffer, e.g. 5120x2880 at 200% render scale -- a genuinely unusual,
+// heavy real-time neural-network workload, not a common/well-tested
+// Streamline/NGX usage pattern). Once a Vulkan device is lost, every
+// subsequent call on it is undefined -- this project's own code used to
+// just retry every single frame regardless, hammering an already-dead
+// device forever, which is exactly the shape of thing that turns one real
+// GPU fault into an unrecoverable hang. This latch permanently disables
+// further DLSS evaluate/composite attempts for the rest of the session the
+// instant device loss is detected -- there is no real recovery path here
+// (that would need full device/swapchain recreation, which this project
+// does not attempt), so the honest, safe response is to stop touching this
+// device entirely, not keep trying.
+bool g_dlssDeviceLostX64 = false;
+
 // Real Vulkan functions this file needs, resolved dynamically -- same
 // rationale as streamline_resources_x64.cpp's own top comment (no Vulkan
 // import library linked in this project; every Vulkan function is resolved
@@ -312,6 +331,7 @@ bool EnsureCommandResourcesX64()
 // this frame, or whether it holds stale/no data.
 bool EvaluateStreamlineDlssX64()
 {
+    if (g_dlssDeviceLostX64) return false; // see this flag's own comment -- permanent for this session
     if (!IsStreamlineInitializedX64()) return false;
     if (!ResolveVulkanFunctionsIfNeeded()) return false;
     if (!EnsureCommandResourcesX64()) return false;
@@ -431,9 +451,12 @@ bool EvaluateStreamlineDlssX64()
 
     vr = g_vkQueueSubmit(vkQueue, 1, &submitInfo, g_fence);
     if (vr != VK_SUCCESS) {
-        char buf[150];
-        sprintf_s(buf, "[x64-streamline-evaluate] vkQueueSubmit FAILED (VkResult=%d).", static_cast<int>(vr));
+        char buf[200];
+        sprintf_s(buf, "[x64-streamline-evaluate] vkQueueSubmit FAILED (VkResult=%d)%s.", static_cast<int>(vr),
+            (vr == VK_ERROR_DEVICE_LOST) ? " -- VK_ERROR_DEVICE_LOST, disabling DLSS for the rest of "
+                "this session (see g_dlssDeviceLostX64's own comment)" : "");
         LogFromController(buf);
+        if (vr == VK_ERROR_DEVICE_LOST) g_dlssDeviceLostX64 = true;
         return false;
     }
 
@@ -457,6 +480,12 @@ bool EvaluateStreamlineDlssX64()
     // frame's DLSS work; a genuine timeout is loud/logged, not silent.
     constexpr uint64_t kFenceTimeoutNs = 2'000'000'000ULL;
     VkResult waitResult = g_vkWaitForFences(vkDevice, 1, &g_fence, VK_TRUE, kFenceTimeoutNs);
+    if (waitResult == VK_ERROR_DEVICE_LOST) {
+        LogFromController("[x64-streamline-evaluate] vkWaitForFences reported VK_ERROR_DEVICE_LOST -- "
+            "disabling DLSS for the rest of this session (see g_dlssDeviceLostX64's own comment).");
+        g_dlssDeviceLostX64 = true;
+        return false;
+    }
     if (waitResult == VK_TIMEOUT) {
         static long long s_timeoutCount = 0;
         ++s_timeoutCount;
