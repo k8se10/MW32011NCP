@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <climits>
 #include "mod_config.h"
 #include "overlay_hud.h"
 #include "vanilla_settings_table.h"
@@ -44,6 +45,91 @@ void GetConfigPath(char* outPath, size_t outPathSize)
     strcat_s(outPath, outPathSize, "mw3ncp_config.ini");
 }
 
+// ---- Config validation report (v0.0.3-x64) -----------------------------------------------------------------------
+// Every value LoadModConfig had to correct -- unparsable, out of range, an unknown option name, a bool written as
+// "true" -- used to be fixed up silently, so a player who wrote StreamlineEnabled=true (read as 0 = off) or
+// DLSSModeX64=9 never learned why the setting did nothing. Each correction is now recorded here, logged, and shown
+// in one dismiss-required modal at the end of every load (launch and hot reload) -- see ShowConfigIssuesModalIfAny.
+// Corrections themselves are unchanged apart from negative millisecond values (ReadUlong), which used to wrap to
+// ~4 billion ms and now keep the default instead.
+constexpr int kMaxConfigIssues = 24;
+constexpr int kConfigIssueLineSize = 256;
+char g_configIssues[kMaxConfigIssues][kConfigIssueLineSize] = {};
+int g_configIssueCount = 0;   // stored lines (<= kMaxConfigIssues)
+int g_configIssueTotal = 0;   // every issue seen this load, including ones past the storage cap
+
+void ResetConfigIssues()
+{
+    g_configIssueCount = 0;
+    g_configIssueTotal = 0;
+}
+
+// written: the value exactly as it appears in the file. used: what the mod uses instead. why: the rule it broke.
+// Every string is length-capped in the format itself (%.Ns): `written` comes straight from the user's file, and an
+// uncapped interpolation into a fixed buffer is this project's recurring sprintf_s crash class.
+void NoteConfigIssue(const char* section, const char* key, const char* written, const char* used, const char* why)
+{
+    ++g_configIssueTotal;
+    char line[kConfigIssueLineSize];
+    sprintf_s(line, "[%.24s] %.48s=%.32s -> %.32s (%.64s)", section, key, written, used, why);
+    char logLine[kConfigIssueLineSize + 32];
+    sprintf_s(logLine, "[config][invalid] %s", line);
+    LogFromController(logLine);
+    if (g_configIssueCount < kMaxConfigIssues) {
+        strcpy_s(g_configIssues[g_configIssueCount], line);
+        ++g_configIssueCount;
+    }
+}
+
+// True if the key is present in the file (even as an empty value); copies its raw text into buf.
+bool ReadRawConfigValue(const char* path, const char* section, const char* key, char* buf, DWORD bufSize)
+{
+    // "\x01" as the default: a value a player can't realistically type into the ini, so "key absent" (returns the
+    // default) and "key present but empty" (returns "") stay distinguishable.
+    GetPrivateProfileStringA(section, key, "\x01", buf, bufSize, path);
+    return !(buf[0] == '\x01' && buf[1] == '\0');
+}
+
+// Clamp helpers used by LoadModConfig's range checks: apply the clamp exactly as before, and report it if it fired.
+void ClampFloatSetting(const char* section, const char* key, float& value, float lo, float hi)
+{
+    float before = value;
+    if (value < lo) value = lo;
+    if (value > hi) value = hi;
+    if (value != before) {
+        char written[32], used[32], why[64];
+        sprintf_s(written, "%g", before);
+        sprintf_s(used, "%g", value);
+        if (hi >= 3.0e38f) sprintf_s(why, "must be at least %g", lo);
+        else sprintf_s(why, "must be %g to %g", lo, hi);
+        NoteConfigIssue(section, key, written, used, why);
+    }
+}
+
+void ClampIntSetting(const char* section, const char* key, int& value, int lo, int hi, int replacement)
+{
+    if (value >= lo && value <= hi) return;
+    char written[32], used[32], why[64];
+    sprintf_s(written, "%d", value);
+    sprintf_s(used, "%d", replacement);
+    if (hi == INT_MAX) sprintf_s(why, "must be at least %d", lo);
+    else sprintf_s(why, "must be %d to %d", lo, hi);
+    value = replacement;
+    NoteConfigIssue(section, key, written, used, why);
+}
+
+// Enum-string keys (GraphicsApi, GlyphStyle, ButtonLayout, StickLayout, [CustomBinds]): the parsers accept exactly
+// the names their Name() functions print (case-insensitive) and fall back otherwise, so a written value that doesn't
+// match the parsed result's name was not recognised.
+void NoteIfUnknownOption(const char* section, const char* key, const char* written, const char* usedName,
+                         const char* validList)
+{
+    if (_stricmp(written, usedName) == 0) return;
+    char why[64];
+    sprintf_s(why, "valid: %.56s", validList);
+    NoteConfigIssue(section, key, written, usedName, why);
+}
+
 // GetPrivateProfileString has no float-returning variant -- read as string, parse
 // ourselves. Falls back to defaultValue (already in outValue) on a missing/malformed
 // key rather than silently zeroing it, since 0 is a meaningfully different value from
@@ -51,22 +137,58 @@ void GetConfigPath(char* outPath, size_t outPathSize)
 void ReadFloat(const char* path, const char* section, const char* key, float& outValue)
 {
     char buf[64];
-    char defaultBuf[64];
-    sprintf_s(defaultBuf, "%g", outValue);
-    GetPrivateProfileStringA(section, key, defaultBuf, buf, sizeof(buf), path);
+    if (!ReadRawConfigValue(path, section, key, buf, sizeof(buf))) return; // absent -- keep the default
     char* end = nullptr;
     float parsed = strtof(buf, &end);
-    if (end != buf) outValue = parsed;
+    if (end != buf) {
+        outValue = parsed;
+    } else {
+        char used[32];
+        sprintf_s(used, "%g", outValue);
+        NoteConfigIssue(section, key, buf, used, "not a number");
+    }
+}
+
+// Shared by ReadUlong/ReadBool: GetPrivateProfileInt semantics (leading whitespace, optional sign, leading digits,
+// anything after them ignored). False if the text has no leading integer at all.
+bool ParseLeadingInt(const char* text, long& out)
+{
+    char* end = nullptr;
+    long v = strtol(text, &end, 10);
+    if (end == text) return false;
+    out = v;
+    return true;
 }
 
 void ReadUlong(const char* path, const char* section, const char* key, unsigned long& outValue)
 {
-    outValue = GetPrivateProfileIntA(section, key, static_cast<INT>(outValue), path);
+    char buf[64];
+    if (!ReadRawConfigValue(path, section, key, buf, sizeof(buf))) return;
+    long v = 0;
+    char used[32];
+    sprintf_s(used, "%lu", outValue);
+    if (!ParseLeadingInt(buf, v)) {
+        NoteConfigIssue(section, key, buf, used, "not a whole number");
+    } else if (v < 0) {
+        NoteConfigIssue(section, key, buf, used, "must not be negative");
+    } else {
+        outValue = static_cast<unsigned long>(v);
+    }
 }
 
 void ReadBool(const char* path, const char* section, const char* key, bool& outValue)
 {
-    outValue = GetPrivateProfileIntA(section, key, outValue ? 1 : 0, path) != 0;
+    char buf[64];
+    if (!ReadRawConfigValue(path, section, key, buf, sizeof(buf))) return;
+    long v = 0;
+    if (ParseLeadingInt(buf, v)) {
+        outValue = (v != 0);
+    } else {
+        // GetPrivateProfileInt read these as 0, so "true"/"on"/"yes" silently meant OFF. Same result as before
+        // (off), now reported.
+        outValue = false;
+        NoteConfigIssue(section, key, buf, "0 (off)", "use 1 for on, 0 for off");
+    }
 }
 
 // ---- Config migration (task #14 follow-up, 2026-07-31) ----------------------------
@@ -1194,6 +1316,7 @@ void LoadModConfig()
 {
     char path[MAX_PATH];
     GetConfigPath(path, sizeof(path));
+    ResetConfigIssues(); // v0.0.3-x64 config validation report -- one report per load
 
     DWORD attrs = GetFileAttributesA(path);
     bool exists = (attrs != INVALID_FILE_ATTRIBUTES) && !(attrs & FILE_ATTRIBUTE_DIRECTORY);

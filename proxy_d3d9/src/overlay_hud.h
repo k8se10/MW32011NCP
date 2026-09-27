@@ -187,6 +187,9 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
 // presses Enter/Space/left-click instead of auto-expiring after a fixed duration.
 // For real, safety-relevant warnings that must not be missable (see overlay_hud.cpp's
 // own comment on this function and DrawOverlayMessage's dismiss-handling).
+// Thread-safe and queued (v0.0.3-x64): if another dismiss-required message is already on
+// screen, this one appears after it is dismissed; an identical message already showing or
+// queued is not added again. Safe to call from DllMain.
 void ShowOverlayMessageUntilDismissed(const char* text, OverlayAnimStyle style = OverlayAnimStyle::Plain);
 
 // STRICTLY A TESTING AID (2026-07-31, [Overlay] TestCycleAllVariants in

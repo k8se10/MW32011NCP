@@ -542,7 +542,64 @@ bool g_overlayActive = false;
 // instead waits for a real dismiss input (Enter/Space/left-click) each frame.
 bool g_overlayRequiresDismiss = false;
 
-void* g_textTexture = nullptr;        // IDirect3DTexture9*, created lazily, kept for the DLL's lifetime
+// ---- Dismiss-required modal queue (v0.0.3-x64) ----------------------------------------------------------------------
+// Before this, a second ShowOverlayMessageUntilDismissed call silently REPLACED the modal already on screen -- e.g. a
+// config/DLSS error raised at device creation would wipe the once-per-version welcome modal raised at the same moment,
+// and the player never saw one of them. Modals now queue: the next one appears when the current one is dismissed.
+//
+// Threads: modals are raised from DllMain (the MP notice, under the loader lock), the render thread (DLSS) and
+// EndScene, and consumed in DrawOverlayMessage on the render thread. g_overlayLock guards the queue and every
+// g_overlay* state transition. It is only ever held for plain memory work -- never across GDI/D3D calls -- because a
+// DllMain caller waiting on it while the render thread sat inside GDI (which can take the loader lock itself) would
+// deadlock. DrawOverlayMessage copies the text out under the lock and renders from the copy.
+constexpr int kModalQueueCapacity = 8;
+struct QueuedModal {
+    char text[sizeof(g_overlayText)];
+    OverlayAnimStyle style;
+};
+SRWLOCK g_overlayLock = SRWLOCK_INIT;
+QueuedModal g_modalQueue[kModalQueueCapacity] = {};
+int g_modalQueueHead = 0;  // index of the oldest queued modal
+int g_modalQueueCount = 0;
+// A new modal can't be dismissed until every dismiss input has been seen released once, so holding A/Enter/Space/
+// the mouse button through one dismissal can't also skip the next queued modal (or a modal that appears mid-press).
+bool g_modalDismissArmed = false;
+
+// Caller holds g_overlayLock. Makes `text` the active dismiss-required modal.
+void ActivateModalLocked(const char* text, OverlayAnimStyle style)
+{
+    strncpy_s(g_overlayText, text, _TRUNCATE);
+    g_overlayStartMs = GetTickCount();
+    g_overlayDurationMs = 0; // unused while g_overlayRequiresDismiss is true
+    g_overlayStyle = style;
+    g_overlayRequiresDismiss = true;
+    g_overlayActive = true;
+    g_modalDismissArmed = false;
+}
+
+// Caller holds g_overlayLock. True if `text` is the modal on screen or already waiting in the queue -- a condition
+// re-detected on every device creation/reset (e.g. a DLSS error) must not stack up duplicate copies.
+bool IsModalShownOrQueuedLocked(const char* text)
+{
+    if (g_overlayActive && g_overlayRequiresDismiss && strcmp(g_overlayText, text) == 0) return true;
+    for (int i = 0; i < g_modalQueueCount; ++i) {
+        if (strcmp(g_modalQueue[(g_modalQueueHead + i) % kModalQueueCapacity].text, text) == 0) return true;
+    }
+    return false;
+}
+
+// Caller holds g_overlayLock. Promotes the oldest queued modal to active; false if the queue was empty.
+bool PopNextQueuedModalLocked()
+{
+    if (g_modalQueueCount == 0) return false;
+    const QueuedModal& next = g_modalQueue[g_modalQueueHead];
+    ActivateModalLocked(next.text, next.style);
+    g_modalQueueHead = (g_modalQueueHead + 1) % kModalQueueCapacity;
+    --g_modalQueueCount;
+    return true;
+}
+
+void* g_textTexture = nullptr;       // IDirect3DTexture9*, created lazily, kept for the DLL's lifetime
 char g_textureRenderedFor[160] = {};  // which message string the texture currently shows
 
 // Issue #92, 2026-08-26 -- dedicated, separate text canvas for dismiss-required
@@ -1352,13 +1409,15 @@ void DrawTexturedQuad(void* device, DWORD elapsedMs)
 
 // Defined after DrawBlurredBackgroundRegion, whose blur-capture mechanism it
 // reuses -- see that function's own header comment for the full design.
-void DrawWarningModal(void* device);
+void DrawWarningModal(void* device, const char* text);
 
 void DrawOverlayMessage(void* device)
 {
-    if (!g_overlayActive) return;
-    DWORD elapsed = GetTickCount() - g_overlayStartMs;
+    if (!g_overlayActive) return; // unlocked fast path -- a stale read only delays the message by one frame
 
+    // Dismiss input is polled BEFORE taking g_overlayLock (see the lock's comment: nothing but plain memory work runs
+    // under it), and only while a dismiss-required modal is up, matching the original per-frame cost.
+    bool dismissPressed = false;
     if (g_overlayRequiresDismiss) {
         // Real dismiss input, checked every frame this message is up. This is a
         // CONTROLLER project first -- the original pass here only checked keyboard/
@@ -1377,23 +1436,48 @@ void DrawOverlayMessage(void* device)
         unsigned char xiLeftTrigger = 0, xiRightTrigger = 0;
         Controller_GetRawButtonsAndTriggers(xiButtons, xiLeftTrigger, xiRightTrigger);
         constexpr unsigned short kXInputGamepadA = 0x1000;
-        bool dismissPressed = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0
+        dismissPressed = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0
             || (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0
             || IsLeftMouseButtonHeld()
             || (xiButtons & kXInputGamepadA) != 0;
-        if (dismissPressed && elapsed > 200) { // 200ms guard so the SAME press that
-            // triggered the warning (e.g. clicking Apply) can't also instantly dismiss it
-            g_overlayActive = false;
-            g_overlayRequiresDismiss = false;
-            return;
-        }
-    } else if (elapsed >= g_overlayDurationMs) {
-        g_overlayActive = false;
-        return;
     }
 
+    // Render-thread-only snapshot of the active modal's text, so drawing never reads g_overlayText while another
+    // thread may be raising a modal.
+    static char s_modalTextSnapshot[sizeof(g_overlayText)];
+    bool drawModal = false;
+    DWORD elapsed = 0;
+    AcquireSRWLockExclusive(&g_overlayLock);
+    if (!g_overlayActive) {
+        ReleaseSRWLockExclusive(&g_overlayLock);
+        return;
+    }
+    elapsed = GetTickCount() - g_overlayStartMs;
     if (g_overlayRequiresDismiss) {
-        DrawWarningModal(device);
+        if (!dismissPressed) {
+            g_modalDismissArmed = true;
+        } else if (g_modalDismissArmed && elapsed > 200) {
+            // Armed (every dismiss input released at least once since this modal appeared) plus the original 200ms
+            // guard, so the SAME press that raised the warning (e.g. clicking Apply) can't also instantly dismiss it.
+            // The next queued modal, if any, takes over; otherwise the overlay closes.
+            if (!PopNextQueuedModalLocked()) {
+                g_overlayActive = false;
+                g_overlayRequiresDismiss = false;
+            }
+            ReleaseSRWLockExclusive(&g_overlayLock);
+            return;
+        }
+        strcpy_s(s_modalTextSnapshot, g_overlayText);
+        drawModal = true;
+    } else if (elapsed >= g_overlayDurationMs) {
+        g_overlayActive = false;
+        ReleaseSRWLockExclusive(&g_overlayLock);
+        return;
+    }
+    ReleaseSRWLockExclusive(&g_overlayLock);
+
+    if (drawModal) {
+        DrawWarningModal(device, s_modalTextSnapshot);
         return;
     }
 
@@ -3413,7 +3497,7 @@ void EnsureWarningTextTexture(void* device, const char* text)
 // text (real per-glyph text-layout measurement is a much larger undertaking than
 // this warning's own scope justifies -- the icon is clearly present and legible,
 // just not pixel-locked to one specific word).
-void DrawWarningModal(void* device)
+void DrawWarningModal(void* device, const char* text)
 {
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
@@ -3429,7 +3513,7 @@ void DrawWarningModal(void* device)
 
     DrawBlurredBackgroundRegion(device, panelX, panelY, kPanelW, kPanelH, scaleX, scaleY);
 
-    EnsureWarningTextTexture(device, g_overlayText);
+    EnsureWarningTextTexture(device, text); // DrawOverlayMessage's locked snapshot, never g_overlayText directly
     if (g_warningTextTexture) {
         // Text canvas centered in the upper 2/3 of the panel, leaving room below
         // for the glyph icon.
@@ -8582,14 +8666,18 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
     // be missable" guarantee. Real priority, not just a different draw path: an
     // active warning modal now blocks every ordinary toast until it's actually
     // dismissed by the player.
-    if (g_overlayActive && g_overlayRequiresDismiss) return;
-
+    AcquireSRWLockExclusive(&g_overlayLock);
+    if (g_overlayActive && g_overlayRequiresDismiss) {
+        ReleaseSRWLockExclusive(&g_overlayLock);
+        return;
+    }
     strncpy_s(g_overlayText, text, _TRUNCATE);
     g_overlayStartMs = GetTickCount();
     g_overlayDurationMs = durationMs;
     g_overlayStyle = style;
     g_overlayRequiresDismiss = false;
     g_overlayActive = true;
+    ReleaseSRWLockExclusive(&g_overlayLock);
 }
 
 // Issue #92, 2026-08-26 -- real, safety-relevant warnings (currently: the
@@ -8597,14 +8685,35 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
 // missable by looking away for a few seconds, unlike an ordinary timed toast.
 // Stays on screen until the player presses Enter/Space/left-click -- see
 // DrawOverlayMessage's own dismiss-handling for the mechanism.
+//
+// v0.0.3-x64: queued, not replacing -- if a dismiss-required modal is already on screen, this one waits its turn (see
+// g_modalQueue). An identical message already showing or waiting is not added twice. If the queue is ever full the
+// NEW message is dropped (and logged): the ones already queued were raised first and may be the more important.
+// A timed toast on screen is simply replaced, as before.
 void ShowOverlayMessageUntilDismissed(const char* text, OverlayAnimStyle style)
 {
-    strncpy_s(g_overlayText, text, _TRUNCATE);
-    g_overlayStartMs = GetTickCount();
-    g_overlayDurationMs = 0; // unused while g_overlayRequiresDismiss is true
-    g_overlayStyle = style;
-    g_overlayRequiresDismiss = true;
-    g_overlayActive = true;
+    if (!text || !text[0]) return;
+    bool dropped = false;
+    AcquireSRWLockExclusive(&g_overlayLock);
+    if (IsModalShownOrQueuedLocked(text)) {
+        // already visible or waiting -- nothing to do
+    } else if (!(g_overlayActive && g_overlayRequiresDismiss)) {
+        ActivateModalLocked(text, style);
+    } else if (g_modalQueueCount < kModalQueueCapacity) {
+        QueuedModal& slot = g_modalQueue[(g_modalQueueHead + g_modalQueueCount) % kModalQueueCapacity];
+        strncpy_s(slot.text, text, _TRUNCATE);
+        slot.style = style;
+        ++g_modalQueueCount;
+    } else {
+        dropped = true;
+    }
+    ReleaseSRWLockExclusive(&g_overlayLock);
+    if (dropped) {
+        // Logged outside the lock. The text itself is not interpolated (unbounded length -- this project's recurring
+        // sprintf_s crash class), so log a fixed line followed by the message as its own line.
+        LogFromController("[overlay] modal queue full -- dropped this dismiss-required message:");
+        LogFromController(text);
+    }
 }
 
 void RequestGlyphIconOverlay(float x, float y, float w, float h, const char* assetName)
