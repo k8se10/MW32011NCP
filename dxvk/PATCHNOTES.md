@@ -66,3 +66,10 @@ it is disabled by default and does not enable tessellation.
    patch landed for it. The native-Windows build toolchain
    (MSYS2/MinGW-w64/Meson/Ninja/glslang) set up during that investigation
    stays in place.
+2. **Vulkan tessellation-stage driver proof (2026-09-27).** A temporary
+   native Vulkan probe successfully created a graphics pipeline on an
+   NVIDIA GeForce RTX 2080 Ti using the compiled VS/TCS/TES/FS prototype,
+   three-control-point patches, and a compatible render pass. This validates
+   driver-level pipeline creation only: no draw was issued, no D3D9 frontend
+   path was changed, and no game output is claimed. See issue #3 in
+   `re_notes/known_issues.md`.

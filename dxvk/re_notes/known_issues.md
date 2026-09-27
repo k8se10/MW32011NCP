@@ -501,15 +501,32 @@ cubic position and normal evaluation. All four SPIR-V modules passed
 `spirv-val --target-env vulkan1.2`. The initial patch-output-array
 interface attempt failed cross-stage linking; the prototype was corrected
 to pass three control points through TCS and evaluate PN control points in
-TES. This demonstrates valid stage source and formulas, not DXVK pipeline
-integration or game output. Its source/modules remain outside the repository.
+TES. A separate temporary native Vulkan probe loaded those four SPIR-V
+modules and successfully called `vkCreateGraphicsPipelines` on the NVIDIA
+GeForce RTX 2080 Ti, with a three-control-point `PATCH_LIST`, tessellation
+enabled, and a compatible render pass/pipeline layout. This confirms the
+driver accepts this actual TCS/TES graphics-pipeline configuration; the
+probe did not issue a draw and is not DXVK pipeline integration or game
+output. Probe source and shader modules remain outside the repository.
 
-The next safe implementation gate is to live-validate RT0/ID-2 draw
-association, identify one static nonanimated draw and verify its VS/FS
-interface and normal space, then bind compatible TCS/TES stages only for
-that draw. Until those inputs are known, wiring the prototype would either
-fail pipeline validation or affect unverified scene geometry. No tessellation
-stages are wired into DXVK; the bridge remains off by default.
+The exact DXVK D3D9 integration seam is constrained by existing validation.
+`DxvkGraphicsPipeline::validatePipelineState` requires both TCS and TES with
+`PATCH_LIST`, checks the TCS patch-vertex count against the input-assembly
+state, and validates the fragment shader's inputs against the TES outputs
+when TES is present. D3D9's `PrepareDraw` binds the translated VS/PS and
+`ApplyPrimitiveType` submits ordinary triangle topologies. A generated
+pass-through/flat TES therefore has to preserve the live VS output interface
+expected by each PS; a fixed prototype interface cannot be bound to
+arbitrary game shaders. DXVK has VS/PS shader metadata for such validation,
+but no D3D9-side synthetic-stage generator or selector for one verified
+static draw.
+
+The next D3D9 implementation gate is to identify one static nonanimated
+draw and capture its translated VS/PS interface; RT0/ID 2 alone is only a
+whole-scene pass and includes unknown geometry classes. Until the draw
+selector and interface are established, wiring the prototype would either
+fail pipeline validation or alter unverified scene geometry. No tessellation
+stages are wired into the D3D9 frontend; the bridge remains off by default.
 
 ### Local runtime/content availability, 2026-09-27
 
