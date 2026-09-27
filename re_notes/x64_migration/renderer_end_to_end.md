@@ -397,6 +397,69 @@ uses 0x0B–0x18 by light; emissive/trans use 5–8; thermal vision uses 0x33.
 
 ---
 
+## 7. Draw path (stage 2a — partial, committed early) 🟢
+
+### 7.1 Corrected roles of the two scene functions
+
+- **`FUN_14018e0d0` = `RB_DrawView(view)`** — the real scene render for the
+  active view (not only a shadow pre-pass). Order:
+  1. Upload per-frame dynamic vertex blocks (`FUN_1401a0a70` lock of the VB at
+     `0x1415f30f0`, memcpy, `FUN_1401a0960` unlock) for `backEnd+0x41930` entries.
+  2. `FUN_1401901c0(backEnd+0x4193C)`.
+  3. Main view only (`view+0x1B0 == 1`): **sun shadow maps** when the sun gate
+     `FUN_1401d2b20` passes → `FUN_1401978e0`; **spot shadows** when
+     `backEnd+0x42200` (spot-shadow count) is nonzero → `FUN_140196910`
+     (the per-light loop containing `FUN_140196ad0`, the proxy's
+     `kPerLightShadowDispatchSignature` target).
+  4. `FUN_1401c7150` (static-model cache update), profiler marker.
+  5. If `view+0x1B4` (float-Z / depth needed): bind target **5**, `Clear(6 =
+     ZBUFFER|STENCIL)`, `FUN_14018dcd0(5, …)` = depth / float-Z pass.
+  6. Bind the scene target `view+0x9D0` and `Clear(7)` with the fog/clear colour
+     (`FUN_1401e8330`), or, when `view+0x9DC` is set, take the alternate
+     clear/bind path `FUN_14018e010` (target 2, flash/blur colour state).
+  7. `FUN_1401b1d40` → opaque/lit list (callback `FUN_1401b1e80` →
+     `FUN_14018bfb0`). It applies the dvar at `0x141884bc0` as a colour-constant
+     tweak (`state+0x10F0..0x10FC`).
+  8. If `r_depthPrepass` (dvar `0x141884e58`) is nonzero → `FUN_14018dcd0(view
+     target, …, prepass==2)`.
+  9. `FUN_1401b1f00` (callback `FUN_1401b1e80`, second lit list) and
+     `FUN_1401b1fa0` (callback `FUN_1401b2040` → `FUN_14018c1f0`, emissive /
+     trans list).
+  10. SSAO: `FUN_140197670` returns true when the view allows it and the SSAO
+      enable `0x1418854b9` is set → full-res `FUN_140196df0` (bind target 14,
+      projection rebuild, `FUN_140196f50` blur chain) or downsampled
+      `FUN_140196e80`.
+  11. `FUN_14018ea20` rebinds the view target and view parms for what follows.
+- **`FUN_14018e720` = `RB_PostFxAndFinish`** — for every view whose state
+  `view+0x9D0 == 2` (rendered into `$scene`), runs **scene post-FX
+  `FUN_1401939f0`** then the **motion-blur trigger `FUN_14018def0`**. Split
+  views with exclusion rects go through `FUN_140194130`. It then prepares
+  view parms, viewport and the 3D projection for the RC_* list, for the main
+  and secondary (`backEnd+0x41A38`) view sets.
+
+### 7.2 Draw-list dispatch
+
+- **`FUN_1401de730(callback, ctx, state, list)`** saves the 3040-byte prim
+  state at `0x1415e7090`, zeroes a 0xA00 scratch block, runs `callback`, then
+  restores the state. Every list pass goes through it with a local copy of
+  `GfxCmdBufState` seeded from the view (`FUN_1401e0e80(state, view+0x340, 1)`,
+  target `FUN_1401dff30`, viewport `view+0x150`).
+- List drawers:
+  - `FUN_14018bfb0` — single sorted list.
+  - `FUN_14018c650` — **k-way merge**. Up to 6 per-type sorted sources are
+    registered (`FUN_140184090` … `FUN_1401843b0`, one per surface type, with
+    the prepass flag selecting extra sources). Each carries
+    `{key, nextFn, drawFn}` and the lowest sort key is always drawn next.
+    This is the IW `R_DrawSurfs` over per-type lists.
+  - `FUN_14018c1f0` — emissive/trans list.
+- The per-surface-type draw functions then call pass setup
+  (`FUN_1401dbb70`/`FUN_1401dbef0`) and the single draw funnel
+  `FUN_1401de7d0` (§4).
+
+🔴 Remaining for stage 2b: name the six surface-type sources, the draw-surf
+key bitfield in use, the post-FX chain internals (`FUN_1401939f0`), and the
+render-target activation IDs (target 2/5/14 → names).
+
 *Next stage: draw path deep dive (scene passes inside `FUN_14018e720`,
 draw-surf list layout, shadow pipeline, post-FX chain, render-target
 lifecycle).*
