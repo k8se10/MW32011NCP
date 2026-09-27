@@ -30,7 +30,7 @@ the vendored fork in `dxvk/` (upstream v3.1.1 plus the two Streamline patches).
 | Safe submission of our own Vulkan work between DXVK's | `FlushRenderingCommands` → `LockSubmissionQueue` → `vkQueueSubmit` → `ReleaseSubmissionQueue` (the fix for the 2026-09-27 `DEVICE_LOST`) | `streamline_evaluate_x64.cpp` |
 | `VkImage` behind any D3D9 surface (depth, colour) | `ID3D9VkInteropTexture::GetVulkanImageInfo`, plus a view cache (`GetOrCreateViewX64`) | `streamline_resources_x64.cpp` (`TagDepthResourceForFrame`) |
 | Per-pixel motion vectors | camera plus per-object motion for DLSS | `streamline_camera_x64.cpp`, `streamline_object_motion_x64.cpp` |
-| Camera matrices | view, proj, viewProj, invViewProj code constants; the projection build/jitter point | [§5.2], `FUN_1401e13e0` [§3 op 25] |
+| Camera matrices | the current view's `GfxViewParms` at `*(GfxCmdBufState+0x1790)` (view +0x00, projection +0x40, viewProj +0x80, invViewProj +0xC0), set by `FUN_1401e0880`; already read by the DLSS camera path (ROUND 24) | [§3 op 25], `streamline_camera_x64.cpp` |
 | Linear depth | `R_RENDERTARGET_FLOAT_Z` (id 5), built in `RB_DrawView` step 5 | [§7.1, §8.3] |
 | An AO input the engine already composites | `R_RENDERTARGET_SSAO` / `SSAO_BLURRED` (ids 12/13), applied by `ssao_apply_fullres`/`_downsampled` | [§7.1 step 10, §8.3, §8.4] |
 | Buffer device addresses | `bufferDeviceAddress` is a **required** feature in DXVK 3.x, and every `DxvkBuffer` gets `SHADER_DEVICE_ADDRESS` | `dxvk_device_info.cpp:914`, `dxvk_buffer.cpp:31` |
