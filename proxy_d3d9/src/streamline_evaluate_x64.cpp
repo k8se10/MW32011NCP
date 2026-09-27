@@ -787,6 +787,29 @@ void LogDlssReadbackIfPendingX64(int mode)
 // the dimensions of the output Color image" on the first DLAA frame (options
 // already 5120x2880, texture still 2560x1440). Idempotent; the edge-detected
 // log line and overlay notice fire once per transition.
+// Factored out (v0.0.3-x64) so the real call site below and QueueDlssSwitchModalPreview (the
+// [Overlay] TestShowAllModals testing aid, called from d3d9_hook.cpp) show byte-identical text
+// instead of risking two copies drifting apart -- fixed text, no runtime substitutions needed.
+constexpr const char* kDlssSwitchedToDlaaModalText =
+    "\x03" "DLSS switched to DLAA (this session only)\n\n"
+    "\x01" "\xE2\x9A\xA0 Render scale is above 100%, which DLSS's upscaling modes "
+    "cannot use, so DLAA runs instead for as long as that holds. DLAA works at "
+    "your full render-scale resolution and costs noticeably more GPU time than "
+    "upscaling.\n\n"
+    "Bloom and depth of field are not applied to the DLSS image above 100% "
+    "render scale yet.\n\n"
+    "Your DLSSModeX64 setting in mw3ncp_config.ini is unchanged.\n\n"
+    "Enter / Space / Click to continue:";
+
+// TESTING AID (v0.0.3-x64, [Overlay] TestShowAllModals) -- previews the real DLSS DLAA-override
+// modal without needing an actual render-scale-above-100%-with-DLSS-on condition. extern "C",
+// forward-declared directly at its one call site (d3d9_hook.cpp, #if defined(_M_X64)) since this
+// whole file only builds for x64 and no shared header needs a permanent declaration for it.
+extern "C" void QueueDlssSwitchModalPreview()
+{
+    ShowOverlayMessageUntilDismissed(kDlssSwitchedToDlaaModalText, OverlayAnimStyle::Plain);
+}
+
 static bool UpdateDlssEffectiveOutputX64(void* device)
 {
     if (!device) return false;
@@ -846,17 +869,9 @@ static bool UpdateDlssEffectiveOutputX64(void* device)
             // "\x03DLSS" compiled to '=' (0x3D) + "LSS" and lost the heading colour.
             // The bloom/depth-of-field line is ROUND 23/24's known, deliberately
             // deferred tradeoff: DLSS runs before post-FX and is composited after it.
-            ShowOverlayMessageUntilDismissed(
-                "\x03" "DLSS switched to DLAA (this session only)\n\n"
-                "\x01" "\xE2\x9A\xA0 Render scale is above 100%, which DLSS's upscaling modes "
-                "cannot use, so DLAA runs instead for as long as that holds. DLAA works at "
-                "your full render-scale resolution and costs noticeably more GPU time than "
-                "upscaling.\n\n"
-                "Bloom and depth of field are not applied to the DLSS image above 100% "
-                "render scale yet.\n\n"
-                "Your DLSSModeX64 setting in mw3ncp_config.ini is unchanged.\n\n"
-                "Enter / Space / Click to continue:",
-                OverlayAnimStyle::Plain);
+            // Text lives in kDlssSwitchedToDlaaModalText above (shared with the
+            // QueueDlssSwitchModalPreview testing aid) so both stay byte-identical.
+            ShowOverlayMessageUntilDismissed(kDlssSwitchedToDlaaModalText, OverlayAnimStyle::Plain);
         } else {
             LogFromController("[x64-streamline-evaluate] Render-scale input no longer exceeds the "
                 "display resolution -- DLAA override lifted, using the configured DLSSModeX64 again.");

@@ -867,6 +867,21 @@ constexpr const char* kWelcomeFeatureList =
     // release (dvar_write_x64.cpp, known_issues_x64.md issue #6) but is build-verified only;
     // add them back here once the [x64-dvarwrite] read-back lines are confirmed live.
 
+// Factored out (v0.0.3-x64) so ShowWelcomeModalIfNewVersion's real call site and the
+// QueueAllTestModalsIfRequested testing aid below build byte-identical text.
+void BuildWelcomeModalText(char* msg, size_t msgSize)
+{
+    sprintf_s(msg, msgSize,
+              "\x03" "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\n"
+              "\x03" "This version includes:\n%s\n\n"
+              "\x01" "\xE2\x9A\xA0 EARLY RELEASE: expect hidden bugs and unfinished or unported features. Survival is the"
+              " recommended mode. Campaign controller support is incomplete; in Multiplayer it covers menu navigation"
+              " only. Vulkan and DLSS are Campaign/Survival only.\n\n"
+              MW3NCP_VAC_RISK_NOTICE
+              "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
+              kModVersionString, kWelcomeFeatureList);
+}
+
 bool ShowWelcomeModalIfNewVersion()
 {
     char path[MAX_PATH] = {};
@@ -879,15 +894,7 @@ bool ShowWelcomeModalIfNewVersion()
     if (strcmp(seen, kModVersionString) == 0) return false;
 
     char msg[2048]; // == g_overlayText's size (overlay_hud.cpp); the formatted text is ~1008 bytes
-    sprintf_s(msg,
-              "\x03" "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\n"
-              "\x03" "This version includes:\n%s\n\n"
-              "\x01" "\xE2\x9A\xA0 EARLY RELEASE: expect hidden bugs and unfinished or unported features. Survival is the"
-              " recommended mode. Campaign controller support is incomplete; in Multiplayer it covers menu navigation"
-              " only. Vulkan and DLSS are Campaign/Survival only.\n\n"
-              MW3NCP_VAC_RISK_NOTICE
-              "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
-              kModVersionString, kWelcomeFeatureList);
+    BuildWelcomeModalText(msg, sizeof(msg));
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
     WritePrivateProfileStringA("State", "WelcomeShownVersion", kModVersionString, path);
     return true;
@@ -901,6 +908,19 @@ int MonthFromName(const char* m)
     static const char* const kNames[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     for (int i = 0; i < 12; ++i) if (strncmp(m, kNames[i], 3) == 0) return i + 1;
     return 1;
+}
+
+// Factored out (v0.0.3-x64) so ShowOutdatedModalIfStale's real call site and the
+// QueueAllTestModalsIfRequested testing aid below build byte-identical text.
+void BuildOutdatedModalText(char* msg, size_t msgSize, long long ageDays)
+{
+    sprintf_s(msg, msgSize,
+              "\x03" "This version of MW32011NCP may be out of date.\n\n"
+              "\x01" "\xE2\x9A\xA0 This build (v%s) is %lld days old. Early releases change quickly and fix real bugs -- please check GitHub or"
+              " Nexus for a newer version before reporting problems.\n\n"
+              MW3NCP_VAC_RISK_NOTICE
+              "Enter / Space / Click to continue:",
+              kModVersionString, ageDays);
 }
 
 bool ShowOutdatedModalIfStale()
@@ -945,13 +965,7 @@ bool ShowOutdatedModalIfStale()
     if (!testOutdated && static_cast<int>(GetPrivateProfileIntA("State", "OutdatedShownDay", 0, path)) == today) return false;
 
     char msg[2048]; // == g_overlayText's size (overlay_hud.cpp)
-    sprintf_s(msg,
-              "\x03" "This version of MW32011NCP may be out of date.\n\n"
-              "\x01" "\xE2\x9A\xA0 This build (v%s) is %lld days old. Early releases change quickly and fix real bugs -- please check GitHub or"
-              " Nexus for a newer version before reporting problems.\n\n"
-              MW3NCP_VAC_RISK_NOTICE
-              "Enter / Space / Click to continue:",
-              kModVersionString, ageDays);
+    BuildOutdatedModalText(msg, sizeof(msg), ageDays);
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
     char todayStr[16];
     sprintf_s(todayStr, "%d", today);
@@ -959,10 +973,51 @@ bool ShowOutdatedModalIfStale()
     return true;
 }
 
+// x64-only real previews, declared here (not in a shared header) since these two files only build
+// for x64 -- see each definition's own comment (streamline_evaluate_x64.cpp, streamline_integration_x64.cpp).
+#if defined(_M_X64) || defined(_WIN64)
+extern "C" void QueueDlssSwitchModalPreview();
+extern "C" void QueueDlssUnsupportedModalPreview();
+#endif
+// dllmain.cpp -- always available (the Multiplayer modal itself has arch-conditional text, but the
+// preview function exists on both architectures).
+extern "C" void QueueMultiplayerModalPreview();
+
+// STRICTLY A TESTING AID (v0.0.3-x64, [Overlay] TestShowAllModals in mw3ncp_config.ini, default
+// off). Queues every real dismiss-required modal this mod can show, in one sitting, via the modal
+// queue (overlay_hud.cpp) -- dismissing one shows the next, exercising the queue itself along with
+// every individual modal's own formatting. Each preview reuses the real modal-building code/text
+// (BuildWelcomeModalText/BuildOutdatedModalText above, or a shared constant/helper in the owning
+// file for the cross-TU modals) rather than a separate copy, so there is nothing here that can
+// drift out of sync with what a player actually sees. Called once from ShowStartupMessage, which
+// returns immediately after so this never races the real startup modal logic. Never enable the
+// underlying config toggle for normal play.
+void QueueAllTestModalsIfRequested()
+{
+    if (!g_modConfig.overlayTestShowAllModals) return;
+
+    char welcomeMsg[2048];
+    BuildWelcomeModalText(welcomeMsg, sizeof(welcomeMsg));
+    ShowOverlayMessageUntilDismissed(welcomeMsg, OverlayAnimStyle::Plain);
+
+    char outdatedMsg[2048];
+    BuildOutdatedModalText(outdatedMsg, sizeof(outdatedMsg), 30); // sample age, matches the real [State] TestOutdated=1 value
+    ShowOverlayMessageUntilDismissed(outdatedMsg, OverlayAnimStyle::Plain);
+
+    QueueMultiplayerModalPreview();
+    QueueSampleConfigIssuesModalPreview();
+#if defined(_M_X64) || defined(_WIN64)
+    QueueDlssSwitchModalPreview();
+    QueueDlssUnsupportedModalPreview();
+#endif
+}
+
 void ShowStartupMessage()
 {
     // 1) once per version: welcome + feature list; 2) possibly-outdated (below 0.4.0, build older than 4 weeks, once a
     // day); 3) every normal launch: the short toast below, which carries the version and the early-release reminder.
+    QueueAllTestModalsIfRequested();
+    if (g_modConfig.overlayTestShowAllModals) return; // let the queued test modals show uncontested this launch
     if (ShowWelcomeModalIfNewVersion()) return;
     if (ShowOutdatedModalIfStale()) return;
     srand(GetTickCount());

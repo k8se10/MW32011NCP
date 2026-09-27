@@ -277,6 +277,21 @@ bool ResolveAndCacheDxvkVulkanHandlesX64(IUnknown* d3d9Device)
     return vkInstance != VK_NULL_HANDLE && vkDevice != VK_NULL_HANDLE && vkQueue != VK_NULL_HANDLE;
 }
 
+// Factored out (v0.0.3-x64) so the real call site below and QueueDlssUnsupportedModalPreview (the
+// [Overlay] TestShowAllModals testing aid, called from d3d9_hook.cpp) show byte-identical text
+// instead of risking two copies drifting apart.
+void ShowDlssUnsupportedModalX64(const char* reason)
+{
+    char modalBuf[512];
+    sprintf_s(modalBuf,
+        "\x03" "DLSS is not available\n\n"
+        "\x01" "\xE2\x9A\xA0 %s (StreamlineEnabled=1 in mw3ncp_config.ini). The rest of "
+        "Vulkan/DXVK rendering is unaffected -- only DLSS/DLAA itself is disabled for this "
+        "session.\n\n"
+        "Enter / Space / Click to continue:", reason);
+    ShowOverlayMessageUntilDismissed(modalBuf, OverlayAnimStyle::Plain);
+}
+
 bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
 {
     if (!ResolveAndCacheDxvkVulkanHandlesX64(d3d9Device)) {
@@ -321,14 +336,7 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
             static bool s_dlssUnsupportedModalShownX64 = false; // once per process -- a device reset must not re-show it
             if (!s_dlssUnsupportedModalShownX64) {
                 s_dlssUnsupportedModalShownX64 = true;
-                char modalBuf[512];
-                sprintf_s(modalBuf,
-                    "\x03" "DLSS is not available\n\n"
-                    "\x01" "\xE2\x9A\xA0 %s (StreamlineEnabled=1 in mw3ncp_config.ini). The rest of "
-                    "Vulkan/DXVK rendering is unaffected -- only DLSS/DLAA itself is disabled for this "
-                    "session.\n\n"
-                    "Enter / Space / Click to continue:", reason);
-                ShowOverlayMessageUntilDismissed(modalBuf, OverlayAnimStyle::Plain);
+                ShowDlssUnsupportedModalX64(reason);
             }
             return false;
         }
@@ -413,6 +421,15 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
         "tracking are the next unstarted steps.", queueFamilyIndex, queueIndex);
     LogFromController(buf);
     return true;
+}
+
+// TESTING AID (v0.0.3-x64, [Overlay] TestShowAllModals) -- previews the real DLSS-hardware-
+// unsupported modal without needing an actual non-RTX GPU / old driver / HWS-disabled system.
+// extern "C", forward-declared directly at its one call site (d3d9_hook.cpp, #if defined(_M_X64))
+// since this whole file only builds for x64 and no shared header needs a permanent declaration.
+extern "C" void QueueDlssUnsupportedModalPreview()
+{
+    ShowDlssUnsupportedModalX64("this GPU is not an NVIDIA RTX GPU (DLSS needs Tensor Cores)");
 }
 
 // 2026-09-27: real, previously-missing Streamline log-callback -- the SDK's

@@ -810,6 +810,39 @@ FORWARD_STUB(PSGPSampleTexture)
 #undef FORWARD_STUB
 #endif // !_M_X64 && !_WIN64
 
+// Factored out (v0.0.3-x64) so DllMain's own real call site below and QueueMultiplayerModalPreview
+// (the [Overlay] TestShowAllModals testing aid, called from d3d9_hook.cpp) show byte-identical
+// text instead of risking two copies drifting apart. See DllMain's own call site for the full
+// history/rationale comment on this text.
+constexpr const char* kMultiplayerModalText =
+    "\x03" "Multiplayer\n\n"
+#if defined(_M_X64) || defined(_WIN64)
+    "\x01" "\xE2\x9A\xA0 Controller support here covers menu navigation only -- "
+    "in-game movement, aiming and actions still need keyboard/mouse.\n\n"
+#else
+    "\x01" "\xE2\x9A\xA0 No gameplay functionality yet -- controller input and "
+    "menu navigation are not supported in Multiplayer. Use keyboard/mouse.\n\n"
+#endif
+    "\x02" "\xE2\x9C\x94 The netcode security fixes are active and protect this "
+    "mode too.\n\n"
+#if defined(_M_X64) || defined(_WIN64)
+    "\x02" "\xE2\x9C\x94 Render scale (InternalRenderScalePercent) and the "
+    "performance fixes are also active here.\n\n"
+#endif
+    // VAC risk notice (v0.0.3-x64, direct instruction) -- same wording as
+    // MW3NCP_VAC_RISK_NOTICE in d3d9_hook.cpp; keep the two in step.
+    "\x01" "\xE2\x9A\xA0 Online play is subject to VAC. No user of this mod has ever "
+    "reported a ban, but the risk exists: by using this mod you accept and "
+    "acknowledge it.\n\n"
+    "Enter / Space / Click to continue:";
+
+// TESTING AID (v0.0.3-x64, [Overlay] TestShowAllModals) -- previews the real Multiplayer modal
+// from an SP session, without needing to actually launch iw5mp.exe.
+extern "C" void QueueMultiplayerModalPreview()
+{
+    ShowOverlayMessageUntilDismissed(kMultiplayerModalText, OverlayAnimStyle::Plain);
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
 {
     switch (reason) {
@@ -985,32 +1018,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // skip, wait coalescing, .iwd read cache, memory-detection fix) run here
             // alongside InternalRenderScalePercent. The Win32 build installs none of the
             // MP hooks above, so it keeps the original wording.
-            ShowOverlayMessageUntilDismissed(
-                "\x03" "Multiplayer\n\n"
-#if defined(_M_X64) || defined(_WIN64)
-                "\x01" "\xE2\x9A\xA0 Controller support here covers menu navigation only -- "
-                "in-game movement, aiming and actions still need keyboard/mouse.\n\n"
-#else
-                "\x01" "\xE2\x9A\xA0 No gameplay functionality yet -- controller input and "
-                "menu navigation are not supported in Multiplayer. Use keyboard/mouse.\n\n"
-#endif
-                "\x02" "\xE2\x9C\x94 The netcode security fixes are active and protect this "
-                "mode too.\n\n"
-#if defined(_M_X64) || defined(_WIN64)
-                "\x02" "\xE2\x9C\x94 Render scale (InternalRenderScalePercent) and the "
-                "performance fixes are also active here.\n\n"
-#endif
-                // FUTURE (once MP has real in-game controller support -- swap the warning
-                // paragraph above for this one, nothing else needs to change):
-                // "\x01" "\xE2\x9A\xA0 Multiplayer is in pre-alpha and will contain bugs and "
-                // "issues. It is not on par with Campaign/Survival.\n\n"
-                // VAC risk notice (v0.0.3-x64, direct instruction) -- same wording as
-                // MW3NCP_VAC_RISK_NOTICE in d3d9_hook.cpp; keep the two in step.
-                "\x01" "\xE2\x9A\xA0 Online play is subject to VAC. No user of this mod has ever "
-                "reported a ban, but the risk exists: by using this mod you accept and "
-                "acknowledge it.\n\n"
-                "Enter / Space / Click to continue:"
-            );
+            // FUTURE (once MP has real in-game controller support -- swap the warning
+            // paragraph in kMultiplayerModalText above for a pre-alpha-bugs-expected one,
+            // nothing else needs to change).
+            ShowOverlayMessageUntilDismissed(kMultiplayerModalText, OverlayAnimStyle::Plain);
         } else {
             Log("proxy_d3d9: WARNING — could not identify the loading executable as "
                 "iw5sp.exe or iw5mp.exe. Refusing to install any gameplay hooks as a "

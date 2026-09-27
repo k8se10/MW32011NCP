@@ -993,6 +993,12 @@ void WriteDefaultConfig(const char* path)
         "; be seen on demand rather than waiting on a 1-in-20 RNG roll. Never enable\n"
         "; this for normal play.\n"
         "TestCycleAllVariants=%d\n"
+        "; STRICTLY A TESTING TOGGLE, default off. When on, queues every real dismiss-\n"
+        "; required modal this mod can show (welcome, possibly-outdated, Multiplayer,\n"
+        "; DLSS DLAA-override, DLSS hardware-unsupported, and a sample config-corrected\n"
+        "; report) once at startup, without needing to trigger each one's real condition.\n"
+        "; Never enable this for normal play.\n"
+        "TestShowAllModals=%d\n"
         "\n"
         "[Experimental]\n"
         "; Individually toggleable, not-yet-fully-proven behaviors -- for live\n"
@@ -1215,6 +1221,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.overlayFontFamilyCondensed,
         g_modConfig.overlayFontItalic ? 1 : 0,
         g_modConfig.overlayTestCycleAllVariants ? 1 : 0,
+        g_modConfig.overlayTestShowAllModals ? 1 : 0,
         g_modConfig.visualFxClcStateTestValue,
         g_modConfig.damageDiagLoggingEnabled ? 1 : 0,
         g_modConfig.fireNotifyQueueKick ? 1 : 0,
@@ -1356,6 +1363,20 @@ void ShowConfigIssuesModalIfAny()
     }
     strcat_s(msg, "\nEach corrected value falls back to the setting shown above -- edit "
                   "mw3ncp_config.ini to change it.\n\nEnter / Space / Click to continue:");
+    ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
+}
+
+void QueueSampleConfigIssuesModalPreview()
+{
+    // Same real format ShowConfigIssuesModalIfAny builds -- two made-up example lines, exactly the shape
+    // NoteConfigIssue would have produced, without touching g_configIssues/g_configIssueTotal at all.
+    char msg[2048];
+    sprintf_s(msg,
+        "\x03" "mw3ncp_config.ini -- 2 value(s) corrected on load\n\n"
+        "\x01" "[Video] StreamlineEnabled=true -> 0 (off) (use 1 for on, 0 for off)\n"
+        "\x01" "[Experimental] DLSSModeX64=9 -> 3 (must be 0 to 6)\n\n"
+        "Each corrected value falls back to the setting shown above -- edit "
+        "mw3ncp_config.ini to change it.\n\nEnter / Space / Click to continue:");
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
 }
 
@@ -1516,6 +1537,7 @@ void LoadModConfig()
     }
     ReadBool(path, "Overlay", "FontItalic", g_modConfig.overlayFontItalic);
     ReadBool(path, "Overlay", "TestCycleAllVariants", g_modConfig.overlayTestCycleAllVariants);
+    ReadBool(path, "Overlay", "TestShowAllModals", g_modConfig.overlayTestShowAllModals);
     {
         int v = GetPrivateProfileIntA("Experimental", "VisualFxClcStateTestValue",
             g_modConfig.visualFxClcStateTestValue, path);

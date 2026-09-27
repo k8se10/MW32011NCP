@@ -409,6 +409,17 @@ struct ModConfig
                                      // startup roll -- lets every variant actually be
                                      // seen on demand rather than waiting on a 1-in-20
                                      // RNG roll. Never enable this for normal play.
+    bool overlayTestShowAllModals = false; // STRICTLY A TESTING TOGGLE, default off (v0.0.3-x64).
+                                     // When on, queues every real dismiss-required modal this mod
+                                     // can show (welcome, possibly-outdated, the Multiplayer notice,
+                                     // the DLSS DLAA-override notice, the DLSS hardware-unsupported
+                                     // notice, and a sample config-value-corrected report) ONCE at
+                                     // startup, all in one sitting via the modal queue -- lets every
+                                     // one actually be inspected and its dismiss handling exercised
+                                     // on demand, without needing a fresh version, a 4-week-old build,
+                                     // an actual MP launch, a high render scale, or a non-RTX GPU to
+                                     // trigger the real condition. See QueueAllTestModalsIfRequested()
+                                     // (d3d9_hook.cpp). Never enable this for normal play.
 
     // [Experimental] (2026-07-18) -- individually toggleable, not-yet-fully-proven
     // behaviors, so a hypothesis under live test can be flipped off without a
@@ -1436,6 +1447,13 @@ void LoadModConfig();
 // own hooks already run on (same file I/O this project's existing config code
 // already does synchronously).
 extern "C" void SaveModConfig();
+
+// TESTING AID (v0.0.3-x64, [Overlay] TestShowAllModals) -- queues one sample
+// config-value-corrected modal, in the exact real format ShowConfigIssuesModalIfAny
+// itself uses, using two fixed, made-up example corrections rather than touching the
+// real g_configIssues state (so this never interferes with an actual load's own
+// report). Called from QueueAllTestModalsIfRequested (d3d9_hook.cpp).
+void QueueSampleConfigIssuesModalPreview();
 
 // [Video] InternalRenderScalePercent (see this struct's own field comment above)
 // needs no separate apply function -- Hook_FUN_00679010 (analog_input_hooks.cpp)

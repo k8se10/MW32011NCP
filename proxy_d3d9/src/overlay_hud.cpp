@@ -4696,12 +4696,19 @@ extern "C" void TriggerMotionBlurFromEngineHook()
     // for why this timing (before HUD/UI drawing) is required, not Hook_EndScene.
     // Independently gated/guarded inside -- a no-op unless StreamlineEnabled=1 and
     // this frame's own real gameplay gates (menu/in-level/clcState) all pass.
+    // Both declared only under #if defined(_M_X64)/_WIN64 above (streamline_evaluate_x64.cpp is
+    // an x64-only translation unit, not part of the Win32/MP build) -- this call site was missing
+    // the matching guard, which broke the Win32 build entirely (C3861: identifier not found) as
+    // soon as it landed. Fixed alongside the [Overlay] TestShowAllModals feature, found while
+    // build-verifying it against Win32.
+#if defined(_M_X64) || defined(_WIN64)
     RunDlssEvaluateAndCompositeX64(device);
     // 2026-09-27: the main-menu warm-up experiment (Option #1) shares the same real
     // per-viewport boundary -- mutually exclusive with the call above (menu-active vs.
     // in-level), and independently one-shot-latched inside, so calling it every frame
     // here is safe and costs nothing once it's fired (or been skipped) once.
     RunDlssMainMenuWarmupOnceX64(device);
+#endif
 }
 
 // Phase A/B's shared entry point, called from the very end of Hook_EndScene
@@ -7717,7 +7724,9 @@ HRESULT WINAPI Hook_Reset(void* device, void* pPresentationParameters)
 // the full rationale. REVISED same day -- one fixed candidate per process
 // launch now (see g_modConfig.projectionMatrixJitterProbeCandidateIndex),
 // no more active/clean phase to track.
+#if defined(_M_X64) || defined(_WIN64)
 extern "C" const char* GetCurrentJitterProbeCandidateNameX64();
+#endif
 
 // MW32011NCP, 2026-09-24: draws the currently selected jitter-probe
 // candidate name in large, bright text top-center of the screen -- pure
@@ -7726,6 +7735,7 @@ extern "C" const char* GetCurrentJitterProbeCandidateNameX64();
 // (single accessor call, no texture work) the rest of the time.
 void DrawJitterProbeOverlayIfEnabled(void* device)
 {
+#if defined(_M_X64) || defined(_WIN64)
     const char* candidateName = GetCurrentJitterProbeCandidateNameX64();
     if (!candidateName) return;
 
@@ -7749,6 +7759,9 @@ void DrawJitterProbeOverlayIfEnabled(void* device)
                               static_cast<float>(kTextureWidth) * scaleX * jpScale,
                               static_cast<float>(kTextureHeight) * scaleY * jpScale,
                               kJpColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+#else
+    (void)device;
+#endif
 }
 
 void DrawBuildWatermark(void* device)
