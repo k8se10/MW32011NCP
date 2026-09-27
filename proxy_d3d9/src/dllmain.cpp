@@ -890,6 +890,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallOcclusionLodScaleFixX64();
             InstallPauseBlurStepCapX64();
             InstallCrossExePerformanceHooksX64();
+            // 2026-09-27, MP port, mp_port_plan.md step 3: both functions are now
+            // exe-aware internally (real MP signatures found and verified via capstone
+            // disassembly for backend/render Sleep(1) and the .iwd ReadFile call site --
+            // see each new *SignatureMP constant's own header comment for the full
+            // derivation). kRenderWait1Signature already hits identically in both exes;
+            // kWorkerWaitSignature is ambiguous under MP (5 hits vs. SP's 2) and simply
+            // fails to resolve there for now, a safe, graceful, documented gap.
+            InstallWaitCoalescingHooksX64();
+            InstallIwdReadCacheHooksX64();
 #endif
 #if defined(_M_X64) || defined(_WIN64)
             // 2026-09-23, direct instruction ("time to make the graphics enhancements

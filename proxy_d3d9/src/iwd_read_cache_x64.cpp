@@ -56,6 +56,7 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "signature_scan.h"
 #include "mod_config.h"
+#include "game_exe_detect.h" // GetDetectedGameExecutable() -- 2026-09-27, MP port
 
 extern void LogFromController(const char* msg);
 void NotifyArchiveIoActivityX64(unsigned int bytes); // wait_coalescing_x64.h --
@@ -81,6 +82,16 @@ constexpr size_t kPathBufSize = 160;
 // update moving this exact call simply fails the scan gracefully (the
 // cache never activates) rather than crashing.
 constexpr char kIwdReadCallSignature[] = "FF 15 BD 7C 02 00";
+// 2026-09-27, MP port (mp_port_plan.md step 3): iw5mp.exe's own real call
+// site, found from the HIGH-confidence twin function candidate in
+// mp_twins_2026-09-27.txt (0x14041f9f0) via real capstone disassembly --
+// scanned that function for every real indirect call through a RIP-relative
+// pointer (5 candidates), then cross-referenced each one's target address
+// against MP's own real import table to find the one that actually points at
+// KERNEL32's ReadFile (0x14041fcd5 -> IAT slot 0x140447350 = ReadFile; the
+// other four resolved to GetLastError/ReadConsoleW/GetConsoleMode instead).
+// Confirmed to match EXACTLY ONCE in iw5mp.exe's own real .text section.
+constexpr char kIwdReadCallSignatureMP[] = "FF 15 75 76 02 00";
 
 uintptr_t g_iwdStreamReadCallerAddr = 0;
 
@@ -554,7 +565,8 @@ BOOL WINAPI Hook_SetFilePointerEx(HANDLE file, LARGE_INTEGER distance, PLARGE_IN
 
 void InstallIwdReadCacheHooksX64()
 {
-    SigScan::Result r = SigScan::FindPatternInMainModule(kIwdReadCallSignature);
+    const bool isMP = (GetDetectedGameExecutable() == GameExecutable::MP);
+    SigScan::Result r = SigScan::FindPatternInMainModule(isMP ? kIwdReadCallSignatureMP : kIwdReadCallSignature);
     if (!r.found) {
         LogFromController("[iwd-cache] .iwd stream-read call-site signature did not resolve -- "
             "cache stays off, real disk I/O unaffected");

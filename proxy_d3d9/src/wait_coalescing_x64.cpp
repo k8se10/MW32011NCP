@@ -46,6 +46,7 @@
 #include "../third_party/minhook/include/MinHook.h"
 #include "signature_scan.h"
 #include "mod_config.h"
+#include "game_exe_detect.h" // GetDetectedGameExecutable() -- 2026-09-27, MP port
 
 extern void LogFromController(const char* msg);
 
@@ -68,11 +69,35 @@ double ClampD(double v, double lo, double hi) { return v < lo ? lo : (v > hi ? h
 // already relies on.
 constexpr char kBackendSleep1Signature[] = "B9 01 00 00 00 E8 9D BF 08 00";
 constexpr char kRenderSleep1Signature[] = "B9 01 00 00 00 E8 7B EB 0B 00";
+// 2026-09-27, MP port (mp_port_plan.md step 3): iw5mp.exe's own real twins,
+// same literal-displacement convention as the SP patterns above (both share
+// an identical "mov ecx,1; call Sleep-wrapper" shape, so the CALL displacement
+// itself is what makes each one uniquely resolvable, deliberately not
+// wildcarded). Found from the HIGH-confidence twin function candidates in
+// mp_twins_2026-09-27.txt (0x1401e4090 backend, 0x1401b1750 render) via real
+// capstone disassembly, not guessed: backend-sleep's pattern sits right at the
+// twin's own entry; render-sleep's sits 0x8d bytes into its twin (deeper in
+// the function body, past a real menu-active/timescale branch SP's own
+// version apparently doesn't have at the same position) -- both verified via
+// a full raw-byte re-read at the resolved address, and both confirmed to
+// match EXACTLY ONCE in iw5mp.exe's own real .text section.
+constexpr char kBackendSleep1SignatureMP[] = "B9 01 00 00 00 E8 6D A0 0A 00";
+constexpr char kRenderSleep1SignatureMP[] = "B9 01 00 00 00 E8 29 C9 0D 00";
 // RIP-relative operands wildcarded (the [event] global and the
 // WaitForSingleObject IAT slot) -- both are real addresses that could shift
 // on a relink even if this exact instruction sequence doesn't.
 constexpr char kRenderWait1Signature[] = "48 8B 0D ?? ?? ?? ?? BA 01 00 00 00 FF 15 ?? ?? ?? ??";
 constexpr char kWorkerWaitSignature[] = "48 8B 0D ?? ?? ?? ?? BA FF FF FF FF FF 15 ?? ?? ?? ??";
+// 2026-09-27, MP port: kRenderWait1Signature's own wildcarded pattern already
+// matches identically in both exes (signature_resolution_sp_mp_2026-09-27.txt),
+// no MP-specific variant needed. kWorkerWaitSignature genuinely does NOT --
+// it matches 5 times in iw5mp.exe (vs. exactly 2 in iw5sp.exe, where the SP
+// code already knows which of the two is real), a real ambiguity needing
+// call-graph disambiguation this pass didn't do -- SigScan::FindPatternInMainModule's
+// own expectedOccurrences=1 default already fails this safely under MP (found=false,
+// logged, gracefully inactive), never a wrong/dangerous match. Worker-wait
+// coalescing simply doesn't activate under MP yet; the other three real
+// components (backend/render Sleep(1), render Wait) do.
 
 uintptr_t g_backendSleep1ReturnAddr = 0;
 uintptr_t g_renderSleep1ReturnAddr = 0;
@@ -367,8 +392,11 @@ void NotifyArchiveIoActivityX64(unsigned int bytes)
 
 void InstallWaitCoalescingHooksX64()
 {
-    g_backendSleep1ReturnAddr = ResolveReturnAddress(kBackendSleep1Signature, "backend Sleep(1) poll");
-    g_renderSleep1ReturnAddr = ResolveReturnAddress(kRenderSleep1Signature, "render Sleep(1) poll");
+    const bool isMP = (GetDetectedGameExecutable() == GameExecutable::MP);
+    g_backendSleep1ReturnAddr = ResolveReturnAddress(
+        isMP ? kBackendSleep1SignatureMP : kBackendSleep1Signature, "backend Sleep(1) poll");
+    g_renderSleep1ReturnAddr = ResolveReturnAddress(
+        isMP ? kRenderSleep1SignatureMP : kRenderSleep1Signature, "render Sleep(1) poll");
     g_renderWait1ReturnAddr = ResolveReturnAddress(kRenderWait1Signature, "render WaitForSingleObject(1)");
     g_workerWaitReturnAddr = ResolveReturnAddress(kWorkerWaitSignature, "archive/job worker idle wait");
 
