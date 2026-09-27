@@ -19,9 +19,9 @@ opt-in env var that lets a host point DXVK's Vulkan loader at a specific
 file instead of the normal winevulkan/vulkan-1 search — needed so
 Streamline's own `sl.interposer.dll` can sit in front of DXVK's
 `vkCreateInstance`/`vkCreateDevice` calls for its mandatory swapchain hooks.
-Both off by default, so behavior is unchanged unless set. A third,
-experimental IW5-SP-only render-pass bridge prerequisite is also included;
-it is disabled by default and does not enable tessellation.
+Both off by default, so behavior is unchanged unless set. An opt-in,
+experimental IW5-SP render-pass bridge and an uncompiled D3D9 tessellation
+prototype are also present. The prototype is not a verified working feature.
 
 ### What's New
 1. **`dxvk.enableNvCudaInteropNative` (default `False`).** Upstream enables
@@ -50,16 +50,18 @@ it is disabled by default and does not enable tessellation.
    session (built clean; the interposer itself hasn't been exercised through
    this path live yet).
 3. **`d3d9.iw5RenderPassBridge` (default `False`, Windows only).** When
-   explicitly enabled, this experimental bridge first requires the verified
+   explicitly enabled, this experimental path first requires the verified
    `iw5sp.exe` PE identity and then a unique render-target dispatcher
    signature before using vendored MinHook to scope the engine's target ID
    around its original call. DXVK associates that ID with its RT0 state and
-   can emit a diagnostic for the first five and then every 2,000th indexed
-   draw in scene target 2, including VS/PS cache names, declaration blend
-   flags, and used vertex-buffer size/usage/stride; it does not dump buffer
-   contents or change draw state. This is an IW5-specific research
-   prerequisite, not tessellation: no TCS/TES stages are injected, and the
-   hook has not been live-tested. See `re_notes/known_issues.md` issue #3.
+   can emit rate-limited diagnostics for indexed draws in scene target 2.
+   Source also contains an experimental TCS/TES attempt gated by this option,
+   target 2, indexed triangle-list draws, and a conservative vertex-layout/
+   buffer eligibility check. It uses a fixed tessellation level and flat
+   barycentric interpolation of VS outputs; it is not PN/smooth curvature,
+   does not identify a verified static prop, and has not compiled or been
+   game-tested. Do not treat it as a working feature. The bridge itself has
+   not been live-tested. See `re_notes/known_issues.md` issue #3.
 
 ### Groundwork
 1. **Issue #1 resolved as not a DXVK bug.** A motion-blur post-process pass
@@ -75,3 +77,10 @@ it is disabled by default and does not enable tessellation.
    driver-level pipeline creation only: no draw was issued, no D3D9 frontend
    path was changed, and no game output is claimed. See issue #3 in
    `re_notes/known_issues.md`.
+3. **D3D9 tessellation integration attempt (2026-09-27).** The current
+   source attempts to synthesize per-shader TCS/TES modules and switch an
+   eligible indexed draw to three-control-point patches. The latest Meson
+   compile fails in `d3d9_tessellation.cpp` because
+   `ir::Type::getBaseType()` is called without its required argument. The
+   code is intentionally preserved as an unverified experiment; no game
+   validation or static-prop identification has occurred.

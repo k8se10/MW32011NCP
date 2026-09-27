@@ -254,8 +254,9 @@ first patch. `MW32011NCP`'s own `TryLoadVendoredDxvk()` sets this env var
 
 ## #3: IW5 tessellation needs a standalone render-pass bridge
 
-**Status:** Investigating (2026-09-27) — no tessellation implementation is
-included. DXVK now has a fail-closed SP identity gate and an opt-in MinHook
+**Status:** Investigating (2026-09-27) — the branch contains an uncompiled,
+experimental D3D9 TCS/TES integration attempt, not a verified tessellation
+feature. DXVK has a fail-closed SP identity gate and an opt-in MinHook
 render-pass bridge prototype. The user-provided SP executable was previously
 verified in place: its `.text` contains one dispatcher-signature match; the
 same signature also matches MP, so the distinct SP PE identity gate is
@@ -531,12 +532,9 @@ arbitrary game shaders. DXVK has VS/PS shader metadata for such validation,
 but no D3D9-side synthetic-stage generator or selector for one verified
 static draw.
 
-The next D3D9 implementation gate is to identify one static nonanimated
-draw and capture its translated VS/PS interface; RT0/ID 2 alone is only a
-whole-scene pass and includes unknown geometry classes. Until the draw
-selector and interface are established, wiring the prototype would either
-fail pipeline validation or alter unverified scene geometry. No tessellation
-stages are wired into the D3D9 frontend; the bridge remains off by default.
+At the time of this feasibility round, no D3D9 tessellation stages were
+wired into the frontend. The later experimental source attempt is recorded
+below; it does not resolve the draw-selection or interface-safety gaps.
 
 ### Local runtime/content availability, 2026-09-27
 
@@ -573,6 +571,42 @@ The supplied CLAUDE §§2–4 rules require asking before process injection;
 the live-capture request was issued, but the user was unavailable and no
 approval was received. Therefore RT2 static-prop identification and
 validation against the original VS/PS remain blocked on that approval.
-The bridge commit and standalone native Vulkan pipeline proof do not claim a
-D3D9 tessellation implementation; no TCS/TES stage is wired into the D3D9
-frontend.
+The bridge commit and standalone native Vulkan pipeline proof do not claim
+working game output. The source prototype described below is uncompiled and
+unvalidated.
+
+### Experimental D3D9 integration attempt, 2026-09-27
+
+The current source tree adds `d3d9_tessellation.{h,cpp}` and a guarded path
+in `D3D9DeviceEx::DrawIndexedPrimitive`. It is reached only with
+`d3d9.iw5RenderPassBridge=True`, the SP identity/dispatcher bridge active,
+associated engine target ID 2, an indexed triangle-list draw, programmable
+VS/PS, declaration checks for FLOAT3 POSITION and NORMAL with no blend
+weights/indices, non-dynamic and non-system-memory vertex/index buffers,
+and the generated stage-I/O compatibility check. These are conservative
+eligibility heuristics, not evidence that a selected draw is a static prop.
+RT2 is a whole scene pass and includes unknown geometry classes.
+
+The generated TCS copies three VS output control points and assigns a fixed
+tessellation level of four. The TES barycentrically interpolates every
+declared VS output, including position and varyings. This is **flat linear
+subdivision**, not PN triangles or smooth curvature; normals are not used to
+bend the surface. It also assumes float interfaces because `DxvkShaderIoVar`
+does not carry scalar-type or interpolation metadata. The current branch
+therefore does not establish safe shader-interface handling for real game
+shaders.
+
+The source attempts to bind generated TCS/TES stages, switch the draw to
+three-control-point `PATCH_LIST`, issue the indexed draw, then unbind those
+stages and restore the original topology. Direct source inspection shows
+that intended command sequence, but it has not passed compilation or
+runtime/pipeline validation. The latest Meson compile of this tree fails in
+`src/d3d9/d3d9_tessellation.cpp:182`: `ir::Type::getBaseType()` is called
+without its required argument. This consolidation intentionally preserves
+the prototype without a code fix; the compiler error is the current result.
+
+No game process was launched, no injection or DLL deployment occurred, and
+no draw was captured or identified as a static prop. The separate native
+Vulkan pipeline proof above remains driver-level pipeline-creation evidence
+only. Neither it nor this uncompiled D3D9 attempt demonstrates tessellation
+output in DXVK or MW3.

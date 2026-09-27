@@ -18,6 +18,7 @@
 
 #ifdef _WIN32
 #include "iw5_render_target_bridge.h"
+#include "d3d9_tessellation.h"
 #endif
 
 #include "../dxvk/dxvk_adapter.h"
@@ -3104,15 +3105,107 @@ namespace dxvk {
     if (unlikely(!PrimitiveCount || !NumVertices))
       return D3D_OK;
 
+    Rc<DxvkShader> tessellationControlShader;
+    Rc<DxvkShader> tessellationEvaluationShader;
+    bool usePassThroughTessellation = false;
+
 #ifdef _WIN32
     if (m_d3d9Options.iw5RenderPassBridge && GetEngineRenderTargetId() == 2) {
       static std::atomic<uint64_t> scenePassDrawCount = 0;
       const uint64_t count = scenePassDrawCount.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (count <= 5 || count % 2000 == 0) {
-        std::string vertexBufferInfo;
+      const bool sampled = count <= 5 || count % 2000 == 0;
+
+      if (m_d3d9Options.iw5RenderPassBridge
+       && PrimitiveType == D3DPT_TRIANGLELIST
+       && m_state.vertexDecl != nullptr
+       && !m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasBlendWeight)
+       && !m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasBlendIndices)
+       && m_state.vertexShader != nullptr
+       && m_state.pixelShader != nullptr) {
+        bool hasPosition = false;
+        bool hasNormal = false;
+        bool supportedVertexLayout = true;
+
+        for (const auto& element : m_state.vertexDecl->GetElements()) {
+          if (element.Type < D3DDECLTYPE_FLOAT1 || element.Type > D3DDECLTYPE_FLOAT4) {
+            supportedVertexLayout = false;
+            break;
+          }
+
+          if (element.Usage == D3DDECLUSAGE_POSITION && element.UsageIndex == 0
+           && element.Type == D3DDECLTYPE_FLOAT3 && !hasPosition) {
+            hasPosition = true;
+          } else if (element.Usage == D3DDECLUSAGE_NORMAL && element.UsageIndex == 0
+                  && element.Type == D3DDECLTYPE_FLOAT3 && !hasNormal) {
+            hasNormal = true;
+          } else if ((element.Usage == D3DDECLUSAGE_POSITION && element.UsageIndex == 0)
+                  || (element.Usage == D3DDECLUSAGE_NORMAL && element.UsageIndex == 0)
+                  || element.Usage == D3DDECLUSAGE_BLENDWEIGHT
+                  || element.Usage == D3DDECLUSAGE_BLENDINDICES
+                  || element.Usage == D3DDECLUSAGE_POSITIONT) {
+            supportedVertexLayout = false;
+            break;
+          }
+
+          if (element.Stream >= caps::MaxStreams
+           || m_state.vertexBuffers[element.Stream].stride == 0
+           || element.Offset + GetDecltypeSize(D3DDECLTYPE(element.Type))
+                > m_state.vertexBuffers[element.Stream].stride) {
+            supportedVertexLayout = false;
+            break;
+          }
+        }
+
         const uint32_t streamMask = m_state.vertexDecl->GetStreamMask();
-        for (uint32_t stream = 0; stream < caps::MaxStreams; stream++) {
+        for (uint32_t stream = 0; supportedVertexLayout && stream < caps::MaxStreams; stream++) {
           if (!(streamMask & (1u << stream)))
+            continue;
+
+          auto* buffer = GetCommonBuffer(m_state.vertexBuffers[stream].vertexBuffer);
+          if (buffer == nullptr) {
+            supportedVertexLayout = false;
+            break;
+          }
+
+          const auto* desc = buffer->Desc();
+          if ((desc->Usage & D3DUSAGE_DYNAMIC) || desc->Pool == D3DPOOL_SYSTEMMEM) {
+            supportedVertexLayout = false;
+            break;
+          }
+        }
+
+        auto* indexBuffer = GetCommonBuffer(m_state.indices);
+        if (indexBuffer == nullptr
+         || (indexBuffer->Desc()->Usage & D3DUSAGE_DYNAMIC)
+         || indexBuffer->Desc()->Pool == D3DPOOL_SYSTEMMEM)
+          supportedVertexLayout = false;
+
+        supportedVertexLayout &= hasPosition && hasNormal;
+        if (supportedVertexLayout) {
+          auto* vertexShader = GetCommonShader(m_state.vertexShader);
+          auto* pixelShader = GetCommonShader(m_state.pixelShader);
+          const auto& vertexMetadata = vertexShader->GetShader()->metadata();
+          const auto& pixelMetadata = pixelShader->GetShader()->metadata();
+
+          if (D3D9SupportsPassThroughTessellation(vertexMetadata, pixelMetadata)) {
+            try {
+              usePassThroughTessellation = D3D9CreatePassThroughTessellationShaders(
+                m_dxvkDevice, vertexShader->GetName(), vertexMetadata,
+                tessellationControlShader, tessellationEvaluationShader);
+            } catch (const DxvkError& error) {
+              Logger::warn(str::format(
+                "D3D9DeviceEx::DrawIndexedPrimitive: failed to create IW5 pass-through tessellation stages: ",
+                error.message()));
+            }
+          }
+        }
+      }
+
+      if (sampled) {
+        std::string vertexBufferInfo;
+        const uint32_t diagnosticStreamMask = m_state.vertexDecl->GetStreamMask();
+        for (uint32_t stream = 0; stream < caps::MaxStreams; stream++) {
+          if (!(diagnosticStreamMask & (1u << stream)))
             continue;
 
           auto* buffer = GetCommonBuffer(m_state.vertexBuffers[stream].vertexBuffer);
@@ -3140,7 +3233,8 @@ namespace dxvk {
           ", declElements:", m_state.vertexDecl->GetElements().size(),
           ", blendWeight:", m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasBlendWeight),
           ", blendIndices:", m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasBlendIndices),
-          ", VBs:", vertexBufferInfo));
+          ", VBs:", vertexBufferInfo,
+          ", flatTessellation:", usePassThroughTessellation));
       }
     }
 #endif
@@ -3154,6 +3248,23 @@ namespace dxvk {
       BaseVertexIndex, &dynamicSysmemVBOs, &dynamicSysmemIBO);
 
     PrepareDraw(PrimitiveType, !dynamicSysmemVBOs, !dynamicSysmemIBO);
+
+    if (usePassThroughTessellation) {
+      DxvkInputAssemblyState tessellationInputAssembly =
+        DecodeInputAssemblyState(PrimitiveType);
+      tessellationInputAssembly.setPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_PATCH_LIST);
+      tessellationInputAssembly.setPatchVertexCount(3u);
+
+      EmitCs([
+        cControlShader = std::move(tessellationControlShader),
+        cEvaluationShader = std::move(tessellationEvaluationShader),
+        cInputAssembly = tessellationInputAssembly
+      ](DxvkContext* ctx) mutable {
+        ctx->bindShader<VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT>(std::move(cControlShader));
+        ctx->bindShader<VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT>(std::move(cEvaluationShader));
+        ctx->setInputAssemblyState(cInputAssembly);
+      });
+    }
 
     VkDrawIndexedIndirectCommand draw = {};
     draw.indexCount = indexCount;
@@ -3189,6 +3300,15 @@ namespace dxvk {
     });
 
     new (m_csData->first()) VkDrawIndexedIndirectCommand(draw);
+
+    if (usePassThroughTessellation) {
+      EmitCs([cPrimitiveType = PrimitiveType](DxvkContext* ctx) {
+        ctx->bindShader<VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT>(Rc<DxvkShader>());
+        ctx->bindShader<VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT>(Rc<DxvkShader>());
+        ctx->setInputAssemblyState(DecodeInputAssemblyState(cPrimitiveType));
+      });
+    }
+
     return D3D_OK;
   }
 
