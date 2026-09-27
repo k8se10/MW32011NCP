@@ -36,6 +36,75 @@ candidate (`0x1400ce950`) and the movement/FOV/mounted-aim twins, confirm or
 refute each against the SP originals per §3, THEN start wiring per §6's
 implementation order.
 
+**Status update (2026-09-27, later still): anchor CONFIRMED, Sprint/HoldBreath/
+CrouchProne SHIPPED.** The Ghidra MP analysis above completed (110s). Decompiled
+and directly compared FUN_1400ce950 (MP anchor candidate) against
+FUN_14007c3a0 (SP anchor) case-by-case: byte-for-byte structural match --
+same activate/deactivate call-pair shape for every case checked (Fire case 1/2,
+cases 3/4-7/8, Sprint+HoldBreath case 9/10, Reload case 0xb/0xc, ADS-with-
+toggle-flag case 0xd/0xe, CrouchProne-toggle), same 31-byte function prologue
+prefix as SP's own literal kAnchorSignature (diverging by exactly one extra
+early-out instruction MP adds, `param_2 - 0x49U < 2`, consistent with MP having
+more action-slot cases). Confirmed UNIQUE in iw5mp.exe via a direct offline
+pattern scan (not just a runtime SigScan call) before being trusted, this
+project's own standing "verify before hooking" requirement. Real, load-bearing
+MP-specific differences found, NOT assumed to carry over from SP:
+- Per-client struct stride is 600 (0x258) bytes in MP vs SP's 0x230 (560) --
+  irrelevant here since every resolve targets the LOCAL player only (client
+  index 0, matching g_stanceDispatch(0, case, 0)'s existing SP call pattern).
+- CrouchProne toggle case numbers are SHIFTED: MP 0x52/0x53 vs SP's 0x48/0x49
+  (MP's extra killstreak action-slot cases, 0-6 vs SP's 0-3, push everything
+  after them up by a consistent amount).
+- MP's real stance field (DAT_140e21398) is a genuinely SEPARATE global --
+  NOT derivable from g_adsToggleFlagMP by SP's own "+0x1c from the ADS-toggle-
+  flag base" trick (the two addresses aren't adjacent in MP's layout at all).
+  Resolved via its own anchor-relative RIP offset instead.
+
+All real offsets independently derived via direct disassembly (capstone/
+pefile) of the confirmed-unique anchor:
+
+| Struct/global | MP address | Anchor offset | insn len |
+|---|---|---|---|
+| Timestamp (shared) | DAT_142cddcfc | +0x49 | 7 |
+| Fire kbutton (groundwork, not yet wired) | DAT_140e1dc18 | +0x78 | 7 |
+| Reload kbutton (groundwork, not yet wired) | DAT_140e1dcb8 | +0x24B | 7 |
+| ADS-active flag (groundwork, not yet wired) | DAT_140e1dbb4 | +0x2AB | 7 |
+| ADS kbutton (groundwork, not yet wired) | DAT_140e1dcf4 | +0x2CD | 7 |
+| Hold Breath kbutton | DAT_140e1dc2c | +0xA6A | 7 |
+| Sprint kbutton | DAT_140e1dd08 | +0xCA6 | 7 |
+| Real stance field | DAT_140e21398 | +0x4D8 | 6 (plain mov, not LEA) |
+
+The Sprint-tick function itself (kSprintTickSignature's own MP twin,
+FUN_1400389d0 @ 0x1400389d0) was independently confirmed via decompile: same
+2-arg __fastcall shape as SP's, hooked the identical "call through to the
+real native logic first, then add kbutton-driven Sprint/HoldBreath edges on
+top" way Hook_SprintTick already works for SP -- its own internal duration/
+recovery/perk logic (a real, complex, MP-specific implementation, ~780 bytes)
+never needed reading, since the hook only calls through to it, never
+reimplements it. SP's own kSprintTickSignature literal does NOT match MP past
+its first 30 bytes (diverges at the post-prologue struct-offset check) -- a
+real, separate kSprintTickSignatureMP was needed and independently verified
+unique in iw5mp.exe.
+
+**Shipped**: InstallMpAnchorAndSprintHooksX64() (analog_input_hooks_x64.cpp),
+called from dllmain.cpp's MP branch. Resolves the shared kbutton activate/
+deactivate signatures (confirmed to already hit MP's own real addresses
+directly, no separate MP constant needed), the MP anchor and all eight
+offsets above, and the MP Sprint-tick hook. GetRealStanceX64/
+ForceStandingViaRealToggleX64 are now exe-aware (MP branch uses
+g_stanceFieldMP/g_stanceDispatchMP/the MP case numbers; SP branch unchanged).
+Build-verified 0 errors/0 warnings on both x64 and Win32; not yet live-tested
+in a private match.
+
+**Still open for step 7**: the movement-tick/FOV/mounted-aim LOW-tier twins
+(0x1400d0050/0x140073400/0x1400d0350) -- these are separate, MSVC function-
+chunked routines (SP's own 0x14007d9f0 .pdata entry is only a 0x24-byte
+prologue chunk, the real body continues in a separately-chunked cold path)
+needing their own decompile pass against the now-available MP analyzed
+project, not yet done. Pmove tick (0x1400168a0->0x14003a890, HIGH) also not
+yet wired -- SP's own hook is still diagnostic-only (log-and-call-through),
+so porting it is low-risk but not yet done either.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to

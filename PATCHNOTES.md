@@ -10,6 +10,11 @@ patch history is preserved in
 
 ## Unreleased
 
+**Summary:** Multiplayer's first real GAMEPLAY controller hook (not menu navigation or a performance fix): Sprint, Hold Breath, and CrouchProne auto-stand-on-sprint now work on `iw5mp.exe`, driven by a real, independently-verified MP twin of the shared kbutton case-dispatch function SP's own Sprint/Hold Breath/CrouchProne already depend on. Required standing up a full Ghidra analysis of `iw5mp.exe` from scratch (none existed before) to confirm the twin structurally, byte-for-byte, against SP's own dispatcher rather than trusting a signature-only match. Build-verified on both x64 and Win32; not yet live-tested.
+
+### What's New
+1. **Multiplayer: Sprint, Hold Breath, and CrouchProne auto-stand-on-sprint.** Mirrors SP's own final design exactly — the real `+sprint`/Hold Breath kbuttons are driven directly (native duration/recovery timer and any perk override apply automatically; vanilla keyboard Sprint is untouched), and standing up from crouch/prone on Sprint's rising edge uses the real native stance-toggle dispatch, not a raw state write. Required real, independently-verified MP data: the shared case-dispatch function every one of these three features calls into (`FUN_1400ce950`) was confirmed, via full decompile, to be a byte-for-byte structural twin of SP's own dispatcher (same activate/deactivate call-pair shape, same case grouping for Fire/Reload/ADS/Sprint+HoldBreath/CrouchProne, same 31-byte function prologue prefix) — not just a plausible address match. Real, MP-specific differences found and accounted for, not assumed to carry over from SP: the per-client struct stride differs (600 vs SP's 560 bytes, irrelevant here since this project always operates on the local player only), the CrouchProne toggle case numbers are shifted (MP `0x52`/`0x53` vs SP's `0x48`/`0x49`, MP's dispatcher has extra killstreak action-slot cases inserted earlier), and MP's real stance field is a genuinely separate global — not derivable from the ADS-toggle-flag's own address by SP's "+0x1c" trick the way SP's own is. See `re_notes/x64_migration/mp_port_plan.md` step 7 for the complete derivation and every resolved offset.
+
 ---
 
 ## v0.0.3-x64 — Alpha (2026-09-27)

@@ -2354,6 +2354,22 @@ constexpr const char* kSprintTickSignature =
     "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 "
     "48 8B 19 33 ED 48 8B F2 48 8B F9 39 AB CC 01 00 00 74 ?? F6 41 0C 02";
 
+// MP twin (mp_port_plan.md step 7, 2026-09-27): real Sprint-tick function, FUN_1400389d0,
+// confirmed via decompile (Ghidra) to have the same 2-arg __fastcall shape and to be
+// hooked/called-through exactly like SP's Sprint tick (this hook never reads the native
+// function's own internals -- it lets the real logic run first via g_realSprintTick, then
+// adds its own kbutton-driven Sprint/Hold Breath edges, so the two builds' very different
+// native duration/recovery/perk logic inside FUN_1400389d0 itself is irrelevant here). The
+// SP signature's own prologue matches MP's byte-for-byte up through the first 30 bytes
+// (identical `mov [rsp+8],rbx / mov [rsp+0x10],rbp / mov [rsp+0x18],rsi / push rdi /
+// sub rsp,0x70 / mov rbx,[rcx] / xor ebp,ebp / mov rsi,rdx / mov rdi,rcx` prologue), then
+// diverges (MP's own follow-up struct-offset check reads a different field than SP's
+// `cmp [rbx+0x1cc],ebp`) -- confirmed a UNIQUE (1 occurrence) match in iw5mp.exe via direct
+// pattern scan before being trusted here.
+constexpr const char* kSprintTickSignatureMP =
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 70 "
+    "48 8B 19 33 ED 48 8B F2 48 8B F9 39";
+
 using SprintTickFn = void(__fastcall*)(void* param1, void* param2);
 SprintTickFn g_realSprintTick = nullptr;
 
@@ -2373,6 +2389,9 @@ extern KbuttonDeactivateFn g_kbuttonDeactivate;
 extern int* g_sprintStruct;
 extern int* g_holdBreathStruct;
 extern volatile uint32_t* g_timestampPtr;
+extern int* g_sprintStructMP;
+extern int* g_holdBreathStructMP;
+extern volatile uint32_t* g_timestampPtrMP;
 int GetRealStanceX64();
 void ForceStandingViaRealToggleX64();
 
@@ -2560,7 +2579,16 @@ void __fastcall Hook_SprintTick(void* param1, void* param2)
         ForceStandingViaRealToggleX64();
     }
 
-    int timestamp = g_timestampPtr ? static_cast<int>(*g_timestampPtr) : 0;
+    // MP twin (mp_port_plan.md step 7, 2026-09-27): g_sprintStruct/g_holdBreathStruct/
+    // g_timestampPtr are SP-specific DAT_ addresses, resolved from SP's own kAnchorSignature
+    // -- MP has its own separate anchor (kAnchorSignatureMP) and its own struct addresses.
+    // g_kbuttonActivate/g_kbuttonDeactivate stay shared (single vars): their signatures are
+    // generic enough to resolve to each exe's own correct real address already.
+    const bool isMP = (GetDetectedGameExecutable() == GameExecutable::MP);
+    int* sprintStruct = isMP ? g_sprintStructMP : g_sprintStruct;
+    int* holdBreathStruct = isMP ? g_holdBreathStructMP : g_holdBreathStruct;
+    volatile uint32_t* timestampPtr = isMP ? g_timestampPtrMP : g_timestampPtr;
+    int timestamp = timestampPtr ? static_cast<int>(*timestampPtr) : 0;
 
     // NOTE: this used to be a single early `return` once Sprint's own active
     // state matched its last-sent state -- moved to a per-block `if` instead,
@@ -2572,11 +2600,11 @@ void __fastcall Hook_SprintTick(void* param1, void* param2)
     // separate state machines in the same per-tick function, not chained).
     if (active != g_sprintKbuttonActiveX64) {
         g_sprintKbuttonActiveX64 = active;
-        if (g_kbuttonActivate && g_kbuttonDeactivate && g_sprintStruct) {
+        if (g_kbuttonActivate && g_kbuttonDeactivate && sprintStruct) {
             if (active) {
-                g_kbuttonActivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
+                g_kbuttonActivate(sprintStruct, kSprintSyntheticSourceId, timestamp);
             } else {
-                g_kbuttonDeactivate(g_sprintStruct, kSprintSyntheticSourceId, timestamp);
+                g_kbuttonDeactivate(sprintStruct, kSprintSyntheticSourceId, timestamp);
             }
         }
     }
@@ -2587,11 +2615,11 @@ void __fastcall Hook_SprintTick(void* param1, void* param2)
     bool holdBreathActive = sprintHeld && adsHeldNow;
     if (holdBreathActive != g_holdBreathKbuttonActiveX64) {
         g_holdBreathKbuttonActiveX64 = holdBreathActive;
-        if (g_kbuttonActivate && g_kbuttonDeactivate && g_holdBreathStruct) {
+        if (g_kbuttonActivate && g_kbuttonDeactivate && holdBreathStruct) {
             if (holdBreathActive) {
-                g_kbuttonActivate(g_holdBreathStruct, kHoldBreathSyntheticSourceId, timestamp);
+                g_kbuttonActivate(holdBreathStruct, kHoldBreathSyntheticSourceId, timestamp);
             } else {
-                g_kbuttonDeactivate(g_holdBreathStruct, kHoldBreathSyntheticSourceId, timestamp);
+                g_kbuttonDeactivate(holdBreathStruct, kHoldBreathSyntheticSourceId, timestamp);
             }
         }
     }
@@ -2981,6 +3009,61 @@ constexpr ptrdiff_t kSprintStructInsnOffset = 0xB0D; // -> DAT_1406448f4 (Sprint
 constexpr ptrdiff_t kHoldBreathStructInsnOffset = 0x8C9; // -> DAT_14064482c (Hold Breath kbutton)
 constexpr size_t kRipInsnLength = 7;
 
+// MP twin of the whole kAnchorSignature cluster above (mp_port_plan.md step 7, 2026-09-27).
+// Real MP anchor found and independently verified: FUN_1400ce950, confirmed via decompile
+// (Ghidra, re_notes/x64_migration/ghidra_project_x64_mp_analyzed/ -- new this session, no
+// MP analyzed project existed before) to be a byte-for-byte STRUCTURAL match for
+// FUN_14007c3a0's own case-dispatch shape -- same activate/deactivate call-pair pattern,
+// same case GROUPING and GUARD-CONDITION shape for every case checked (Fire/Reload/ADS/
+// Sprint+HoldBreath/CrouchProne-toggle), same 31-byte function prologue prefix
+// (mov [rsp+8],rbx; mov [rsp+0x10],rsi; push rdi; sub rsp,0x20; ...) as SP's own
+// kAnchorSignature literal, with one genuine extra early-out MP adds
+// (`param_2 - 0x49U < 2`, an extra guard SP's version doesn't have) before the shared tail
+// -- explaining the two builds' prologues diverging by exactly one instruction rather than
+// being byte-identical. Confirmed a UNIQUE (1 occurrence) match in iw5mp.exe via direct
+// pattern scan, independent of any SigScan machinery, before being trusted here -- this
+// project's own standing "verify before hooking" requirement. Real, load-bearing
+// differences from SP, NOT assumed to carry over:
+//   - Per-client struct stride is 600 (0x258) bytes in MP vs SP's 0x230 (560) -- irrelevant
+//     to every offset below since this project always operates on the LOCAL player only
+//     (client index 0, matching g_stanceDispatch(0, case, 0)'s own existing SP call
+//     pattern), so no stride math is ever needed here.
+//   - MP's case numbering for the CrouchProne toggle pair is SHIFTED (+0x0a) from SP's
+//     (MP case 0x52/0x53 vs SP's 0x48/0x49) -- MP's dispatcher has extra action-slot cases
+//     (killstreak slots 0-6 vs SP's 0-3) inserted earlier in the switch, consistent with
+//     mp_port_plan.md's own "MP action slots differ: killstreaks" note.
+//   - MP's real stance field (DAT_140e21398, case 0x52/0x53's own direct read/write target)
+//     is a genuinely SEPARATE, independently-resolved global -- NOT derivable from
+//     g_adsToggleFlagMP by SP's own "+0x1c from the ADS-toggle-flag base" trick (the two
+//     addresses aren't adjacent in MP's own layout at all). Resolved via its own anchor-
+//     relative offset instead (kStanceFieldInsnOffsetMP below), not reused from any other
+//     already-resolved pointer.
+// Fire/Reload/ADS struct offsets are real groundwork for future work (Fire/ADS/Reload are
+// not part of this pass' own scope -- only Sprint/HoldBreath/CrouchProne toggle are wired
+// below), included now since they were free to derive from the same anchor disassembly and
+// avoid a second RE pass later.
+constexpr const char* kAnchorSignatureMP =
+    "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 8D 42 B7 48 63 D9 41 8B F8 8B F2 83 F8 01 76 21";
+constexpr ptrdiff_t kTimestampInsnOffsetMP = 0x49;         // -> DAT_142cddcfc (shared timestamp), len 7
+constexpr ptrdiff_t kFireStructInsnOffsetMP = 0x78;        // -> DAT_140e1dc18 (Fire kbutton), len 7 -- not yet wired
+constexpr ptrdiff_t kReloadStructInsnOffsetMP = 0x24B;     // -> DAT_140e1dcb8 (Reload kbutton), len 7 -- not yet wired
+constexpr ptrdiff_t kAdsToggleFlagInsnOffsetMP = 0x2AB;    // -> DAT_140e1dbb4 (ADS-active flag), len 7 -- not yet wired
+constexpr ptrdiff_t kAdsStructInsnOffsetMP = 0x2CD;        // -> DAT_140e1dcf4 (ADS kbutton), len 7 -- not yet wired
+constexpr ptrdiff_t kHoldBreathStructInsnOffsetMP = 0xA6A; // -> DAT_140e1dc2c (Hold Breath kbutton), len 7
+constexpr ptrdiff_t kSprintStructInsnOffsetMP = 0xCA6;     // -> DAT_140e1dd08 (Sprint kbutton), len 7
+// The real MP stance field (DAT_140e21398) -- a genuinely separate global from
+// g_adsToggleFlag's MP counterpart, see the big comment above. First reference inside the
+// anchor is a `mov eax,[rip+disp32]` (6-byte instruction, not 7 -- MP's case 0x52 reads it
+// with no ModRM-immediate suffix, unlike every LEA above), independently confirmed via
+// direct disassembly, not assumed to share kRipInsnLength.
+constexpr ptrdiff_t kStanceFieldInsnOffsetMP = 0x4D8;
+constexpr size_t kStanceFieldInsnLengthMP = 6;
+constexpr int kToggleCrouchCaseMP = 0x52; // MP "togglecrouch" (SP: 0x48)
+constexpr int kToggleProneCaseMP = 0x53;  // MP "toggleprone" (SP: 0x49)
+volatile int* g_stanceFieldMP = nullptr;
+// g_stanceDispatchMP (StanceDispatchFn) is declared below, right after that type's own
+// SP-side declaration -- see that comment for why.
+
 int* g_fireStruct = nullptr;
 int* g_reloadStruct = nullptr;
 int* g_adsStruct = nullptr;
@@ -2988,6 +3071,16 @@ int* g_sprintStruct = nullptr;
 int* g_holdBreathStruct = nullptr;
 volatile uint32_t* g_timestampPtr = nullptr;
 volatile uint8_t* g_adsToggleFlag = nullptr;
+// MP twins -- only Sprint/HoldBreath/Timestamp are actually wired this pass (see
+// InstallMpAnchorAndSprintHooksX64); Fire/Reload/ADS/AdsToggleFlag are resolved as free
+// groundwork from the same anchor decompile but not yet consumed by any MP hook.
+int* g_fireStructMP = nullptr;
+int* g_reloadStructMP = nullptr;
+int* g_adsStructMP = nullptr;
+int* g_sprintStructMP = nullptr;
+int* g_holdBreathStructMP = nullptr;
+volatile uint32_t* g_timestampPtrMP = nullptr;
+volatile uint8_t* g_adsToggleFlagMP = nullptr;
 
 // ---- CrouchProne (B), x64 (2026-09-05, next task after the remaining-controls
 // pass -- deliberately deferred there pending exactly this) ------------------------
@@ -3016,6 +3109,7 @@ volatile uint8_t* g_adsToggleFlag = nullptr;
 // there's no reason to expect it to intermittently block CrouchProne either.
 using StanceDispatchFn = void(__fastcall*)(int playerIndex, int caseNumber, int param3);
 StanceDispatchFn g_stanceDispatch = nullptr;
+StanceDispatchFn g_stanceDispatchMP = nullptr; // resolved from kAnchorSignatureMP, see its own comment above
 constexpr int kCrouchProneCaseDown = 0x17; // "+stance" down
 constexpr int kCrouchProneCaseUp = 0x18;   // "-stance" up
 
@@ -3184,6 +3278,13 @@ constexpr int kToggleProneCase = 0x49;  // "toggleprone" -- toggles stance 0<->2
 
 int GetRealStanceX64()
 {
+    // MP's real stance field is a genuinely separate global (DAT_140e21398), not derivable
+    // from g_adsToggleFlagMP by SP's own "+0x1c from the ADS-toggle-flag base" trick -- see
+    // kStanceFieldInsnOffsetMP's own comment (mp_port_plan.md step 7, 2026-09-27).
+    if (GetDetectedGameExecutable() == GameExecutable::MP) {
+        if (!g_stanceFieldMP) return 0;
+        return *g_stanceFieldMP;
+    }
     if (!g_adsToggleFlag) return 0;
     auto* stanceField = reinterpret_cast<volatile int*>(
         reinterpret_cast<uintptr_t>(g_adsToggleFlag) + kStanceFieldByteOffset);
@@ -3192,8 +3293,14 @@ int GetRealStanceX64()
 
 void ForceStandingViaRealToggleX64()
 {
-    if (!g_stanceDispatch) return;
     int current = GetRealStanceX64();
+    if (GetDetectedGameExecutable() == GameExecutable::MP) {
+        if (!g_stanceDispatchMP) return;
+        if (current == 1) g_stanceDispatchMP(0, kToggleCrouchCaseMP, 0);      // crouched -> stand
+        else if (current == 2) g_stanceDispatchMP(0, kToggleProneCaseMP, 0); // prone -> stand
+        return;
+    }
+    if (!g_stanceDispatch) return;
     if (current == 1) g_stanceDispatch(0, kToggleCrouchCase, 0);      // crouched -> stand
     else if (current == 2) g_stanceDispatch(0, kToggleProneCase, 0);  // prone -> stand
 }
@@ -9607,6 +9714,112 @@ void InstallMenuNavigationHooksX64()
         LogFromController("[x64-menunav] Native menu navigation NOT fully active this session (see FATAL lines "
             "above for which real target failed to resolve) -- keyboard/mouse will still be needed for some or "
             "all menu interaction.");
+    }
+}
+
+// MP controller pipeline (mp_port_plan.md step 7, 2026-09-27): Sprint, Hold Breath, and
+// CrouchProne's auto-stand-on-sprint, the first real MP gameplay hooks this project ships
+// beyond menu navigation and performance fixes. SP-only until now -- see
+// kAnchorSignatureMP's own header comment for the full confirmation trail behind every
+// address/offset resolved here. Every resolve is independent: a failure in one struct
+// (e.g. Reload, not yet consumed by any hook) never blocks Sprint/HoldBreath/CrouchProne,
+// which only need g_kbuttonActivate/Deactivate, g_sprintStructMP, g_holdBreathStructMP,
+// g_timestampPtrMP, g_stanceDispatchMP and g_stanceFieldMP specifically.
+void InstallMpAnchorAndSprintHooksX64()
+{
+    if (GetDetectedGameExecutable() != GameExecutable::MP) return;
+
+    // kKbuttonActivateSignature/kKbuttonDeactivateSignature are the SAME literal patterns
+    // SP uses -- confirmed (independently, via direct binary scan before this was trusted)
+    // to resolve to MP's own real FUN_1400d0ea0/FUN_1400d0ed0 without needing separate MP
+    // constants. InstallAnalogInputHooksX64 (SP-only) never runs under MP, so these have to
+    // be resolved here instead -- g_kbuttonActivate/g_kbuttonDeactivate are shared globals,
+    // safe to reuse since only one of the two install paths ever runs per process.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kKbuttonActivateSignature);
+        if (!r.found) {
+            LogFromController("[x64-mp-anchor] FATAL: kbutton-activate signature did not resolve -- "
+                "Sprint/Hold Breath will not work this session");
+        } else {
+            g_kbuttonActivate = reinterpret_cast<KbuttonActivateFn>(r.address);
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kKbuttonDeactivateSignature);
+        if (!r.found) {
+            LogFromController("[x64-mp-anchor] FATAL: kbutton-deactivate signature did not resolve -- "
+                "Sprint/Hold Breath will not work this session");
+        } else {
+            g_kbuttonDeactivate = reinterpret_cast<KbuttonDeactivateFn>(r.address);
+        }
+    }
+
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kAnchorSignatureMP);
+        if (!r.found) {
+            LogFromController("[x64-mp-anchor] FATAL: MP anchor (case-dispatch) signature did not resolve -- "
+                "Sprint/Hold Breath/CrouchProne auto-stand will not work this session");
+        } else {
+            uintptr_t anchor = r.address;
+            g_stanceDispatchMP = reinterpret_cast<StanceDispatchFn>(anchor);
+            g_fireStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kFireStructInsnOffsetMP, kRipInsnLength));
+            g_reloadStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kReloadStructInsnOffsetMP, kRipInsnLength));
+            g_adsStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffsetMP, kRipInsnLength));
+            g_adsToggleFlagMP = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffsetMP, kRipInsnLength));
+            g_sprintStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kSprintStructInsnOffsetMP, kRipInsnLength));
+            g_holdBreathStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kHoldBreathStructInsnOffsetMP, kRipInsnLength));
+            g_timestampPtrMP = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffsetMP, kRipInsnLength));
+            g_stanceFieldMP = reinterpret_cast<volatile int*>(SigScan::ResolveRipRelative(anchor + kStanceFieldInsnOffsetMP, kStanceFieldInsnLengthMP));
+
+            char buf[300];
+            sprintf_s(buf, "[x64-mp-anchor] MP anchor resolved @ 0x%llX -- sprintStruct=%p holdBreathStruct=%p "
+                "timestampPtr=%p stanceField=%p (fire/reload/ads/adsToggle groundwork resolved but not yet "
+                "consumed by any hook).",
+                static_cast<unsigned long long>(anchor), static_cast<void*>(g_sprintStructMP),
+                static_cast<void*>(g_holdBreathStructMP),
+                static_cast<void*>(const_cast<uint32_t*>(g_timestampPtrMP)),
+                static_cast<void*>(const_cast<int*>(g_stanceFieldMP)));
+            LogFromController(buf);
+            if (!g_sprintStructMP || !g_holdBreathStructMP || !g_timestampPtrMP) {
+                LogFromController("[x64-mp-anchor] FATAL: one or more RIP-relative resolves failed above -- "
+                    "Sprint/Hold Breath will not work this session");
+            }
+            if (!g_stanceFieldMP) {
+                LogFromController("[x64-mp-anchor] FATAL: stance-field RIP-relative resolve failed -- "
+                    "CrouchProne auto-stand-on-sprint will not work this session");
+            }
+        }
+    }
+
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kSprintTickSignatureMP);
+        if (!r.found) {
+            LogFromController("[x64-mp-sprint] FATAL: Sprint-tick signature did not resolve -- Sprint hook not "
+                "installed, controller Sprint will not work this session");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SprintTick),
+                                                    reinterpret_cast<void**>(&g_realSprintTick));
+            if (createStatus != MH_OK) {
+                char buf[160];
+                sprintf_s(buf, "[x64-mp-sprint] FATAL: MH_CreateHook failed for Sprint tick @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[160];
+                    sprintf_s(buf, "[x64-mp-sprint] FATAL: MH_EnableHook failed for Sprint tick @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-mp-sprint] MP Sprint hook installed and enabled -- drives the real "
+                        "+sprint kbutton while the controller's mapped Sprint input is held, same design as SP "
+                        "(native duration/recovery timer applies automatically; vanilla keyboard sprint "
+                        "untouched). Hold Breath (L3+ADS) and CrouchProne auto-stand-on-sprint share this hook.");
+                }
+            }
+        }
     }
 }
 

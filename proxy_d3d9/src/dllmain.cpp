@@ -39,6 +39,12 @@ void InstallMenuNavigationHooksX64(); // defined in analog_input_hooks_x64.cpp -
     // MP controller-pipeline port (mp_port_plan.md step 4): the first real MP gameplay
     // hook. Exe-aware internally (GetDetectedGameExecutable()) -- picks the SP or MP
     // anchor signature itself, so this same call site works for both.
+void InstallMpAnchorAndSprintHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-27,
+    // MP controller-pipeline port (mp_port_plan.md step 7): Sprint, Hold Breath, and
+    // CrouchProne auto-stand-on-sprint, the first real MP GAMEPLAY (not menu/performance)
+    // hooks. No-op under SP (checks GetDetectedGameExecutable() itself) -- safe to call
+    // unconditionally, matching this file's own established convention for MP-port
+    // functions.
 void InstallOcclusionLodScaleFixX64(); // defined in analog_input_hooks_x64.cpp -- MP port,
     // mp_port_plan.md step 2: kOcclusionScreenAreaSignature already hits identically in
     // both exes (signature_resolution_sp_mp_2026-09-27.txt), and the hook body only
@@ -944,6 +950,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallIwdReadCacheHooksX64();
             InstallConsoleFontInitSkipHooksX64();
             InstallProjectionMatrixDiagHookX64();
+            // 2026-09-27, MP port, mp_port_plan.md step 7: the first real MP GAMEPLAY
+            // hook (not menu-nav or a performance fix) -- Sprint, Hold Breath, and
+            // CrouchProne auto-stand-on-sprint. Needed a real, independently-verified MP
+            // anchor signature (a full Ghidra decompile of iw5mp.exe, none existed before
+            // this session) since the struct addresses/case numbers it depends on aren't
+            // shared with SP -- see kAnchorSignatureMP's own header comment
+            // (analog_input_hooks_x64.cpp) for the full confirmation trail.
+            InstallMpAnchorAndSprintHooksX64();
 #endif
 #if defined(_M_X64) || defined(_WIN64)
             // 2026-09-23, direct instruction ("time to make the graphics enhancements
