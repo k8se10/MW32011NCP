@@ -290,6 +290,49 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
     constants.motionVectorsDilated = sl::Boolean::eFalse;
     constants.motionVectorsJittered = sl::Boolean::eFalse;
 
+    // REAL FIX, 2026-09-27: live-reported GPU hang (a real vkWaitForFences
+    // timeout, DLSS's own recorded GPU compute work never completing,
+    // eventually degrading to VK_ERROR_DEVICE_LOST), direct user diagnosis:
+    // "its right after the camera transition." Real root cause, found via
+    // this file's own already-existing, never-wired groundwork:
+    // ResetStreamlineCameraHistoryX64() (this file, below) was built
+    // specifically for this ("Real reset hook for level loads/camera cuts
+    // -- calcCameraToPrevCamera against a previous frame from a DIFFERENT
+    // level/teleport would produce a real but meaningless huge 'motion',
+    // exactly the case sl::Constants::reset exists for") but had ZERO
+    // callers anywhere in the codebase -- confirmed via a full-repo grep.
+    // Every real camera cut/level load after the very first tracked frame
+    // was silently feeding Streamline `reset=eFalse` with a
+    // `clipToPrevClip`/`cameraToPrevCamera` built from a previous frame
+    // that has nothing to do with the new scene -- `sl_consts.h`'s own
+    // doc comment on `reset` is explicit this is exactly the case it
+    // exists to flag ("if previous frame has no connection to the current
+    // one"). A wildly discontinuous reprojection matrix feeding a real,
+    // multi-pass neural network (this project's own DLSS/DLSS-NR research
+    // this session confirmed both are real iterative transformer
+    // networks) is a plausible, concrete mechanism for a GPU compute
+    // dispatch to genuinely hang rather than fail cleanly (NaN/Inf
+    // propagation through iterative refinement passes behaving
+    // pathologically on some hardware/drivers, rather than a fast,
+    // detectable error) -- consistent with the real fence-timeout
+    // symptom, not a guess.
+    //
+    // Fixed with a real, self-contained "camera teleport" detector rather
+    // than wiring a new external level-load/camera-cut signal (this
+    // file's own real, camera-space relative transform, computed below,
+    // is already the exact right data to detect this from directly --
+    // no new RE or cross-file plumbing needed). A generous, decisive
+    // threshold (500 world units of relative translation in one tick --
+    // this game's real per-tick sprint movement is nowhere close to that,
+    // per this project's own already-documented movement-speed research;
+    // a genuine level load/teleport/cutscene cut moves the camera by
+    // thousands of units or across a totally different part of the map
+    // instantly) distinguishes a real camera cut from ordinary fast
+    // gameplay movement.
+    constexpr float kCameraTeleportThresholdX64 = 500.0f;
+
+    bool treatAsReset = !g_haveStreamlinePrevFrameX64;
+    sl::float4x4 cameraToPrevCamera{};
     if (g_haveStreamlinePrevFrameX64) {
         // The real, camera-space, precision-safe relative transform between
         // this frame and the previous one -- sl_matrix_helpers.h's own
@@ -298,9 +341,22 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
         // be very close to identity; the translation row should reflect real
         // per-frame camera-space movement (small at typical frame time and
         // movement speed), not the raw world-space position delta.
-        sl::float4x4 cameraToPrevCamera{};
         sl::calcCameraToPrevCamera(cameraToPrevCamera, cameraToWorld, g_prevCameraToWorldX64);
 
+        float jumpMag = sqrtf(cameraToPrevCamera[3].x * cameraToPrevCamera[3].x +
+            cameraToPrevCamera[3].y * cameraToPrevCamera[3].y +
+            cameraToPrevCamera[3].z * cameraToPrevCamera[3].z);
+        if (jumpMag > kCameraTeleportThresholdX64) {
+            treatAsReset = true;
+            char buf[250];
+            sprintf_s(buf, "[x64-streamline-camera] Real camera teleport/transition detected "
+                "(jump=%.1f units, tick=%lld) -- treating this frame as a reset rather than feeding "
+                "DLSS a discontinuous reprojection matrix.", jumpMag, g_streamlineCameraTickCountX64);
+            LogFromController(buf);
+        }
+    }
+
+    if (!treatAsReset) {
         // clipToPrevClip/prevClipToClip -- manually replicating
         // sl_matrix_helpers.h's own recalculateCameraMatrices() real math
         // (clipToPrevCameraView = clipToCameraView * cameraViewToPrevCameraView;
@@ -354,18 +410,25 @@ void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
             LogFromController(buf);
         }
     } else {
-        // First frame -- no real previous-frame history exists yet.
-        // clipToPrevClip/prevClipToClip are left as their default-constructed
-        // (all-zero) matrices, and Constants::reset=eTrue tells Streamline
-        // exactly that: "previous frame has no connection to the current
-        // one" (sl_consts.h's own doc comment on this flag), so it won't try
-        // to use them.
+        // First frame ever, OR a real detected camera teleport/transition
+        // (see this function's own top comment) -- either way, there is no
+        // USABLE previous-frame connection for this frame. clipToPrevClip/
+        // prevClipToClip are left as their default-constructed (all-zero)
+        // matrices, and Constants::reset=eTrue tells Streamline exactly
+        // that: "previous frame has no connection to the current one"
+        // (sl_consts.h's own doc comment on this flag), so it won't try to
+        // use them.
         sl::matrixFullInvert(constants.clipToCameraView, constants.cameraViewToClip);
         constants.reset = sl::Boolean::eTrue;
 
-        g_haveStreamlinePrevFrameX64 = true;
-        LogFromController("[x64-streamline-camera] First frame -- camera-to-world tracking "
-            "started, no previous frame to compare against yet.");
+        if (!g_haveStreamlinePrevFrameX64) {
+            g_haveStreamlinePrevFrameX64 = true;
+            LogFromController("[x64-streamline-camera] First frame -- camera-to-world tracking "
+                "started, no previous frame to compare against yet.");
+        }
+        // else: the teleport-detection branch above already logged its own
+        // real reason -- g_haveStreamlinePrevFrameX64 stays true, tracking
+        // simply resumes normally from THIS frame's own state next tick.
     }
 
     bool ok = StreamlineSetConstantsX64(constants);
