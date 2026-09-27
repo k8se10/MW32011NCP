@@ -830,10 +830,19 @@ constexpr int kVariantCount = 4;
 // the version is recorded in a tiny state file beside the game exe so it never reappears until the next release.
 // kWelcomeFeatureList is LIVE CONTENT -- update it whenever the feature set changes (CLAUDE.md / AGENTS.md rule).
 //
-// Space budget: the modal canvas is 640x540 (kWarningTextureWidth/Height, overlay_hud.cpp) at a 22px line height with
-// no scrolling, so the whole message (heading + this list + the notes below it) must stay within ~22 lines. Measured
-// against the real font (assets/fonts/IsothermSans-UI.ttf) for v0.0.3-x64: bottom of the last line at y=508 of 540,
-// widest list line ~440px of the 558px wrap width (so no line wraps). Re-measure after any edit that adds a line.
+// Space budget: the modal canvas is 640x660 (kWarningTextureWidth/Height, overlay_hud.cpp) at a 22px line height with
+// no scrolling, so the whole message (heading + this list + the notes below it) must stay within ~27 lines. Measured
+// against the real font (assets/fonts/IsothermSans-UI.ttf) for v0.0.3-x64, VAC notice included: bottom of the last
+// line at y=596 of 660, widest list line ~440px of the 558px wrap width (so no line wraps), 1008 of 2048 bytes.
+// Re-measure after any edit that adds a line.
+// Shown on every startup modal (welcome, possibly-outdated, and the MP notice in dllmain.cpp, which has its own copy of
+// the same text since it is a separate translation unit). Direct instruction (v0.0.3-x64): online play is VAC-secured;
+// no user has ever reported a ban, but the risk is real and using the mod means accepting it. A macro, not a constant,
+// so it concatenates into the sprintf_s format literals below.
+#define MW3NCP_VAC_RISK_NOTICE \
+    "\x01" "\xE2\x9A\xA0 Online play is subject to VAC. No user of this mod has ever reported a ban, but the risk exists: " \
+    "by using this mod you accept and acknowledge it.\n\n"
+
 constexpr const char* kWelcomeFeatureList =
     "\x02" "\xE2\x9C\x94 NEW: Vulkan renderer with optional NVIDIA DLSS/DLAA\n"
     "\x02" "\xE2\x9C\x94 NEW: Major FPS fixes, up to ~3x at high render scale\n"
@@ -869,13 +878,14 @@ bool ShowWelcomeModalIfNewVersion()
     GetPrivateProfileStringA("State", "WelcomeShownVersion", "", seen, sizeof(seen), path);
     if (strcmp(seen, kModVersionString) == 0) return false;
 
-    char msg[1024];
+    char msg[2048]; // == g_overlayText's size (overlay_hud.cpp); the formatted text is ~1008 bytes
     sprintf_s(msg,
               "\x03" "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\n"
               "\x03" "This version includes:\n%s\n\n"
               "\x01" "\xE2\x9A\xA0 EARLY RELEASE: expect hidden bugs and unfinished or unported features. Survival is the"
               " recommended mode. Campaign controller support is incomplete; in Multiplayer it covers menu navigation"
               " only. Vulkan and DLSS are Campaign/Survival only.\n\n"
+              MW3NCP_VAC_RISK_NOTICE
               "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
               kModVersionString, kWelcomeFeatureList);
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
@@ -934,11 +944,12 @@ bool ShowOutdatedModalIfStale()
     const int today = nowSt.wYear * 10000 + nowSt.wMonth * 100 + nowSt.wDay;
     if (!testOutdated && static_cast<int>(GetPrivateProfileIntA("State", "OutdatedShownDay", 0, path)) == today) return false;
 
-    char msg[900];
+    char msg[2048]; // == g_overlayText's size (overlay_hud.cpp)
     sprintf_s(msg,
               "\x03" "This version of MW32011NCP may be out of date.\n\n"
               "\x01" "\xE2\x9A\xA0 This build (v%s) is %lld days old. Early releases change quickly and fix real bugs -- please check GitHub or"
               " Nexus for a newer version before reporting problems.\n\n"
+              MW3NCP_VAC_RISK_NOTICE
               "Enter / Space / Click to continue:",
               kModVersionString, ageDays);
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);

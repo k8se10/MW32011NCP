@@ -1004,6 +1004,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // paragraph above for this one, nothing else needs to change):
                 // "\x01" "\xE2\x9A\xA0 Multiplayer is in pre-alpha and will contain bugs and "
                 // "issues. It is not on par with Campaign/Survival.\n\n"
+                // VAC risk notice (v0.0.3-x64, direct instruction) -- same wording as
+                // MW3NCP_VAC_RISK_NOTICE in d3d9_hook.cpp; keep the two in step.
+                "\x01" "\xE2\x9A\xA0 Online play is subject to VAC. No user of this mod has ever "
+                "reported a ban, but the risk exists: by using this mod you accept and "
+                "acknowledge it.\n\n"
                 "Enter / Space / Click to continue:"
             );
         } else {
