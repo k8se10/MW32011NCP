@@ -26,7 +26,7 @@ chosen to match id-Tech/IW naming, not recovered symbols.
 **Stage plan:**
 1. ✅ Device lifecycle, frame orchestration, backend command list, D3D9 usage map, material/draw funnel (this commit)
 2. ✅ Draw path deep dive: scene passes, draw-surf lists, key layout, render targets, code materials, post-FX chain, frame submit (§7–§8)
-3. UI/menu pipeline end to end
+3. ✅ UI/menu pipeline end to end (§9)
 4. Ray tracing design on the DXVK fork
 5. MP port plan (controller + performance fixes)
 
@@ -648,4 +648,228 @@ Motion blur is triggered separately afterwards (`FUN_14018def0`, §7.1).
 
 ---
 
-*Next stage: UI/menu pipeline end to end (§9).*
+## 9. UI and menu pipeline, end to end (stage 3) 🟢
+
+Folds in `ui_draw_pipeline_map.md`, `ui_text_flow_map.md`,
+`drawtext_hook_x64.md`, `menu_name_table.md` and the existing decompile
+receipts (`decomp_*menu*_x64.txt`), plus a fresh pass for the parts they
+didn't cover: init/load, the UI context layout, the key path, the expression
+language, and the frontend command emitters.
+
+```
+INIT   UI_Init FUN_14029b640
+         fonts, materials, cmds "openmenu"/"closemenu", uiContext 0x142605050 zeroed
+         menu lists: ui/code.txt → ui/menus.txt → ui/patch_menus.txt (FUN_1402b1620 + FUN_1402af910)
+STATE  UI_SetActiveMenu FUN_14029f3f0(lc, type)   0x142615b20[lc] = type
+         0 none · 1 main/error · 2 pausedmenu · 3 pregame · 4 endofgame · 6 briefing
+         7 victoryscreen · 10 savegameloading · 11 …   → Menus_OpenByName / Menus_CloseAll
+FRAME  client screen update FUN_140083700
+         └ UI_Refresh FUN_14029d170 ─┐        HUD tick FUN_140039f40 (in-game HUD menus)
+                                     └────────┴─ Menu_PaintAll FUN_1402ac2b0
+                                                  └ Menu_Paint FUN_1402abec0 (per visible menu)
+                                                     ├ window/background FUN_1402b19d0
+                                                     └ items FUN_1402abb70 → FUN_1402a7660 → FUN_1402a9950 / FUN_1402b0a70
+                                                        text  FUN_14029a2b0 → FUN_140080840 → FUN_1401d2520 → emitter FUN_1401d1790  → RC op 17
+                                                        pics  UI helpers → FUN_140078740 → emitter FUN_1401d2090  → RC op 9
+                                                  cursor ui_cursor (FUN_14029a9b0)
+INPUT  event loop FUN_14023ccb0 → CL_KeyEvent FUN_14007eaf0 → UI_KeyEvent FUN_14029baa0
+         → focused menu FUN_1402aaa80 → Menu_HandleKey FUN_1402aac50 → item key FUN_1402ad140
+         → event handlers FUN_1402a3ca0 (89 script commands + uiscript FUN_14029dfd0)
+EXPR   IsExpressionTrue FUN_14028eb80 / int FUN_14028d000 / float FUN_14028cf80 / string FUN_14028d080
+         → evaluator FUN_14028c670 → operator/function executor FUN_14028f3c0
+```
+
+### 9.1 Init and menu loading
+
+- **`FUN_14029b640` = `UI_Init`**:
+  - calls `FUN_140299400` and `FUN_14029d630`;
+  - registers the console commands `openmenu` (`FUN_14029bfb0`) and
+    `closemenu` (`0x140299a70`);
+  - loads the UI materials (`white`, `ui_scrollbar*`, `ui_slider2`,
+    `ui_sliderbutt_1`, `decode_characters[_glow]`, `ui_cursor`,
+    `scrollbar_arrow_*`) and the nine fonts (`fonts/bigfont`, `smallfont`,
+    `consolefont`, `boldfont`, `normalfont`, `extrabigfont`, `objectivefont`,
+    `hudbigfont`, `hudsmallfont`) into `0x142604f10…0x142604fd0`;
+  - registers `ui_multiplayer` and `uiscript_debug`.
+- It zeroes the UI context (67,836 bytes at `0x142605054`, plus the
+  per-client active-menu array `0x142615b20`) and records the screen size
+  (`FUN_140078c90` → `+0x24/+0x28/+0x2C`). When the aspect ratio is wider
+  than 4:3 it computes the horizontal bias
+  `+0x04 = (width − height·4/3) · 0.5`, the 4:3 centring offset every menu
+  coordinate goes through.
+- Menu lists are fastfile assets. `FUN_1402b1620(name, 3)` looks up the
+  `MenuList`, and `FUN_1402af910(ctx, list, 1)` adds each `menuDef_t` to the
+  context. `ui/code.txt` is always loaded; `ui/menus.txt` and
+  `ui/patch_menus.txt` are skipped in one mode (`FUN_140009ea0()` or
+  `0x142615ae0` set). No text parsing happens at runtime: menus arrive
+  pre-compiled, and the expression name table in §9.5 is only used for
+  debug printing.
+
+### 9.2 The UI context (`0x142605050`, SP single instance)
+
+| Offset | Field |
+|---|---|
+| `+0x00` | local client number (index into per-menu flag arrays) |
+| `+0x04` | 4:3 horizontal bias (float) |
+| `+0x10/+0x14` | virtual screen size (set to 320/448 by the victory-screen state) |
+| `+0x24/+0x28/+0x2C` | real width, height, aspect |
+| `+0x38 + i*8` | all loaded menus (`menuDef_t*`) |
+| `+0x1438` | loaded menu count (`FUN_1402aa7e0` reads it; the UI treats `≤ 0` as "UI not started") |
+| `+0x1440 + i*8` | **open-menu stack** (bottom → top) |
+| `+0x14C0` | open-menu count |
+| `+0x14C8` | local-var table (`setLocalVar*`, `localvar*` expressions; `FUN_140299570` finds/creates) |
+
+`menuDef_t`: `+0x00` → window/menu data (its `+0x20` is the `onClose`
+handler set run by `Menus_CloseAll`; first int = fullscreen flag), `+0x08` =
+menu name (live-confirmed), `+0x30` = "blocks ESC" flag, `+0x58 + lc*4` =
+per-client dynamic window flags (bit 2 = visible, bit 1 = has focus).
+
+Menu-stack helpers:
+
+| Function | Name | What it does |
+|---|---|---|
+| `FUN_1402acef0` | `Menus_FindByName` | linear scan of `+0x38`, case-insensitive compare `FUN_1402ca760` |
+| `FUN_1402ad950` / `FUN_1402ad560` | `Menus_OpenByName` / `Menus_Open` | push onto the stack, run `onOpen` |
+| `FUN_1402ac9c0` | `Menus_CloseAll` | for each loaded menu: visible and has `onClose` → run it through the event interpreter, then close (`FUN_1402b1b30`/`FUN_1402b1bb0`/`FUN_1402b2520`); otherwise `FUN_1402acf70` |
+| `FUN_1402ad530` | `Menu_IsOnStack` | scan `+0x1440` |
+| `FUN_1402ab950` | `Menu_IsVisible` | |
+| `FUN_1402aaa80` | `Menu_GetFocused` | topmost stack entry with the visible and focus bits |
+| `FUN_1402ac970` | `Menus_AnyFullScreenVisible` | |
+
+### 9.3 Active-menu state machine (`FUN_14029f3f0` = `UI_SetActiveMenu(lc, type)`)
+
+Stores the type in `0x142615b20[lc]`, then per type:
+
+| Type | Action |
+|---|---|
+| 0 | clear `KEYCATCH_UI` (`FUN_14007f310(lc, ~0x10)`), `cl_paused 0`, close all |
+| 1 | set `KEYCATCH_UI`, open the main menu (`0x14042cbf0`), plus `error_popmenu` when `com_errorMessage` is set |
+| 2 | `cl_paused = FUN_140083ae0()`, set `KEYCATCH_UI`, open `pausedmenu` |
+| 3 | pregame: pause, close all, open `pregame` or `pregame_loaderror` |
+| 4 | close all, open `endofgame` |
+| 6 | close all, open `briefing` |
+| 7 | virtual size 320×448, open `victoryscreen` |
+| 10 | open `savegameloading` |
+| 11 | set `KEYCATCH_UI`, audio fade (`FUN_1402704a0`), … |
+
+The type-2 path is the pause-menu open this project's pause hooks rely on.
+
+### 9.4 Per-frame paint
+
+- **`FUN_14029d170` = `UI_Refresh(lc)`**, called three times from the
+  client screen update `FUN_140083700`. It handles the delayed save commit
+  and the error-popup timer, then, when the UI has menus, runs
+  **`Menu_PaintAll`** and the pregame auto-close check. On the main menu
+  (not `main_specops`) it draws the version string `"%s.%i %s"` ("2.0",
+  build number, "dev" in developer mode) through the text leaf, and
+  finally `FUN_1400045f0`.
+- **`FUN_1402ac2b0` = `Menu_PaintAll(ctx)`** is also called by the in-game
+  HUD tick `FUN_140039f40`, which is how HUD menus (Survival's wave/money
+  panels) are painted. For every visible menu on the stack it calls
+  **`FUN_1402abec0` = `Menu_Paint`**:
+  - window background/border `FUN_1402b19d0`;
+  - the item list `FUN_1402abb70` → `FUN_1402a7660` (itemDef list painter)
+    → `FUN_1402a9950` (text layout) / `FUN_1402b0a70` (item rect and border);
+  - debug text with `uiscript_debug` on.
+
+  Then it draws the cursor (`ui_cursor`, `FUN_14029a9b0`) and the focused
+  item's tooltip/fade (`FUN_14028cf80` float expression).
+- **Leaves → backend:**
+  - text: `FUN_14029a2b0` (`Hook_DrawTextX64`) → `FUN_140080840` →
+    `FUN_1401d2520` → emitter `FUN_1401d1790`, which writes **RC op 17**;
+    `FUN_1401d1600` is the glyph-count variant of the same op;
+  - pictures: UI/CG helpers (`FUN_14028c4d0`, `FUN_14003e410`,
+    `FUN_140046c00`, …) → `FUN_140078740` → emitter `FUN_1401d2090`, which
+    writes **RC op 9**;
+  - the backend executes both through the §3 jump table.
+
+### 9.5 Frontend command emitters (RC producers) 🟢
+
+Every emitter reserves space in the command list pointed to by
+`0x141896b98` (`{u8* base; i32 used; i32 cap; u8* lastCmd}`), keeping
+0x2000 bytes spare (`0x141896b8c`), and writes the header `u16 op; u16
+size`. Emitters found (header constant → op):
+
+| Emitter | Header | Op |
+|---|---|---|
+| `FUN_1401d2090` | `0x00380009` | 9 `STRETCH_PIC` |
+| `FUN_1401d21e0` | `0x0038000A` | 10 `STRETCH_PIC_FLIP_ST` |
+| `FUN_1401d1f30` | `0x0038000E` | 14 `DRAW_QUAD_PIC` |
+| leaf at `0x1401d1fd1` | `0x0048000F` | 15 `DRAW_FULL_SCREEN_COLORED_QUAD` |
+| `FUN_1401d1790`, `FUN_1401d1600` | op `0x11` | 17 `DRAW_TEXT_2D` |
+| leaf at `0x1401d1b41` | `0x00040008` | 8 reset clip/state |
+| leaf at `0x1401d1a48` | `0x001C0013` | 19 `BLEND_SAVED_SCREEN_BLURRED` |
+| leaf at `0x1401d1ac1` | `0x00200014` | 20 `BLEND_SAVED_SCREEN_FLASHED` |
+| `FUN_1401d2930` | `0x00080019` (qword, mode 0) | 25 `PROJECTION_SET` → 3D |
+
+**Correction to §0/§2.1:** `FUN_1401d2930` is not a generic "R_AddCmd"
+allocator. It appends exactly one `PROJECTION_SET(3D)` command. The
+per-op emitters above each inline their own reservation.
+
+### 9.6 Input path
+
+1. **`FUN_14023ccb0`** (system event loop) → **`FUN_14007eaf0` =
+   `CL_KeyEvent`** (also `FUN_14007eeb0`), which routes to the UI when
+   `KEYCATCH_UI` is set.
+2. **`FUN_14029baa0` = `UI_KeyEvent(lc, key, down)`**. It returns early when
+   no menus are loaded, when not on the device-owning thread
+   (`FUN_14024a250`), or when `FUN_1401d3290` says the renderer is busy.
+   Otherwise it takes the focused menu:
+   - **ESC (27) down**, when no fullscreen menu is visible and the menu
+     doesn't block ESC (`menu+0x30 == 0`) → `Menus_CloseAll`;
+   - otherwise → **`FUN_1402aac50` = `Menu_HandleKey(ctx, menu, key, down)`**
+     (raw listing in `keyhandler_1402aac50_full.txt`), which dispatches to the
+     focused item (`FUN_1402ad140`) and runs the menu's `execKey`/`onESC`
+     handlers through the interpreter.
+
+   If nothing is focused afterwards, it clears `KEYCATCH_UI` and sets
+   `cl_paused 0`. That's the "closing the last menu resumes the game" path.
+3. **Event handlers: `FUN_1402a3ca0(ctx, item, MenuEventHandlerSet*)`.**
+   Each handler is typed:
+   - 0 = a script string, tokenised (`FUN_1402c9c50`, `@` → localised)
+     and matched against the **89-command table at `0x140434140`**
+     `{name, fn}`: `fadein, fadeout, show, hide, showMenu, hideMenu,
+     setcolor, open, close, forceClose, escape, …, setdvar, exec, execnow,
+     execkeypress, execOnDvar*Value, play, scriptmenuresponse,
+     setPlayerData, setLocalVar*, feeder*, savegame*, writeSave, nextlevel,
+     disablePause, enablePause, execWithResolve, lerp, playMenuVideo, …`.
+     A leftover `uiscript` falls through to the UI script dispatcher
+     `FUN_14029dfd0` (`clearError`, `Loadgame`, `Savegame`, `closeingame`, …);
+   - 1 = `if (expr)`, which recurses;
+   - 2 = `else`;
+   - 3–6 = `setLocalVar` bool/int/float/string from an expression.
+
+### 9.7 Expression language
+
+- Entry points: `FUN_14028eb80` (bool), `FUN_14028d000` (int),
+  `FUN_14028cf80` (float), `FUN_14028d080` (string), `FUN_14028d170`,
+  `FUN_14028f040`. All push a small stack frame (`FUN_1403653c0`) and call
+  the **recursive evaluator `FUN_14028c670`**. The heavy lifting is in
+  **`FUN_14028f3c0`** (~36 KB, `0x14028f3c0…0x1402983xx`): a 29-way
+  jump table for binary operators, then the function-call switch.
+- Operand/operator entries: `+0x00` type (0 = operator), `+0x08` op id.
+  Ops `0x17…0x164` (range check `op − 0x17 ≤ 0x14D`) are function calls.
+- **Name table `0x1404d29d0`** (SP; the MP table is at `0x140552980` per
+  earlier notes):
+  - ops 0–22: `NOOP ) * / % + - ! < <= > >= == != && || ( , & | ~ << >>`;
+  - ops 23–26: `dvarint/bool/float/string(static)`;
+  - ops 27 onward: 329 functions from `int`, `string`, `float`, `sin`,
+    `cos`, `min`, `max`, `milliseconds`, … `menuisopen`, `localvar*`,
+    `getplayerdata`, `tablelookup`, `keybinding`, `hasfocus`, `select`, …
+    through `isgdk`, `issteam`, `ternary`.
+  - `isgdk`/`issteam` at the end of the list are new in the x64 build (they
+    match `binary_provenance_and_antidebug.md`: GDK hard-wired 0, Steam 1).
+
+### 9.8 Where the mod's UI features plug in (cross-reference)
+
+| Feature area | Hook point in this map |
+|---|---|
+| Text substitution / glyph prompts | `FUN_14029a2b0` (`Hook_DrawTextX64`), hudelem text `FUN_140046a30` |
+| Menu name / topmost detection | `Menu_GetFocused` `FUN_1402aaa80` + `menu+0x08` |
+| Pause/resume | `UI_SetActiveMenu` type 2 / `UI_KeyEvent`'s "nothing focused" path |
+| Controller navigation in menus | `UI_KeyEvent` → `Menu_HandleKey` (keys reach here as K_* codes) |
+| Custom 2D overlay | emit RC ops 9/17 on the frontend, or draw after the RC list on the backend |
+
+---
+
+*Next stage: real ray tracing on the DXVK fork (§10).*
