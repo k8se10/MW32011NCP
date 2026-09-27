@@ -9825,6 +9825,78 @@ void InstallCrossExePerformanceHooksX64()
     }
 }
 
+// 2026-09-27, MP port (mp_port_plan.md step 2): extracted from the SP-only
+// InstallAnalogInputHooksX64() -- kConsoleFontInitSignature already hits
+// identically in both exes with no SP-specific data dependency (only
+// self-contained RIP-resolved flag + g_modConfig). Safe to call for both exes.
+void InstallConsoleFontInitSkipHooksX64()
+{
+    // MW32011NCP, 2026-09-26: console/UI font-init hook, see
+    // kConsoleFontInitSignature's own comment above and
+    // mod_config.h's skipRedundantConsoleFontInitX64 for the full
+    // context (the render-thread-fallback caller-chain investigation,
+    // issue #4). RE-ENABLED at the CORRECTED real function address
+    // (0x140081900, not the original 0x14008191a which crashed every
+    // launch): root-caused via a real crash dump (iw5sp.exe.20608.dmp)
+    // to Ghidra's own "fully analyzed" project mis-splitting one real
+    // function into two at a mid-body return address -- confirmed and
+    // fixed using a new tool built specifically for this,
+    // re_notes/ghidra_scripts/UnwindInfoLookup.java, which reads the
+    // real PE .pdata/UNWIND_INFO tables directly rather than trusting
+    // Ghidra's function-boundary database. GRADUATED same day from a
+    // pure diagnostic to a REAL FIX once live timing confirmed the
+    // ~90-100ms-per-call cost: now also resolves &DAT_14064fdf4 (the
+    // engine's own "already initialized" flag) via
+    // SigScan::ResolveRipRelativeAt against this same signature match,
+    // so the hook can skip the real call entirely when it's
+    // provably redundant.
+    SigScan::Result r = SigScan::FindPatternInMainModule(kConsoleFontInitSignature);
+    if (!r.found) {
+        LogFromController("[x64-consolefont-diag] FATAL: console-font-init signature did not resolve -- "
+            "hook not installed this session");
+        return;
+    }
+    // "C7 05 ?? ?? ?? ?? 01 00 00 00" starts at signature offset
+    // +0x0B (11), disp32 sits at instruction bytes [2,6), imm32 (the
+    // literal "1") occupies the last 4 bytes -- so the disp32 field
+    // is NOT simply "the last 4 bytes of the instruction" (the
+    // common case ResolveRipRelative's simpler overload assumes),
+    // hence the _At form with explicit field/next-instruction
+    // addresses.
+    constexpr uintptr_t kFlagInsnOffset = 0x0B;
+    constexpr uintptr_t kFlagInsnLength = 10;
+    g_consoleFontInitAlreadyDoneFlag = reinterpret_cast<volatile int*>(
+        SigScan::ResolveRipRelativeAt(r.address + kFlagInsnOffset + 2, r.address + kFlagInsnOffset + kFlagInsnLength));
+
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ConsoleFontInit),
+                                            reinterpret_cast<void**>(&g_realConsoleFontInit));
+    if (createStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-consolefont-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[160];
+        sprintf_s(buf, "[x64-consolefont-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    char buf[256];
+    sprintf_s(buf, "[x64-consolefont-diag] console-font-init hook installed and enabled -- "
+        "skipRedundantConsoleFontInitX64=%d, flag@0x%llX%s. Watch the log for "
+        "'[x64-consolefont-diag] fire'/'SKIPPED' lines.",
+        g_modConfig.skipRedundantConsoleFontInitX64 ? 1 : 0,
+        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_consoleFontInitAlreadyDoneFlag)),
+        g_consoleFontInitAlreadyDoneFlag == nullptr ?
+            " (FAILED TO RESOLVE -- skip logic inert, behaves as pure diagnostic this session)" : "");
+    LogFromController(buf);
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -10203,72 +10275,18 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    {
-        // MW32011NCP, 2026-09-26: console/UI font-init hook, see
-        // kConsoleFontInitSignature's own comment above and
-        // mod_config.h's skipRedundantConsoleFontInitX64 for the full
-        // context (the render-thread-fallback caller-chain investigation,
-        // issue #4). RE-ENABLED at the CORRECTED real function address
-        // (0x140081900, not the original 0x14008191a which crashed every
-        // launch): root-caused via a real crash dump (iw5sp.exe.20608.dmp)
-        // to Ghidra's own "fully analyzed" project mis-splitting one real
-        // function into two at a mid-body return address -- confirmed and
-        // fixed using a new tool built specifically for this,
-        // re_notes/ghidra_scripts/UnwindInfoLookup.java, which reads the
-        // real PE .pdata/UNWIND_INFO tables directly rather than trusting
-        // Ghidra's function-boundary database. GRADUATED same day from a
-        // pure diagnostic to a REAL FIX once live timing confirmed the
-        // ~90-100ms-per-call cost: now also resolves &DAT_14064fdf4 (the
-        // engine's own "already initialized" flag) via
-        // SigScan::ResolveRipRelativeAt against this same signature match,
-        // so the hook can skip the real call entirely when it's
-        // provably redundant.
-        SigScan::Result r = SigScan::FindPatternInMainModule(kConsoleFontInitSignature);
-        if (!r.found) {
-            LogFromController("[x64-consolefont-diag] FATAL: console-font-init signature did not resolve -- "
-                "hook not installed this session");
-        } else {
-            // "C7 05 ?? ?? ?? ?? 01 00 00 00" starts at signature offset
-            // +0x0B (11), disp32 sits at instruction bytes [2,6), imm32 (the
-            // literal "1") occupies the last 4 bytes -- so the disp32 field
-            // is NOT simply "the last 4 bytes of the instruction" (the
-            // common case ResolveRipRelative's simpler overload assumes),
-            // hence the _At form with explicit field/next-instruction
-            // addresses.
-            constexpr uintptr_t kFlagInsnOffset = 0x0B;
-            constexpr uintptr_t kFlagInsnLength = 10;
-            g_consoleFontInitAlreadyDoneFlag = reinterpret_cast<volatile int*>(
-                SigScan::ResolveRipRelativeAt(r.address + kFlagInsnOffset + 2, r.address + kFlagInsnOffset + kFlagInsnLength));
-
-            void* target = reinterpret_cast<void*>(r.address);
-            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ConsoleFontInit),
-                                                    reinterpret_cast<void**>(&g_realConsoleFontInit));
-            if (createStatus != MH_OK) {
-                char buf[160];
-                sprintf_s(buf, "[x64-consolefont-diag] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
-                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
-                LogFromController(buf);
-            } else {
-                MH_STATUS enableStatus = MH_EnableHook(target);
-                if (enableStatus != MH_OK) {
-                    char buf[160];
-                    sprintf_s(buf, "[x64-consolefont-diag] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
-                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
-                    LogFromController(buf);
-                } else {
-                    char buf[256];
-                    sprintf_s(buf, "[x64-consolefont-diag] console-font-init hook installed and enabled -- "
-                        "skipRedundantConsoleFontInitX64=%d, flag@0x%llX%s. Watch the log for "
-                        "'[x64-consolefont-diag] fire'/'SKIPPED' lines.",
-                        g_modConfig.skipRedundantConsoleFontInitX64 ? 1 : 0,
-                        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_consoleFontInitAlreadyDoneFlag)),
-                        g_consoleFontInitAlreadyDoneFlag == nullptr ?
-                            " (FAILED TO RESOLVE -- skip logic inert, behaves as pure diagnostic this session)" : "");
-                    LogFromController(buf);
-                }
-            }
-        }
-    }
+    // 2026-09-27, MP port: console-font-init skip extracted into its own
+    // standalone, exe-agnostic function (InstallConsoleFontInitSkipHooksX64,
+    // above InstallAnalogInputHooksX64) -- kConsoleFontInitSignature itself
+    // already hits identically in both exes. The console-shutdown diagnostic
+    // hooks right below stay SP-only: their own MP twins (mp_twins_2026-09-27.txt,
+    // 0x1400d6d40/0x1400d6f80) are only MED-confidence call-graph matches, never
+    // independently disassembly-verified the way this session's other new MP
+    // signatures were -- and unlike a resolve-only signature, these are real
+    // MinHook detour targets, where a wrong match is a real crash risk, not a
+    // safe silent failure. Not worth that risk for hooks that are pure
+    // diagnostics with no functional purpose of their own.
+    InstallConsoleFontInitSkipHooksX64();
 
     {
         // MW32011NCP, 2026-09-26: console-shutdown/reset diagnostics, see

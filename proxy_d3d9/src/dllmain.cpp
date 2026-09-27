@@ -54,6 +54,11 @@ void InstallCrossExePerformanceHooksX64(); // defined in analog_input_hooks_x64.
     // (shadow-activation/master-sequencer/orchestrator-extras), plus the memdetect fix --
     // every signature here already hits identically in both exes with no SP-specific
     // data dependency. See that function's own header comment for the full confirmation.
+void InstallConsoleFontInitSkipHooksX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-27, MP port: kConsoleFontInitSignature already hits identically in both
+    // exes. The console-shutdown diagnostic hooks stay SP-only (their own MP twins are
+    // only MED-confidence, never independently verified, and are real MinHook detour
+    // targets where a wrong match is a real crash risk).
 #endif
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 #if defined(_M_X64) || defined(_WIN64)
@@ -899,6 +904,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // fails to resolve there for now, a safe, graceful, documented gap.
             InstallWaitCoalescingHooksX64();
             InstallIwdReadCacheHooksX64();
+            InstallConsoleFontInitSkipHooksX64();
 #endif
 #if defined(_M_X64) || defined(_WIN64)
             // 2026-09-23, direct instruction ("time to make the graphics enhancements
