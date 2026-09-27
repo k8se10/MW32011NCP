@@ -93,9 +93,22 @@ extern bool IsStreamlineCameraStableX64(); // streamline_camera_x64.cpp, 2026-09
     // evaluate gameplay-gate above can open on a frame that is still mid-camera-transition
     // (map-dependent: Dome hung faster, mid-transition; Underground reached first-person
     // first) -- the single-frame teleport-reset flag alone doesn't cover that race.
-extern bool SetIdentityStreamlineConstantsForWarmupX64(); // streamline_camera_x64.cpp,
-    // 2026-09-27 -- real, deliberately degenerate Constants for the main-menu warm-up
-    // below (see its own comment for why real camera Constants aren't available there).
+extern bool HasStreamlineCameraDataX64(); // streamline_camera_x64.cpp -- true once the
+    // real per-frame camera path has validly set sl::Constants at least once. 2026-09-27
+    // ROUND 17 correction: an earlier version of the menu warm-up below tried to build its
+    // OWN degenerate identity Constants, on the wrong assumption that no real camera exists
+    // at any menu screen -- live-disproven the same day: the "menu" this fired against still
+    // had a real, live camera (this game's pause menu keeps rendering the loaded level behind
+    // it), so the real per-frame path had ALREADY called slSetConstants for that tick before
+    // the warm-up's own separate call ran, and Streamline correctly rejected the duplicate
+    // ("Setting different 'common' constants multiple times within the same frame is NOT
+    // allowed!") -- the warm-up aborted before ever reaching evaluate, never actually testing
+    // anything. Fixed by dropping the separate identity-Constants path entirely and reusing
+    // whatever the real per-frame path already set this tick instead -- see this accessor's
+    // use in RunDlssMainMenuWarmupOnceX64 below. (A plain `extern bool g_have...` for the
+    // underlying global does NOT link -- it has internal linkage inside an anonymous
+    // namespace in that file; this real accessor is the correct fix, same pattern
+    // IsStreamlineCameraStableX64 already uses.)
 
 namespace {
 
@@ -804,27 +817,36 @@ void ResetDlssCompositeFrameGuardX64()
     g_dlssCompositeRanThisFrameX64 = false;
 }
 
-// 2026-09-27: real, one-shot main-menu DLSS warm-up -- direct user-requested
-// experiment ("Option #1": force the first real evaluate to fire at the main
-// menu, before any gameplay gate applies), given live evidence the hang is
-// tied to the very FIRST real evaluate call ever made, and that the crash
-// timing is genuinely map-dependent (Dome hung mid-transition, faster than
-// before; Underground reached first-person first) -- consistent with a cold
-// GPU-side first-time cost (NGX shader/kernel compilation being the leading
-// hypothesis) colliding with whatever timing pressure a specific map's own
-// transition puts on the same frame. Moving that one-time cost to an idle
-// main-menu screen, with nothing else contending for the GPU, is a genuinely
-// different real-world condition than any prior attempt tested under --
-// this is exploratory, not a confirmed fix, and is honestly logged as such.
+// 2026-09-27, ROUND 17 (corrected same day): real, one-shot menu-active DLSS
+// warm-up -- direct user-requested experiment ("Option #1": force the first
+// real evaluate to fire before any gameplay gate applies), given live evidence
+// the hang is tied to the very FIRST real evaluate call ever made, and that
+// the crash timing is genuinely map-dependent (Dome hung mid-transition,
+// faster than before; Underground reached first-person first) -- consistent
+// with a cold GPU-side first-time cost (NGX shader/kernel compilation being
+// the leading hypothesis) colliding with whatever timing pressure a specific
+// map's own transition puts on the same frame. This is exploratory, not a
+// confirmed fix, and is honestly logged as such.
+//
+// CORRECTED same day: the first version of this function built its own
+// degenerate identity sl::Constants, on the wrong assumption that no real
+// camera exists at any "menu active" screen. Live-disproven the first time
+// this fired: the specific menu active during that test still had a real,
+// live camera (this game's pause menu keeps the loaded level rendering
+// behind it) -- the real per-frame camera path (Hook_ProjectionMatrixBuild)
+// had ALREADY called slSetConstants for that tick, and Streamline correctly
+// rejected this function's own separate, duplicate call ("Setting different
+// 'common' constants multiple times within the same frame is NOT allowed!"),
+// aborting before ever reaching evaluate -- the experiment never actually
+// ran. Fixed by dropping the separate Constants path entirely: this function
+// now just requires g_haveStreamlinePrevFrameX64 (the real per-frame path has
+// validly set Constants at least once this session) and calls
+// EvaluateStreamlineDlssX64() directly, reusing whatever Constants the real
+// path already set -- no duplicate call, no synthesized camera data.
 //
 // Deliberately narrower than RunDlssEvaluateAndCompositeX64 above:
-//   - Never composites anything to screen (there's no real 3D frame at the
-//     main menu to meaningfully enhance) -- calls EvaluateStreamlineDlssX64()
-//     directly and discards the result either way.
-//   - Uses SetIdentityStreamlineConstantsForWarmupX64() (streamline_camera_x64.cpp)
-//     instead of the real per-frame camera path, since real camera Constants
-//     require Hook_ProjectionMatrixBuild to have fired at least once, which
-//     never happens at a 2D menu screen with no active 3D camera.
+//   - Never composites anything to screen while menu-active -- calls
+//     EvaluateStreamlineDlssX64() directly and discards the result either way.
 //   - Fires at most once per process lifetime, regardless of outcome -- a
 //     hang here is exactly as costly to the player as a hang during real
 //     gameplay, so this must never retry.
@@ -837,25 +859,30 @@ void ResetDlssCompositeFrameGuardX64()
 //
 // Called from TriggerMotionBlurFromEngineHook (overlay_hud.cpp) -- the same
 // real per-viewport boundary the gameplay composite path uses, which also
-// fires while the main menu is drawing its own 2D UI (confirmed reachable:
-// this boundary is a generic per-viewport HUD/2D dispatch point, not gated
-// to in-level content).
+// fires while a menu is active (confirmed reachable: this boundary is a
+// generic per-viewport HUD/2D dispatch point, not gated to in-level content).
 void RunDlssMainMenuWarmupOnceX64(void* device)
 {
     static bool s_warmupAttempted = false;
     if (s_warmupAttempted) return;
     if (!IsStreamlineInitializedX64()) return;
     if (!device) return;
-    if (!IsMenuActiveX64_Exported()) return; // only ever at the main menu -- mutually
-        // exclusive with the real gameplay path (which requires inLevel > 0).
+    if (!IsMenuActiveX64_Exported()) return; // only ever while some menu is active --
+        // mutually exclusive with the real gameplay path (which requires inLevel > 0
+        // and refuses to run while a menu is active).
+    if (!HasStreamlineCameraDataX64()) return; // real per-frame Constants haven't been
+        // set yet this session (no camera has rendered at all) -- wait for a menu state
+        // that has one (e.g. the pause menu over an already-loaded level), rather than
+        // trying to evaluate against Constants that were never validly set.
 
     s_warmupAttempted = true; // one-shot regardless of outcome -- see this function's
         // own header comment for why a hang here must never be retried.
 
-    LogFromController("[dlss-menu-warmup] attempting one-shot main-menu DLSS evaluate "
-        "warm-up (Option #1 experiment) -- forcing any real first-time GPU-side cost "
-        "(NGX kernel/shader compilation) to happen here instead of during a real "
-        "gameplay map transition.");
+    LogFromController("[dlss-menu-warmup] attempting one-shot menu-active DLSS evaluate "
+        "warm-up (Option #1 experiment, corrected) -- forcing any real first-time GPU-side "
+        "cost (NGX kernel/shader compilation) to happen here instead of during a real "
+        "gameplay map transition. Reusing this tick's real Constants, already set by the "
+        "normal per-frame camera path.");
 
     // Self-owned output/motion-vectors resources -- safe to create/tag regardless of
     // whether any real 3D scene is currently rendering (see streamline_resources_x64.cpp's
@@ -863,12 +890,6 @@ void RunDlssMainMenuWarmupOnceX64(void* device)
     // creates and owns both textures itself, sized off the real display resolution).
     TagStreamlineOutputColorX64();
     TagStreamlineMotionVectorsX64();
-
-    if (!SetIdentityStreamlineConstantsForWarmupX64()) {
-        LogFromController("[dlss-menu-warmup] slSetConstants (identity/warm-up) FAILED -- "
-            "aborting this one-shot attempt, real gameplay evaluate path is unaffected.");
-        return;
-    }
 
     bool evaluated = EvaluateStreamlineDlssX64();
     char buf[256];

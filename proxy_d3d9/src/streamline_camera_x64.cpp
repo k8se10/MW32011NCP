@@ -497,50 +497,18 @@ bool IsStreamlineCameraStableX64()
     return (g_streamlineCameraTickCountX64 - g_streamlineLastResetTickX64) >= kStreamlineStabilizationTicksX64;
 }
 
-// 2026-09-27: real, deliberately degenerate sl::Constants for the main-menu
-// warm-up experiment (streamline_evaluate_x64.cpp's RunDlssMainMenuWarmupOnceX64).
-// The real per-frame path above (UpdateStreamlineCameraMatricesX64) requires an
-// actual camera-to-world matrix, which only ever exists once Hook_ProjectionMatrixBuild
-// has fired at least once -- true only during real 3D gameplay, never at the main
-// menu (a 2D UI screen with no 3D camera at all). This function exists so the
-// warm-up can still call slSetConstants with SOMETHING valid-shaped: identity
-// axes, reset=true (this is deliberately treated as a real "first frame," which
-// it is), zero jitter, and a best-effort mvecScale from whatever resolution the
-// motion-vectors buffer would use if it existed. NOT a substitute for the real
-// per-frame path -- this is a one-shot diagnostic call, never composited, whose
-// only purpose is forcing whatever GPU-side first-time work slEvaluateFeature
-// does (NGX shader/kernel compilation being the leading real hypothesis -- see
-// re_notes/x64_migration/vulkan_dlss_pipeline_research.md item 17's newest
-// round) to happen at an idle menu screen instead of mid-gameplay-transition.
-bool SetIdentityStreamlineConstantsForWarmupX64()
+// 2026-09-27, ROUND 17 (corrected): real accessor for the menu-active warm-up
+// (streamline_evaluate_x64.cpp's RunDlssMainMenuWarmupOnceX64) -- a plain
+// `extern bool g_haveStreamlinePrevFrameX64;` in that file will NOT link
+// (LNK2001, confirmed live): the global itself lives inside this file's own
+// anonymous namespace (see its declaration above, inside the `namespace { ... }`
+// block starting this file), giving it internal linkage a same-named extern
+// declaration elsewhere can never bind to -- the exact anonymous-namespace-
+// linkage trap this project's own CLAUDE.md already documents. A real
+// out-of-namespace accessor, the same pattern IsStreamlineCameraStableX64
+// above already uses successfully, is the correct fix.
+bool HasStreamlineCameraDataX64()
 {
-    sl::Constants constants{};
-    constants.cameraViewToClip = sl::float4x4{
-        sl::float4(1.0f, 0.0f, 0.0f, 0.0f),
-        sl::float4(0.0f, 1.0f, 0.0f, 0.0f),
-        sl::float4(0.0f, 0.0f, 1.0f, 0.0f),
-        sl::float4(0.0f, 0.0f, 0.0f, 1.0f),
-    };
-    constants.cameraPos = sl::float3(0.0f, 0.0f, 0.0f);
-    constants.cameraUp = sl::float3(0.0f, 1.0f, 0.0f);
-    constants.cameraRight = sl::float3(1.0f, 0.0f, 0.0f);
-    constants.cameraFwd = sl::float3(0.0f, 0.0f, 1.0f);
-    constants.cameraNear = kEstimatedNearPlaneX64;
-    constants.cameraFar = kEstimatedFarPlaneX64;
-    constants.cameraFOV = 1.0f;
-    constants.cameraAspectRatio = 16.0f / 9.0f;
-    constants.jitterOffset = sl::float2(0.0f, 0.0f);
-    uint32_t mvW = 0, mvH = 0;
-    if (GetStreamlineInternalRenderResolutionX64(mvW, mvH) && mvW > 0 && mvH > 0) {
-        constants.mvecScale = sl::float2(1.0f / static_cast<float>(mvW), 1.0f / static_cast<float>(mvH));
-    } else {
-        constants.mvecScale = sl::float2(1.0f / 1920.0f, 1.0f / 1080.0f); // honest fallback, no real
-            // resolution known yet -- this call's own result is never composited so an
-            // approximate scale here has zero visible consequence either way.
-    }
-    constants.reset = sl::Boolean::eTrue; // deliberately treated as a genuine first frame.
-    constants.depthInverted = sl::Boolean::eFalse;
-    constants.cameraMotionIncluded = sl::Boolean::eFalse;
-    constants.orthographicProjection = sl::Boolean::eFalse;
-    return StreamlineSetConstantsX64(constants);
+    return g_haveStreamlinePrevFrameX64;
 }
+
