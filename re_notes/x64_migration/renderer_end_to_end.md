@@ -27,7 +27,7 @@ chosen to match id-Tech/IW naming, not recovered symbols.
 1. ✅ Device lifecycle, frame orchestration, backend command list, D3D9 usage map, material/draw funnel (this commit)
 2. ✅ Draw path deep dive: scene passes, draw-surf lists, key layout, render targets, code materials, post-FX chain, frame submit (§7–§8)
 3. ✅ UI/menu pipeline end to end (§9)
-4. Ray tracing design on the DXVK fork
+4. ✅ Ray tracing design on the DXVK fork (§10, `rt_design_dxvk.md`)
 5. MP port plan (controller + performance fixes)
 
 ---
@@ -872,4 +872,33 @@ per-op emitters above each inline their own reservation.
 
 ---
 
-*Next stage: real ray tracing on the DXVK fork (§10).*
+## 10. Real ray tracing on the DXVK fork (stage 4)
+
+Full design: [`rt_design_dxvk.md`](rt_design_dxvk.md). Summary:
+
+- **Fork change (the only one):** an opt-in `dxvk.enableRayQueryInterop`
+  that enables `VK_KHR_acceleration_structure`, `VK_KHR_ray_query` and
+  `VK_KHR_deferred_host_operations` on DXVK's device. It's generic and needs
+  no MW3 knowledge. Buffer device address is already a required feature in
+  DXVK 3.x.
+- **Everything else is in the proxy**, reusing the proven Streamline seam:
+  `GetVulkanHandles`, `ID3D9VkInteropTexture` for depth and outputs, and
+  `FlushRenderingCommands` / `LockSubmissionQueue` / `ReleaseSubmissionQueue`
+  around our own submits.
+- **Geometry** comes from CPU-resident zone data: `GfxWorldDraw` vertices
+  (44-byte `GfxWorldVertex`) and u16 indices, `XSurface.verts0` (32-byte
+  packed) for models, and `GfxStaticModelDrawInst` placements (88-byte
+  stride) for instances. Skinned vertices are captured at the ring-VB copy
+  in `FUN_1401b38f0` and refit per frame.
+- **Insertion points in `RB_DrawView`** [§7.1]: after the float-Z pass (sun
+  shadow mask) and in place of the SSAO calc (RTAO written into
+  `R_RENDERTARGET_SSAO_BLURRED`, composited by the engine's own
+  `ssao_apply_*`).
+- **Milestones:** RTAO → skinned refits → RT sun shadows (via the
+  `SHADOWMAP_SUN` / `SHADOW_LOOKUP_MATRIX` code inputs, hypothesis to validate
+  first, with bounded shader replacement as the fallback) → spot shadows →
+  alpha testing → reflections (research).
+
+---
+
+*Next stage: MP port plan for the controller pipeline and performance fixes (§11).*
