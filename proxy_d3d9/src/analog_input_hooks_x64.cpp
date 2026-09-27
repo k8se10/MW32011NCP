@@ -5176,8 +5176,40 @@ constexpr const char* kGetEffectiveFovX64Signature =
     "48 89 5C 24 08 57 48 83 EC 50 0F 29 74 24 40 8B F9 0F 29 7C 24 30";
 using GetEffectiveFovX64Fn = float(*)(int playerIndex);
 GetEffectiveFovX64Fn GetEffectiveFovX64Raw = nullptr;
+
+// MP twin, real bug found and NOT taken the same way as SP (2026-09-27, live-reported
+// "our ads slowdown is missing on mp"): the LOW-confidence automated candidate for this
+// role (FUN_140073400) was decompiled and confirmed to be the WRONG shape to call as a
+// simple getter -- it computes the effective FOV into XMM1 and ends with a genuine
+// tail-call (`JMP 0x140076d80`, not a CALL+RET) into a second function that consumes the
+// value as an ARGUMENT (to build a screen-projection matrix and a separate cached
+// sensitivity-scale global), not as something it returns back in XMM0. Calling
+// FUN_140073400 through a `float(*)(int)` function pointer would have returned whatever
+// FUN_140076d80 happens to leave in XMM0 for its OWN unrelated purposes -- silently wrong
+// data, not just "no slowdown" the way leaving it unresolved was. Fixed with a real,
+// safe capture hook on FUN_140076d80 itself instead: call through unmodified (every real
+// side effect -- the projection matrix, the cached sensitivity scale -- still happens
+// exactly as before), and stash its own real incoming FOV argument (the one value we
+// actually need) into g_lastEffectiveFovMP as a side effect. Confirmed unique (1
+// occurrence) in iw5mp.exe via a direct offline pattern scan.
+constexpr const char* kFovApplySignatureMP =
+    "48 83 EC 38 0F 29 74 24 20 4C 8D 0D ?? ?? ?? ?? 0F 28 F1 4C 8D 05 ?? ?? ?? ?? "
+    "F3 0F 10 0D ?? ?? ?? ?? 0F 28 C6 F3 0F 59 0D ?? ?? ?? ??";
+using FovApplyFnMP = void(__fastcall*)(void* param1, float fov);
+FovApplyFnMP g_realFovApplyMP = nullptr;
+volatile float g_lastEffectiveFovMP = 0.0f; // 0 = "no zoom data yet", same "<=0 means no zoom" convention GetEffectiveFovX64 already uses
+
+void __fastcall Hook_FovApplyCaptureMP(void* param1, float fov)
+{
+    g_lastEffectiveFovMP = fov;
+    g_realFovApplyMP(param1, fov);
+}
+
 float GetEffectiveFovX64(int playerIndex)
 {
+    if (GetDetectedGameExecutable() == GameExecutable::MP) {
+        return g_lastEffectiveFovMP; // captured by Hook_FovApplyCaptureMP, not called directly -- see its own comment
+    }
     if (!GetEffectiveFovX64Raw) return 0.0f; // unresolved -- callers already treat <=0 as "no zoom" fallback
     return GetEffectiveFovX64Raw(playerIndex);
 }
@@ -9807,8 +9839,36 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
     // is gated to the local client.
     const bool isLocalClient = (param1 == kLocalClientIndexX64);
 
+    // REAL BUG FIX (2026-09-27, live-reported: "still jitters, better description is a
+    // stepping effect when moving horizontally and vertically at the same time"): the
+    // local-client gate above stopped this project's injection from corrupting OTHER
+    // clients, but a real, separate bug remained for the LOCAL client itself -- this
+    // function can genuinely fire more than once for the same real tick (MP's own
+    // client-side prediction/resend machinery, something SP's much simpler single-player
+    // tick cadence never had to contend with). Both LOOK and MOVEMENT are ADDITIVE (they
+    // read whatever's currently there and add this call's own delta on top) -- called
+    // twice for the same real tick, the same delta gets added twice before the truly new
+    // input is even read again, compounding. A pure-axis push saturates at the sbyte
+    // clamp (+/-127) immediately and stays there every extra call, hiding this entirely;
+    // a diagonal push sits in the unsaturated mid-range, where the double-add is visible
+    // as a real, discrete jump every time it happens -- exactly the reported "stepping"
+    // shape, and the same asymmetric-symptom-points-at-a-real-mechanism pattern this
+    // project's own CLAUDE.md standing principle #10 describes (a bug isolated to one
+    // specific case is a real, structural clue, not noise to explain away). Fixed with a
+    // real per-tick dedup keyed on the shared timestamp global (g_timestampPtrMP) --
+    // confirmed by this project's own kTimestampInsnOffsetMP research to be a genuine
+    // per-real-tick value, not a per-call counter, so two calls for the same real tick
+    // read the identical value: apply LOOK/MOVEMENT injection only once per distinct
+    // timestamp, updated after actually applying. Falls back to "apply every call" (the
+    // prior behavior) if the timestamp never resolved, rather than silently going inert.
+    static int s_lastAppliedTimestampMP = 0;
+    static bool s_haveAppliedOnceMP = false;
+    const int currentTimestampMP = g_timestampPtrMP ? static_cast<int>(*g_timestampPtrMP) : 0;
+    const bool isNewTickMP = !g_timestampPtrMP || !s_haveAppliedOnceMP || currentTimestampMP != s_lastAppliedTimestampMP;
+    const bool applyStickInjection = isLocalClient && isNewTickMP;
+
     // LOOK first, PRE-hook -- see this function's own header comment for why.
-    if (isLocalClient && param2 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
+    if (applyStickInjection && param2 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
         float leftX, leftY, rightX, rightY;
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
             float moveXUnused, moveYUnused, lookX, lookY;
@@ -9833,7 +9893,7 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
 
     g_realMovementTickMP(param1, param2, param3);
 
-    if (isLocalClient && param2 && !g_modConfig.disableControllerInputX64) {
+    if (applyStickInjection && param2 && !g_modConfig.disableControllerInputX64) {
         float leftX, leftY, rightX, rightY;
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
             float moveX, moveY, lookX, lookY;
@@ -9849,6 +9909,10 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
                 cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
                 cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
             }
+        }
+        if (g_timestampPtrMP) {
+            s_lastAppliedTimestampMP = currentTimestampMP;
+            s_haveAppliedOnceMP = true;
         }
 
         unsigned short xiButtons = 0;
@@ -10054,6 +10118,43 @@ void InstallMpAnchorAndSprintHooksX64()
                     "injection active, folded into the MP Movement hook (same tick, pre-call write).",
                     (void*)g_pitchAccum, (void*)g_yawAccum);
                 LogFromController(buf);
+            }
+        }
+    }
+
+    // ADS look-slowdown (mp_port_plan.md step 7, 2026-09-27, live-reported "our ads
+    // slowdown is missing on mp") -- see kFovApplySignatureMP's own header comment for
+    // why this is a real capture hook, not a direct-call resolve like SP's own
+    // kGetEffectiveFovX64Signature. Independent of every other resolve in this function --
+    // a failure here only means GetAdsLookRateScaleX64() keeps returning 1.0 (no
+    // slowdown), never a crash or wrong data, matching GetEffectiveFovX64's own
+    // "<=0 == no zoom" fallback convention.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kFovApplySignatureMP);
+        if (!r.found) {
+            LogFromController("[x64-mp-fov] FATAL: MP FOV-apply signature did not resolve -- ADS look-slowdown "
+                "will not work this session (look itself is unaffected)");
+        } else {
+            void* target = reinterpret_cast<void*>(r.address);
+            MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_FovApplyCaptureMP),
+                                                    reinterpret_cast<void**>(&g_realFovApplyMP));
+            if (createStatus != MH_OK) {
+                char buf[170];
+                sprintf_s(buf, "[x64-mp-fov] FATAL: MH_CreateHook failed for FOV-apply @ 0x%llX (status=%d)",
+                           static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+                LogFromController(buf);
+            } else {
+                MH_STATUS enableStatus = MH_EnableHook(target);
+                if (enableStatus != MH_OK) {
+                    char buf[170];
+                    sprintf_s(buf, "[x64-mp-fov] FATAL: MH_EnableHook failed for FOV-apply @ 0x%llX (status=%d)",
+                               static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+                    LogFromController(buf);
+                } else {
+                    LogFromController("[x64-mp-fov] MP FOV-apply capture hook installed and enabled -- ADS "
+                        "look-slowdown is active (log-and-call-through, zero behavior change to the real "
+                        "native FOV/sensitivity pipeline).");
+                }
             }
         }
     }

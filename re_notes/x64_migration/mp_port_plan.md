@@ -238,6 +238,54 @@ fixed two real bugs, both in `Hook_MovementTickMP`.**
 Both fixes build-verified 0 errors/0 warnings (x64); x64 redeployed and
 confirmed via dumpbin. Not yet re-tested live after this fix pass.
 
+**Status update (2026-09-27, later still): second live-test pass found and
+fixed two more real bugs.**
+
+3. **"still jitters, better description is a stepping effect when moving
+   horizontally and vertically at the same time."** The local-client gate
+   from update 2 above stopped injection from corrupting OTHER clients, but a
+   real, separate bug remained for the LOCAL client: `Hook_MovementTickMP`
+   can genuinely fire more than once for the same real tick (MP's own
+   client-side prediction/resend machinery, something SP's much simpler
+   single-player tick cadence never had to deal with). Both LOOK and
+   MOVEMENT are additive (read whatever's currently there, add this call's
+   own delta on top) -- called twice for one real tick, the same delta gets
+   added twice before genuinely new input is read again. A pure-axis push
+   saturates at the sbyte clamp immediately and stays there on the extra
+   call, hiding this entirely; a diagonal push sits in the unsaturated
+   mid-range, where the double-add is visible as a real, discrete jump --
+   exactly the reported "stepping" shape. Fixed with a real per-tick dedup
+   keyed on the shared timestamp global (`g_timestampPtrMP`, already
+   confirmed to be a genuine per-real-tick value, not a per-call counter):
+   LOOK/MOVEMENT injection now applies only once per distinct timestamp
+   value. Falls back to "apply every call" if the timestamp never resolved,
+   rather than silently going inert.
+4. **"our ads slowdown is missing on mp."** Direct consequence of a gap
+   flagged honestly in the prior status update (`GetEffectiveFovX64Raw` was
+   deliberately left unresolved for MP) -- but investigating it properly
+   found the original LOW-confidence candidate (`FUN_140073400`) was more
+   than just unverified, it was structurally the WRONG shape to ever call as
+   a simple getter: it computes the effective FOV into `XMM1` and ends with
+   a genuine tail-call (`JMP`, not `CALL`+`RET`) into a second function
+   (`FUN_140076d80`) that consumes the value as an ARGUMENT (to build a
+   screen-projection matrix and a separate cached sensitivity-scale global),
+   never returning it back in `XMM0`. Wiring it as a direct-call getter the
+   way SP's own `kGetEffectiveFovX64Signature` works would have returned
+   whatever `FUN_140076d80` happens to leave in `XMM0` for its own unrelated
+   purposes -- silently WRONG data, a real regression risk beyond the
+   original "just missing" gap. Fixed with a real, safe capture hook on
+   `FUN_140076d80` itself instead (confirmed unique in `iw5mp.exe`): calls
+   through completely unmodified (every real side effect still happens
+   exactly as before), and stashes its own real incoming FOV argument into
+   `g_lastEffectiveFovMP` as a side effect. `GetEffectiveFovX64()` now
+   returns this captured value for MP instead of ever calling
+   `GetEffectiveFovX64Raw` (which stays permanently unresolved/unused for
+   MP -- the direct-call approach is confirmed wrong for this exe, not
+   revisited).
+
+Both fixes build-verified 0 errors/0 warnings (x64); x64 redeployed and
+confirmed via dumpbin. Not yet re-tested live after this fix pass.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to
