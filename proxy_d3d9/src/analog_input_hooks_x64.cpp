@@ -2395,7 +2395,10 @@ extern volatile uint32_t* g_timestampPtrMP;
 extern int* g_fireStructMP;
 extern int* g_reloadStructMP;
 extern int* g_adsStructMP;
-extern volatile uint8_t* g_adsToggleFlagMP;
+extern int* g_adsToggleFlagMP; // REAL BUG FIX 2026-09-27 (live-reported "ADS is a no-op"): NOT a
+    // simple boolean flag like SP's own DAT_1406e26e0 -- MP's anchor case 0xd/0xe calls this
+    // address through the REAL kbutton activate/deactivate function, meaning it's a second
+    // kbutton_t struct target. See its own resolve site's comment for the full story.
 int GetRealStanceX64();
 void ForceStandingViaRealToggleX64();
 
@@ -3125,7 +3128,7 @@ int* g_adsStructMP = nullptr;
 int* g_sprintStructMP = nullptr;
 int* g_holdBreathStructMP = nullptr;
 volatile uint32_t* g_timestampPtrMP = nullptr;
-volatile uint8_t* g_adsToggleFlagMP = nullptr;
+int* g_adsToggleFlagMP = nullptr; // real kbutton struct, not a flag -- see its own extern comment
 
 // ---- CrouchProne (B), x64 (2026-09-05, next task after the remaining-controls
 // pass -- deliberately deferred there pending exactly this) ------------------------
@@ -9786,8 +9789,26 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
     GameplayHookCtxScopeX64 gameplayCtx;
     g_lastGameplayTickMsX64 = GetTickCount();
 
+    // REAL BUG FIX (2026-09-27, live-reported: "jitter everywhere" on movement, and
+    // separately "forces us into spectate mode... only when you use the controller to
+    // choose team and class"): param_1 is a real per-client index -- the SAME stride-600
+    // per-client indexing the anchor's own struct array uses (kAnchorSignatureMP's own
+    // comment) -- NOT always the local player. This tick function almost certainly fires
+    // for every client this MP session tracks locally, not just the local one (unlike SP,
+    // where "client 0" was never ambiguous since there was only ever one). Without this
+    // gate, our controller injection was being applied to OTHER players' usercmds too --
+    // real movement corruption ("jitter everywhere" is exactly what stomping someone
+    // else's forwardmove/rightmove/look-accumulator every local tick looks like from the
+    // outside) -- and Fire/ADS/Reload's raw kbutton calls were firing against arbitrary
+    // OTHER clients' structs while navigating the team/class menu, plausibly corrupting
+    // whatever real state drives team assignment/ready state for the wrong client and
+    // falling back to spectate. g_realMovementTickMP always runs regardless -- that's the
+    // real native per-client logic and must not be skipped for anyone. Only OUR injection
+    // is gated to the local client.
+    const bool isLocalClient = (param1 == kLocalClientIndexX64);
+
     // LOOK first, PRE-hook -- see this function's own header comment for why.
-    if (param2 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
+    if (isLocalClient && param2 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
         float leftX, leftY, rightX, rightY;
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
             float moveXUnused, moveYUnused, lookX, lookY;
@@ -9812,7 +9833,7 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
 
     g_realMovementTickMP(param1, param2, param3);
 
-    if (param2 && !g_modConfig.disableControllerInputX64) {
+    if (isLocalClient && param2 && !g_modConfig.disableControllerInputX64) {
         float leftX, leftY, rightX, rightY;
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
             float moveX, moveY, lookX, lookY;
@@ -9850,11 +9871,17 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
                     g_adsHeldX64 = adsHeld;
                     if (adsHeld) g_kbuttonActivate(g_adsStructMP, kSyntheticSourceId, timestamp);
                     else g_kbuttonDeactivate(g_adsStructMP, kSyntheticSourceId, timestamp);
-                    // Same real lesson SP's own kAdsToggleFlagInsnOffset comment documents:
-                    // live-tested on SP, the kbutton call alone did NOT drive actual ADS
-                    // engagement -- this explicit flag write did. Applying the same fix
-                    // preemptively for MP rather than waiting to rediscover it live.
-                    if (g_adsToggleFlagMP) *g_adsToggleFlagMP = adsHeld ? 1 : 0;
+                    // REAL BUG FIX (2026-09-27, live-reported "ADS is a no-op"): g_adsToggleFlagMP
+                    // is NOT a simple boolean flag the way SP's own DAT_1406e26e0 is -- MP's anchor
+                    // case 0xd/0xe calls this address through the REAL kbutton activate/deactivate
+                    // function (FUN_1400d0ea0/ed0), meaning it's a genuine second kbutton_t struct
+                    // this bind also drives, not a flag to write. A raw byte write here was
+                    // corrupting/no-oping whatever real state that struct holds -- fixed by calling
+                    // the same activate/deactivate edge on it as g_adsStructMP gets.
+                    if (g_adsToggleFlagMP) {
+                        if (adsHeld) g_kbuttonActivate(g_adsToggleFlagMP, kSyntheticSourceId, timestamp);
+                        else g_kbuttonDeactivate(g_adsToggleFlagMP, kSyntheticSourceId, timestamp);
+                    }
                 }
             }
             if (g_reloadStructMP) {
@@ -9917,7 +9944,7 @@ void InstallMpAnchorAndSprintHooksX64()
             g_fireStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kFireStructInsnOffsetMP, kRipInsnLength));
             g_reloadStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kReloadStructInsnOffsetMP, kRipInsnLength));
             g_adsStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsStructInsnOffsetMP, kRipInsnLength));
-            g_adsToggleFlagMP = reinterpret_cast<volatile uint8_t*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffsetMP, kRipInsnLength));
+            g_adsToggleFlagMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kAdsToggleFlagInsnOffsetMP, kRipInsnLength));
             g_sprintStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kSprintStructInsnOffsetMP, kRipInsnLength));
             g_holdBreathStructMP = reinterpret_cast<int*>(SigScan::ResolveRipRelative(anchor + kHoldBreathStructInsnOffsetMP, kRipInsnLength));
             g_timestampPtrMP = reinterpret_cast<volatile uint32_t*>(SigScan::ResolveRipRelative(anchor + kTimestampInsnOffsetMP, kRipInsnLength));

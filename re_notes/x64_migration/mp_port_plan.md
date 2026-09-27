@@ -198,6 +198,46 @@ Breath, CrouchProne auto-stand, left-stick movement, right-stick look, Fire,
 ADS, and Reload. Build-verified 0 errors/0 warnings (x64); x64 redeployed
 and confirmed via dumpbin. Not yet live-tested in a private match.
 
+**Status update (2026-09-27, later still): first live-test pass found and
+fixed two real bugs, both in `Hook_MovementTickMP`.**
+
+1. **"jitter everywhere" on movement, and separately "forces us into spectate
+   mode... only when you use the controller to choose team and class."** Real
+   root cause: `param_1` (the movement-tick function's own first parameter) is
+   a genuine per-client index -- the SAME stride-600 per-client indexing the
+   anchor's own struct array uses (see the anchor status update above) --
+   almost certainly NOT always the local player. `FUN_1400d0050` very likely
+   fires once per client this MP session locally tracks, not just the local
+   one (unlike SP, where "client 0" was never ambiguous -- there was only
+   ever one). Without a gate, this project's own controller injection was
+   being applied to OTHER players' usercmds too: real movement corruption is
+   exactly what "jitter everywhere" looks like from the outside when someone
+   else's forwardmove/rightmove/look-accumulator gets stomped every local
+   tick, and Fire/ADS/Reload's raw kbutton calls firing against arbitrary
+   OTHER clients' structs while navigating the team/class menu plausibly
+   corrupted whatever real state drives team assignment/ready state for the
+   wrong client, falling back to spectate. Fixed: every piece of this
+   project's own injection (look, movement, Fire/ADS/Reload) is now gated on
+   `param1 == kLocalClientIndexX64` (the same "client 0 = local player"
+   convention already established elsewhere in this file); `g_realMovementTickMP`
+   itself always still runs unconditionally for every client, since that's
+   the real native per-client logic and must not be skipped for anyone.
+2. **"ads is no op."** Real root cause: `g_adsToggleFlagMP` was modeled as a
+   simple boolean flag, copying SP's own design (`DAT_1406e26e0`, written
+   directly as `0`/`1`) -- but re-reading the anchor's own case 0xd/0xe
+   disassembly shows MP calls this address (`DAT_140e1dbb4`) through the REAL
+   kbutton activate/deactivate function (`FUN_1400d0ea0`/`FUN_1400d0ed0`), not
+   a flag write -- it's a genuine SECOND kbutton_t struct this bind also
+   drives, structurally different from SP's own design at this exact spot. A
+   raw byte write into it was corrupting or simply no-oping whatever real
+   state that struct actually holds. Fixed: `g_adsToggleFlagMP` is now typed
+   `int*` (matching every other kbutton struct pointer) and driven through
+   `g_kbuttonActivate`/`g_kbuttonDeactivate` on the same held/released edge as
+   `g_adsStructMP`, not written directly.
+
+Both fixes build-verified 0 errors/0 warnings (x64); x64 redeployed and
+confirmed via dumpbin. Not yet re-tested live after this fix pass.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to
