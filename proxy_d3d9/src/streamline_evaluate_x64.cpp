@@ -51,6 +51,10 @@ extern VkQueue GetDxvkVkQueueX64(); // streamline_integration_x64.cpp
 extern uint32_t GetDxvkVkGraphicsQueueFamilyIndexX64(); // streamline_integration_x64.cpp
 extern bool StreamlineDLSSSetOptionsX64(uint32_t outputWidth, uint32_t outputHeight, int modeValue); // streamline_integration_x64.cpp
 extern bool StreamlineEvaluateFeatureX64(void* vkCommandBuffer); // streamline_integration_x64.cpp
+extern bool GetStreamlineInternalRenderResolutionX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp,
+    // the real render-scale-produced INPUT resolution DLSS reads from -- see this
+    // file's own real-bug comment above EvaluateStreamlineDlssX64 for why this must
+    // be checked against the output resolution before ever calling evaluate.
 
 namespace {
 
@@ -90,6 +94,50 @@ VkFence g_fence = VK_NULL_HANDLE;
 // native-resolution change, or a live config hot-reload of DLSSModeX64), never on
 // every single frame (slDLSSSetOptions's own doc comment: "turn DLSS on/off, change
 // mode etc.", not a per-frame call).
+// 2026-09-27: real design decision, direct instruction -- rather than just
+// skip DLSS entirely whenever InternalRenderScalePercent produces an input
+// larger than the display resolution, actually use DLSS for that case via
+// DLSSMode::eDLAA (6) -- a same-resolution mode (input==output, no resize),
+// whose own Min/Max dynamic-resolution range is trivially satisfied when
+// output is set to match the render-scale input itself rather than the real
+// display. DLAA still runs the real neural denoise/temporal-AA pass on the
+// supersampled image -- this is the actual mechanism behind the "feed DLSS
+// an already-supersampled image for a real quality/perf win" theory this
+// session set out to test (vulkan_dlss_pipeline_research.md item 17, ROUND
+// 5's note), not a workaround that avoids testing it.
+// HONEST, CURRENTLY OPEN GAP: DLAA's own output at this larger resolution
+// still needs a final downsample back to the real display resolution before
+// it can be what the player actually sees -- that compositing step (and,
+// separately, correctly sequencing it before HUD/UI draws so DLSS's
+// 3D-scene-only output doesn't overwrite already-composited UI) is NOT yet
+// built. This override makes slDLSSSetOptions/slEvaluateFeature succeed and
+// do real GPU work at the correct resolution; it does not yet get that work
+// in front of the player. See this file's own EvaluateStreamlineDlssX64
+// comment and the research doc for the real remaining scope.
+// REAL, DIRECT COST CAVEAT (user's own words, record precisely): "DLAA is
+// EXPENSIVE" -- it is the real neural network running at the FULL
+// supersampled resolution (e.g. 5120x2880 at 200% render scale), not a
+// cheap fallback; this override trades one expensive thing (naive
+// supersampling) for another expensive thing believed to have a better
+// quality/perf ratio, not for something cheap.
+// SESSION-ONLY, NEVER PERSISTED: direct instruction -- "it has to be changed
+// to the compat one for that run not in config." g_modConfig.dlssModeX64
+// itself is never modified by this override; only the value actually passed
+// to Streamline (effective mode/resolution below) changes for as long as
+// the incompatible ratio holds, reverting the instant render scale drops
+// back to 100% or below. The .ini file is never rewritten by this logic.
+int g_dlssEffectiveModeX64 = -1; // -1 = not yet computed this session
+uint32_t g_dlssEffectiveOutputWidthX64 = 0;
+uint32_t g_dlssEffectiveOutputHeightX64 = 0;
+bool g_dlssAboveOutputOverrideActiveX64 = false; // edge-detected -- drives the
+    // one-time-per-activation log/modal notice below, not a per-frame spam gate.
+
+constexpr int kDlssModeDLAAX64 = 6; // sl::DLSSMode::eDLAA (sl_dlss.h) -- this
+    // file deliberately doesn't include sl_dlss.h for one enum value (avoids
+    // pulling its own real dependency chain into this translation unit for a
+    // single constant); the real enum ordinal is fixed/stable per the vendored
+    // SDK header (eOff=0..eDLAA=6) and cross-checked against it here.
+
 uint32_t g_lastOptionsWidth = 0;
 uint32_t g_lastOptionsHeight = 0;
 int g_lastOptionsMode = -1;
@@ -238,15 +286,74 @@ void EvaluateStreamlineDlssX64()
     GetRealScreenSize(device, nativeW, nativeH);
     if (nativeW <= 0 || nativeH <= 0) return;
 
-    uint32_t outputWidth = static_cast<uint32_t>(nativeW);
-    uint32_t outputHeight = static_cast<uint32_t>(nativeH);
-    int mode = g_modConfig.dlssModeX64;
+    uint32_t displayWidth = static_cast<uint32_t>(nativeW);
+    uint32_t displayHeight = static_cast<uint32_t>(nativeH);
+    int configuredMode = g_modConfig.dlssModeX64;
 
-    if (outputWidth != g_lastOptionsWidth || outputHeight != g_lastOptionsHeight || mode != g_lastOptionsMode) {
-        bool ok = StreamlineDLSSSetOptionsX64(outputWidth, outputHeight, mode);
-        g_lastOptionsWidth = outputWidth;
-        g_lastOptionsHeight = outputHeight;
-        g_lastOptionsMode = mode;
+    // REAL FIX, 2026-09-27: live-confirmed, NGX hard-rejects any input (the
+    // render-scale-produced buffer, kBufferTypeScalingInputColor) larger than
+    // DLSS's own output resolution when using an upscale mode -- "Dynamic
+    // scaling error... RenderSubrect (5120x2880) outside of Min (1280x720)
+    // and Max (2560x1440) dynamic res" (real log capture at
+    // InternalRenderScalePercent=200, 2x native). Rather than just skip DLSS
+    // for that case, direct instruction: switch to DLSSMode::eDLAA (a
+    // same-resolution mode, input==output, no resize) with output set to the
+    // render-scale INPUT resolution itself -- DLAA's own range is then
+    // trivially satisfied, and DLSS still does real, useful work (its neural
+    // denoise/temporal-AA pass) on the supersampled image, which is the
+    // actual mechanism behind testing whether feeding DLSS an already-
+    // supersampled image is worthwhile. See this file's own top-of-file
+    // comment on g_dlssEffectiveModeX64 for the full design and its current,
+    // honest gaps (no final downsample-to-display compositing step exists
+    // yet -- this makes the SDK calls succeed and do real work; it does not
+    // yet get that work in front of the player).
+    uint32_t inputWidth = 0, inputHeight = 0;
+    GetStreamlineInternalRenderResolutionX64(inputWidth, inputHeight);
+    bool aboveOutput = (inputWidth > displayWidth || inputHeight > displayHeight);
+
+    int effectiveMode = configuredMode;
+    uint32_t effectiveOutputWidth = displayWidth;
+    uint32_t effectiveOutputHeight = displayHeight;
+    if (aboveOutput) {
+        effectiveMode = kDlssModeDLAAX64;
+        effectiveOutputWidth = inputWidth;
+        effectiveOutputHeight = inputHeight;
+    }
+
+    if (aboveOutput != g_dlssAboveOutputOverrideActiveX64) {
+        g_dlssAboveOutputOverrideActiveX64 = aboveOutput;
+        if (aboveOutput) {
+            char buf[400];
+            sprintf_s(buf, "[x64-streamline-evaluate] Render-scale input (%ux%u) exceeds the real "
+                "display resolution (%ux%u) -- your configured DLSSModeX64=%d cannot run at this "
+                "ratio (NGX hard-rejects any input larger than output for an upscale mode). "
+                "SESSION-ONLY override to DLSSMode::eDLAA (6) active for as long as this ratio "
+                "holds -- mw3ncp_config.ini's own DLSSModeX64 value is NOT changed.",
+                inputWidth, inputHeight, displayWidth, displayHeight, configuredMode);
+            LogFromController(buf);
+            ShowOverlayMessageUntilDismissed(
+                "\x03DLSS Mode Auto-Switched (This Session Only)\n\n"
+                "\x01Render scale above 100% is incompatible with DLSS's upscale\n"
+                "modes -- switched to DLAA for as long as this holds.\n\n"
+                "DLAA is EXPENSIVE: it runs the full neural network at your\n"
+                "entire supersampled resolution, not a cheap fallback.\n\n"
+                "Your DLSSModeX64 config setting is unchanged.");
+        } else {
+            LogFromController("[x64-streamline-evaluate] Render-scale input no longer exceeds the "
+                "display resolution -- DLAA override lifted, using the configured DLSSModeX64 again.");
+        }
+    }
+
+    g_dlssEffectiveModeX64 = effectiveMode;
+    g_dlssEffectiveOutputWidthX64 = effectiveOutputWidth;
+    g_dlssEffectiveOutputHeightX64 = effectiveOutputHeight;
+
+    if (effectiveOutputWidth != g_lastOptionsWidth || effectiveOutputHeight != g_lastOptionsHeight ||
+        effectiveMode != g_lastOptionsMode) {
+        bool ok = StreamlineDLSSSetOptionsX64(effectiveOutputWidth, effectiveOutputHeight, effectiveMode);
+        g_lastOptionsWidth = effectiveOutputWidth;
+        g_lastOptionsHeight = effectiveOutputHeight;
+        g_lastOptionsMode = effectiveMode;
         g_optionsEverSucceeded = g_optionsEverSucceeded || ok;
     }
     if (!g_optionsEverSucceeded) return; // never configured successfully -- nothing to evaluate yet
@@ -297,6 +404,56 @@ void EvaluateStreamlineDlssX64()
     // v1, intentionally coarse (this file's own top comment) -- block until
     // DLSS's own recorded work actually finishes before returning, rather
     // than any overlap-with-next-frame scheme.
-    g_vkWaitForFences(vkDevice, 1, &g_fence, VK_TRUE, UINT64_MAX);
+    // REAL BUG FIX, 2026-09-27: this used to wait UINT64_MAX (forever) --
+    // live-reported as a real hang requiring the process to be killed, no
+    // crash dump generated (confirmed by the user: "was a hang and i kill
+    // not a dump crash"). The real trigger was almost certainly the
+    // above-output-resolution NGX rejection this file now guards against
+    // entirely (a rejected slEvaluateFeature call may still leave Streamline's
+    // own internal state, or this project's own recorded command buffer,
+    // inconsistent for a LATER frame's submission -- the log showed several
+    // fast ~4-5ms evaluate calls immediately after the first NGX failure,
+    // meaning the hang didn't happen on the failing call itself, but some
+    // frames later). Regardless of the deeper cause, an infinite wait on a
+    // GPU fence is never acceptable -- a real timeout here is the correct
+    // fix on its own merits, independent of whether the guard above turns
+    // out to be the complete fix. 2 real seconds is generous for a single
+    // frame's DLSS work; a genuine timeout is loud/logged, not silent.
+    constexpr uint64_t kFenceTimeoutNs = 2'000'000'000ULL;
+    VkResult waitResult = g_vkWaitForFences(vkDevice, 1, &g_fence, VK_TRUE, kFenceTimeoutNs);
+    if (waitResult == VK_TIMEOUT) {
+        static long long s_timeoutCount = 0;
+        ++s_timeoutCount;
+        char buf[200];
+        sprintf_s(buf, "[x64-streamline-evaluate] vkWaitForFences TIMED OUT after 2s (count=%lld) -- "
+            "DLSS's own recorded GPU work never signaled completion. Skipping this frame's result "
+            "rather than waiting indefinitely.", s_timeoutCount);
+        LogFromController(buf);
+        // Do NOT reset the fence here -- it may still signal later; resetting
+        // a fence the driver hasn't actually finished with is undefined per
+        // the Vulkan spec. Leave it and let the NEXT frame's vkResetCommandBuffer/
+        // vkBeginCommandBuffer attempt naturally re-synchronize (a real,
+        // accepted limitation of this v1, single-buffered design -- a second,
+        // genuinely stuck fence would need a full command-pool/fence recreate,
+        // not attempted here since the guard above should prevent the real
+        // trigger from recurring).
+        return;
+    }
     g_vkResetFences(vkDevice, 1, &g_fence);
+}
+
+// 2026-09-27: public accessor for streamline_resources_x64.cpp -- the real
+// DLSS OUTPUT texture (kBufferTypeScalingOutputColor) must be sized to match
+// whatever resolution Streamline was actually told is the output this frame,
+// which is the render-scale INPUT resolution during the above-output/DLAA
+// override, not always the real display resolution. Returns false (caller
+// should fall back to the real display resolution) until this function has
+// computed at least one real value, i.e. before EvaluateStreamlineDlssX64's
+// own first real call this session.
+bool GetDlssEffectiveOutputResolutionX64(uint32_t& outWidth, uint32_t& outHeight)
+{
+    if (g_dlssEffectiveOutputWidthX64 == 0 || g_dlssEffectiveOutputHeightX64 == 0) return false;
+    outWidth = g_dlssEffectiveOutputWidthX64;
+    outHeight = g_dlssEffectiveOutputHeightX64;
+    return true;
 }

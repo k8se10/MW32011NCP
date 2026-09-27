@@ -62,6 +62,11 @@ extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
 extern VkInstance GetDxvkVkInstanceX64(); // streamline_integration_x64.cpp
 extern VkDevice GetDxvkVkDeviceX64();     // streamline_integration_x64.cpp
 extern bool StreamlineSetTagForFrameX64(const sl::ResourceTag* tags, uint32_t numTags); // streamline_integration_x64.cpp
+extern bool GetDlssEffectiveOutputResolutionX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_evaluate_x64.cpp,
+    // 2026-09-27 -- see that file's own g_dlssEffectiveModeX64 comment. The real DLSS
+    // output resolution during the above-output/DLAA override is the render-scale
+    // INPUT resolution, not the display's -- this project's own owned output texture
+    // (TagOutputColorResourceForFrame, below) must match it exactly.
 
 namespace {
 
@@ -582,10 +587,22 @@ void TagOutputColorResourceForFrame()
     GetRealScreenSize(device, nativeW, nativeH);
     if (nativeW <= 0 || nativeH <= 0) return;
 
-    // (Re)create if this is the first attempt, or the real native resolution
+    // 2026-09-27: the real DLSS output resolution is NOT always the display
+    // resolution -- during the above-output/DLAA override (streamline_evaluate_x64.cpp's
+    // own g_dlssEffectiveModeX64/g_dlssEffectiveOutputWidthX64 comment), Streamline is
+    // told the output IS the render-scale input resolution (DLAA, no resize), so this
+    // texture must match THAT size, not the display's. Falls back to the real display
+    // resolution when the override hasn't computed a value yet (this session's very
+    // first tick, before EvaluateStreamlineDlssX64 has run even once) or isn't active.
+    uint32_t targetWidth = static_cast<uint32_t>(nativeW);
+    uint32_t targetHeight = static_cast<uint32_t>(nativeH);
+    GetDlssEffectiveOutputResolutionX64(targetWidth, targetHeight); // no-op (keeps the
+        // display-resolution fallback above) if it returns false -- see its own comment.
+
+    // (Re)create if this is the first attempt, or the real target resolution
     // changed since the texture was created.
-    if (!g_outputColorTexture || g_outputColorWidth != static_cast<uint32_t>(nativeW) ||
-        g_outputColorHeight != static_cast<uint32_t>(nativeH)) {
+    if (!g_outputColorTexture || g_outputColorWidth != targetWidth ||
+        g_outputColorHeight != targetHeight) {
         if (g_outputColorSurface) {
             reinterpret_cast<IUnknown*>(g_outputColorSurface)->Release();
             g_outputColorSurface = nullptr;
@@ -602,12 +619,12 @@ void TagOutputColorResourceForFrame()
 
         void** deviceVtbl = *reinterpret_cast<void***>(device);
         auto createTexture = reinterpret_cast<CreateTextureFn>(deviceVtbl[kCreateTextureVtableIndex]);
-        HRESULT hr = createTexture(device, static_cast<UINT>(nativeW), static_cast<UINT>(nativeH), 1,
+        HRESULT hr = createTexture(device, targetWidth, targetHeight, 1,
             kD3DUSAGE_RENDERTARGET, kD3DFMT_A8R8G8B8, kD3DPOOL_DEFAULT, &g_outputColorTexture, nullptr);
         if (FAILED(hr) || !g_outputColorTexture) {
             char buf[200];
             sprintf_s(buf, "[x64-streamline-output] CreateTexture FAILED (hr=0x%08lX) for a real "
-                "%dx%d DLSS output buffer.", hr, nativeW, nativeH);
+                "%ux%u DLSS output buffer.", hr, targetWidth, targetHeight);
             LogFromController(buf);
             g_outputColorTexture = nullptr;
             return;
@@ -627,8 +644,8 @@ void TagOutputColorResourceForFrame()
             return;
         }
 
-        g_outputColorWidth = static_cast<uint32_t>(nativeW);
-        g_outputColorHeight = static_cast<uint32_t>(nativeH);
+        g_outputColorWidth = targetWidth;
+        g_outputColorHeight = targetHeight;
         char buf[200];
         sprintf_s(buf, "[x64-streamline-output] Created a real %ux%u DLSS output texture+surface.",
             g_outputColorWidth, g_outputColorHeight);
