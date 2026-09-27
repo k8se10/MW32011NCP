@@ -1,0 +1,252 @@
+================================================================
+Function: FUN_140080840 @ 140080840
+----------------------------------------------------------------
+
+void FUN_140080840(void)
+
+{
+  FUN_1401d2520();
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1401c4ba0 @ 1401c4ba0
+----------------------------------------------------------------
+
+undefined8 FUN_1401c4ba0(char *param_1)
+
+{
+  undefined8 uVar1;
+  
+  if (*param_1 == '\0') {
+    return DAT_141887b58;
+  }
+  uVar1 = FUN_1400a5a20(5,param_1);
+  return uVar1;
+}
+
+
+
+================================================================
+Function: FUN_14028c2b0 @ 14028c2b0
+----------------------------------------------------------------
+
+void FUN_14028c2b0(undefined8 param_1,undefined4 param_2,undefined4 param_3,float param_4,
+                  float param_5,undefined4 param_6,undefined4 param_7,undefined8 param_8,
+                  undefined8 param_9)
+
+{
+  undefined4 uVar1;
+  undefined4 uVar2;
+  undefined4 uVar3;
+  undefined4 uVar4;
+  
+  if (0.0 <= param_4) {
+    uVar4 = 0;
+    uVar2 = DAT_1403e3e6c;
+  }
+  else {
+    param_4 = (float)((uint)param_4 ^ DAT_1403e3e90);
+    uVar2 = 0;
+    uVar4 = DAT_1403e3e6c;
+  }
+  if (0.0 <= param_5) {
+    uVar3 = 0;
+    uVar1 = DAT_1403e3e6c;
+  }
+  else {
+    param_5 = (float)((uint)param_5 ^ DAT_1403e3e90);
+    uVar1 = 0;
+    uVar3 = DAT_1403e3e6c;
+  }
+  FUN_140078540(uVar1,param_2,param_3,param_4,param_5,param_6,param_7,uVar4,uVar3,uVar2,uVar1,
+                param_8,param_9);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_1401d1f30 @ 1401d1f30
+----------------------------------------------------------------
+
+void FUN_1401d1f30(undefined4 *param_1,undefined8 param_2,longlong param_3)
+
+{
+  int iVar1;
+  longlong *plVar2;
+  longlong lVar3;
+  undefined4 *puVar4;
+  
+  plVar2 = DAT_141896b98;
+  iVar1 = (int)DAT_141896b98[1];
+  if ((*(int *)((longlong)DAT_141896b98 + 0xc) - iVar1) + DAT_141896b8c + -0x2000 < 0x38) {
+    DAT_141896b98[2] = 0;
+    return;
+  }
+  puVar4 = (undefined4 *)((longlong)iVar1 + *DAT_141896b98);
+  *(int *)(DAT_141896b98 + 1) = iVar1 + 0x38;
+  plVar2[2] = (longlong)puVar4;
+  *puVar4 = 0x38000e;
+  lVar3 = DAT_141887b58;
+  if (param_3 != 0) {
+    lVar3 = param_3;
+  }
+  *(longlong *)(puVar4 + 2) = lVar3;
+  puVar4[4] = *param_1;
+  puVar4[5] = param_1[1];
+  puVar4[6] = param_1[2];
+  puVar4[7] = param_1[3];
+  puVar4[8] = param_1[4];
+  puVar4[9] = param_1[5];
+  puVar4[10] = param_1[6];
+  puVar4[0xb] = param_1[7];
+  FUN_1401e8180(param_2,puVar4 + 0xc);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140078540 @ 140078540
+----------------------------------------------------------------
+
+void FUN_140078540(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8,
+                  undefined4 param_9,undefined4 param_10,undefined4 param_11,undefined8 param_12,
+                  undefined8 param_13)
+
+{
+  undefined4 local_res10 [2];
+  undefined4 local_res18 [2];
+  undefined4 local_res20 [2];
+  
+  local_res10[0] = param_2;
+  local_res18[0] = param_3;
+  local_res20[0] = param_4;
+  thunk_FUN_14008d020(param_1,local_res10,local_res18,local_res20,&param_5,param_6,param_7);
+  FUN_140078740(local_res10[0],local_res18[0],local_res20[0],param_5,param_8,param_9,param_10,
+                param_11,param_12,param_13);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_140078740 @ 140078740
+----------------------------------------------------------------
+
+void FUN_140078740(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+                  undefined4 param_5,undefined4 param_6,undefined4 param_7,undefined4 param_8,
+                  undefined8 param_9,undefined8 param_10)
+
+{
+  undefined8 uVar1;
+  
+  uVar1 = param_10;
+  FUN_1401c4a60(param_10,&param_5,&param_7,&param_6,&param_8);
+  FUN_1401d2090(param_1,param_2,param_3,param_4,param_5,param_6,param_7,param_8,param_9,uVar1);
+  return;
+}
+
+
+
+================================================================
+Function: FUN_14008d020 @ 14008d020
+----------------------------------------------------------------
+
+void FUN_14008d020(float *param_1,float *param_2,float *param_3,float *param_4,float *param_5,
+                  undefined4 param_6,undefined4 param_7)
+
+{
+  float fVar1;
+  float fVar2;
+  
+  fVar2 = DAT_1403e3e68;
+  switch(param_6) {
+  default:
+    fVar1 = *param_1 * *param_2 + param_1[0x1a];
+    break;
+  case 1:
+    fVar1 = *param_1 * *param_2 + param_1[0xe];
+    break;
+  case 2:
+    *param_2 = *param_1 * *param_2 + param_1[8] * DAT_1403e3e68;
+    goto LAB_14008d143;
+  case 3:
+    fVar1 = *param_1 * *param_2 + param_1[0x10];
+    break;
+  case 4:
+    *param_2 = *param_2 * param_1[2];
+    *param_4 = *param_4 * param_1[2];
+  case 5:
+    goto switchD_14008d050_caseD_5;
+  case 6:
+    *param_2 = *param_2 * param_1[4];
+    *param_4 = *param_4 * param_1[4];
+    goto switchD_14008d050_caseD_5;
+  case 7:
+    *param_2 = (param_1[0x10] + param_1[0xe]) * DAT_1403e3e68 + *param_1 * *param_2;
+    goto LAB_14008d143;
+  case 8:
+    fVar1 = *param_1 * *param_2 + param_1[0x16];
+    break;
+  case 9:
+    *param_2 = (param_1[0x18] + param_1[0x16]) * DAT_1403e3e68 + *param_1 * *param_2;
+    goto LAB_14008d143;
+  case 10:
+    fVar1 = *param_1 * *param_2 + param_1[0x18];
+  }
+  *param_2 = fVar1;
+LAB_14008d143:
+  *param_4 = *param_1 * *param_4;
+switchD_14008d050_caseD_5:
+  switch(param_7) {
+  default:
+    *param_3 = param_1[1] * *param_3;
+    goto LAB_14008d277;
+  case 1:
+    fVar2 = param_1[1] * *param_3 + param_1[0xf];
+    break;
+  case 2:
+    fVar1 = param_1[9];
+    goto LAB_14008d1a0;
+  case 3:
+    fVar2 = param_1[1] * *param_3 + param_1[0x11];
+    break;
+  case 4:
+    *param_3 = param_1[3] * *param_3;
+    *param_5 = param_1[3] * *param_5;
+    return;
+  case 5:
+    goto switchD_14008d169_caseD_5;
+  case 6:
+    *param_3 = *param_3 * param_1[5];
+    *param_5 = *param_5 * param_1[5];
+    return;
+  case 7:
+    fVar1 = param_1[0x11] + param_1[0xf];
+    goto LAB_14008d1a0;
+  case 8:
+    fVar2 = param_1[1] * *param_3 + param_1[0x17];
+    break;
+  case 9:
+    fVar1 = param_1[0x19] + param_1[0x17];
+LAB_14008d1a0:
+    *param_3 = fVar1 * fVar2 + param_1[1] * *param_3;
+LAB_14008d277:
+    *param_5 = param_1[1] * *param_5;
+switchD_14008d169_caseD_5:
+    return;
+  case 10:
+    fVar2 = param_1[1] * *param_3 + param_1[0x19];
+  }
+  *param_3 = fVar2;
+  *param_5 = param_1[1] * *param_5;
+  return;
+}
+
+
+
