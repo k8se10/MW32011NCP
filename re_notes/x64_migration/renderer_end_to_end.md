@@ -618,15 +618,17 @@ Motion blur is triggered separately afterwards (`FUN_14018def0`, §7.1).
 ### 8.6 Frame submit (the mailbox producer) 🟢
 
 - **`FUN_14024aa90(backEndData)` = submit to render thread**: `lock inc` of a
-  frame counter, `backEndData` → mailbox `0x142005990`, then two event
-  calls on the handles at `0x142005978`/`0x142005990+…` (reset "backend idle",
-  set "work ready"). The backend takes it with `InterlockedExchange`
-  (`0x14024a393`, inside `FUN_14024a390`).
-- **`FUN_140249f80` = wait for backend idle**: `WaitForSingleObject(…,
-  INFINITE)` on `0x142005978`, then resets/sets the pair around
-  `0x142005968`. It's called from `FUN_1401d3360`, `FUN_1401d2bb0`,
-  `FUN_1401d3950` and three times from `FUN_1401d3d30` (the frontend's
-  "must own the device now" points).
+  frame counter (`0x1420058ac`), `backEndData` → mailbox `0x142005990`, then
+  `SetEvent(0x142005988)` and `SetEvent(0x142005980)`. The backend takes the
+  pointer with `InterlockedExchange` (`0x14024a393`, inside `FUN_14024a390`).
+- **`FUN_140249f80` = synchronise with the backend**:
+  `WaitForSingleObject(0x142005978, INFINITE)`, `ResetEvent(0x142005970)`,
+  `SetEvent(0x142005988)`, `WaitForSingleObject(0x142005968, INFINITE)`. The
+  backend's side of the handshake is `FUN_14024a650` (called from
+  `RB_RenderThread`): `ResetEvent(0x142005978)`, `SetEvent(0x142005968)`.
+  Callers are the frontend's "must own the device now" points:
+  `FUN_1401d3360`, `FUN_1401d2bb0`, `FUN_1401d3950` and three sites in
+  `FUN_1401d3d30`.
 - **`FUN_14024a2a0`** = "is the current thread the render thread"
   (`GetCurrentThreadId() == [0x142005824]`), used by 30 functions as an
   ownership assert.
