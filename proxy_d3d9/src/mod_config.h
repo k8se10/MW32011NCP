@@ -815,6 +815,18 @@ struct ModConfig
     // Neural Rendering) alongside kFeatureDLSS at slInit() time and logs
     // whether the runtime plugin (sl.dlss_nr.dll) is actually present/loaded
     // -- detection/registration only, no real evaluate path wired yet.
+    // REAL SCOPE, confirmed directly from NVIDIA's own developer blog
+    // (2026-09-22, "DLSS 5... runs locally on a single GeForce RTX 50 Series
+    // GPU"): this is a Blackwell-only feature by NVIDIA's own design, not a
+    // driver/software gap on older hardware. This project is NOT attempting
+    // to run it on non-Blackwell GPUs (2080 Ti included) -- the real goal is
+    // additive tiering for players who DO have RTX 50-series hardware, the
+    // same pattern this project already uses for DLSS Frame Generation/
+    // Multi Frame Generation (never blocking a lower tier, only adding the
+    // newest one where the hardware actually supports it). Once real
+    // per-adapter gating is wired (slIsFeatureSupported, matching this
+    // project's own existing hardware-tier design for FG/MFG), this should
+    // cleanly no-op on any pre-Blackwell GPU rather than attempt anything.
     // REAL BLOCKER, not fixable by more code: this feature's own options
     // struct (DLSSNROptions, declared in NVIDIA's sl_dlss_nr.h) is NOT in
     // NVIDIA's public Streamline GitHub repo -- confirmed by checking it
@@ -829,9 +841,11 @@ struct ModConfig
     // sl.dlss_nr.dll runtime binaries, neither of which this project
     // sources itself (same "never fetch from an untrusted/leaked source"
     // standard as every other vendored binary here) -- both are on the user
-    // to obtain through NVIDIA's own legitimate channels if this is to go
-    // further. See re_notes/x64_migration/vulkan_dlss_pipeline_research.md
-    // item 17's DLSS-NR entry for the full research trail.
+    // to obtain through NVIDIA's own legitimate developer channels (real,
+    // shipped-in-a-real-product access now that DLSS 5 is live in NBA 2K27,
+    // not a leaked/embargoed request). See
+    // re_notes/x64_migration/vulkan_dlss_pipeline_research.md item 17's
+    // DLSS-NR entry for the full research trail.
     bool dlssNeuralRenderingEnabledX64 = false;
 
     // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,
