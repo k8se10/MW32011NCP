@@ -12,6 +12,22 @@
 
 </div>
 
+## Current release
+
+> **`v0.0.3-x64` is out now** — the biggest release in the project's history: native Vulkan rendering by default in
+> Campaign/Survival, opt-in NVIDIA DLSS/DLAA for RTX GPUs, major performance fixes (up to ~3x FPS at high render
+> scale), the "everything sounds like it's in a room" reverb fix, and controller menu navigation in Multiplayer.
+> Survival is the recommended way to use the mod (Gameplay Complete — every core control, including Predator Missile
+> guidance, is live-confirmed); Campaign ships best-effort, and Multiplayer has controller menu navigation but no
+> in-game controller movement/aiming yet (render scale and the performance fixes also run there). The netcode security
+> fixes protect every mode, Multiplayer included. Still early software — expect hidden bugs and unfinished or unported
+> features. Known gaps are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+>
+> **Planned development break: 2026-09-27 to 2026-10-04.** `v0.0.3-x64` is the LTS candidate for the `0.0.x` line
+> ([`LTS_POLICY.md`](LTS_POLICY.md)), and this week lets it settle under real play with nothing new landing on top.
+
+## About
+
 A native, from-scratch reverse-engineering platform for **Call of Duty:
 Modern Warfare 3 (2011, IW5 engine)** — not a single mod, but a patch layer
 with four real, distinct components, all built on the same technique (a
@@ -96,18 +112,6 @@ and verifies its own fix, per standard responsible-disclosure practice.
 
 ## Status
 
-> **`v0.0.3-x64` is out now** — the biggest release in the project's history: native Vulkan rendering by default in
-> Campaign/Survival, opt-in NVIDIA DLSS/DLAA for RTX GPUs, major performance fixes (up to ~3x FPS at high render
-> scale), the "everything sounds like it's in a room" reverb fix, and controller menu navigation in Multiplayer.
-> Survival is the recommended way to use the mod (Gameplay Complete — every core control, including Predator Missile
-> guidance, is live-confirmed); Campaign ships best-effort, and Multiplayer has controller menu navigation but no
-> in-game controller movement/aiming yet (render scale and the performance fixes also run there). The netcode security
-> fixes protect every mode, Multiplayer included. Still early software — expect hidden bugs and unfinished or unported
-> features. Known gaps are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
->
-> **Planned development break: 2026-09-27 to 2026-10-04.** `v0.0.3-x64` is the LTS candidate for the `0.0.x` line
-> ([`LTS_POLICY.md`](LTS_POLICY.md)), and this week lets it settle under real play with nothing new landing on top.
-
 **Alpha, `v0.0.3-x64` line.** On 2026-09-03 MW3 received its first real
 binary update in the game's history, recompiling both `iw5sp.exe`/`iw5mp.exe`
 from 32-bit to 64-bit — a hard architectural break that invalidated every
@@ -132,8 +136,8 @@ own live-test bar. **Survival's own controller-support scope reached
 Gameplay Complete on 2026-09-22** — every core control, Predator Missile
 guidance included, is live-confirmed working; further killstreak/mounted-
 weapon feel and sensitivity refinement is deferred to a dedicated future
-bulk pass. One known cosmetic bug ships with this release: the pause-menu
-Back glyph flickers (Back itself still works). See
+bulk pass. The pause-menu Back glyph flicker has a fix in `v0.0.3-x64` that is
+build-verified but not yet live-confirmed (Back itself always worked). See
 [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md) issue #1 for
 the live, detailed tracking of exactly what's done and what's left, and
 [`re_notes/x64_feature_parity_audit.md`](re_notes/x64_feature_parity_audit.md)
