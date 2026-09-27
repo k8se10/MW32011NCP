@@ -951,13 +951,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallConsoleFontInitSkipHooksX64();
             InstallProjectionMatrixDiagHookX64();
             // 2026-09-27, MP port, mp_port_plan.md step 7: the first real MP GAMEPLAY
-            // hook (not menu-nav or a performance fix) -- Sprint, Hold Breath, and
-            // CrouchProne auto-stand-on-sprint. Needed a real, independently-verified MP
-            // anchor signature (a full Ghidra decompile of iw5mp.exe, none existed before
-            // this session) since the struct addresses/case numbers it depends on aren't
-            // shared with SP -- see kAnchorSignatureMP's own header comment
-            // (analog_input_hooks_x64.cpp) for the full confirmation trail.
-            InstallMpAnchorAndSprintHooksX64();
+            // hooks (not menu-nav or a performance fix) -- Sprint/Hold Breath/CrouchProne
+            // auto-stand, movement, look, and Fire/ADS/Reload. HELD BACK from v0.0.3-x64
+            // by direct instruction: movement is still confirmed broken live (jittery/
+            // stepping) after three real fix attempts (local-client gating, a per-tick
+            // dedup, then a direct-set rewrite) -- none resolved it, meaning the actual
+            // root cause is still unknown, not just unpolished. Shipping a known-broken
+            // MP gameplay control is worse than not shipping it at all. The code stays in
+            // the repo (mp_port_plan.md's own newest status update has the full, honest
+            // trail of what was tried and why each attempt didn't hold) for the next
+            // session to pick back up with real diagnostics instead of another guess --
+            // just not installed/active for this release. Uncomment once movement is
+            // actually confirmed fixed live, not just build-verified.
+            // InstallMpAnchorAndSprintHooksX64();
 #endif
 #if defined(_M_X64) || defined(_WIN64)
             // 2026-09-23, direct instruction ("time to make the graphics enhancements
