@@ -1808,49 +1808,234 @@ void __fastcall Hook_VmNotify(unsigned int notifyListOwnerId, unsigned int strin
 // duplicate-playback theory; anything chained (recursionDepth>0) is
 // expected, normal alias-blend behavior per FUN_140273ec0's own real depth
 // cap and should not be mistaken for the bug being hunted.
+// MW32011NCP, 2026-09-27: dup-pair upgrade for the reopened issue #10
+// (user-confirmed "duplicated voices"). The per-fire line alone could not
+// name the code path above the thin wrapper FUN_140273fd0, and it could not
+// tell a harmless per-frame loop refresh from a real second voice. Changes:
+// - Argument meanings corrected from the call sites: `listener` is really
+//   the second alias of a blend pair (every thin wrapper passes the same
+//   alias twice), and `channel` is the entity number (2047 = world).
+// - Microsecond QPC timestamps, the origin, the thread id and the returned
+//   handle are logged per fire.
+// - A small ring of recent plays flags a "DUP" whenever the same alias for the
+//   same entity at the same origin (within 1 unit) starts again within 150ms
+//   at depth 0 AND the play returned a different handle than the earlier one.
+//   A matching handle means the sound system deduplicated a per-frame loop
+//   refresh (FUN_14003f3d0 re-issues entity loop sounds every frame by design),
+//   which is not a second voice.
+// - Each DUP logs both plays' 8-frame call stacks (Ghidra-normalised), and
+//   every newly seen call chain is logged once with its stack, so one session
+//   names the real upstream source.
+// Still read-only: the real function is always called with the unmodified
+// arguments and its return value is passed straight back.
+namespace {
+constexpr int kSoundDiagStackDepth = 8;
+constexpr int kSoundDiagRingSize = 256;
+constexpr long long kSoundDiagDupWindowUs = 150000;
+constexpr float kSoundDiagSameOriginDistSq = 1.0f;
+
+struct SoundDiagPlay {
+    const void* asset;
+    unsigned int entity;
+    bool originValid;
+    float origin[3];
+    long long timeUs;
+    unsigned int handle;
+    long long fireIndex;
+    unsigned int stackHash;
+    unsigned short frameCount;
+    uintptr_t frames[kSoundDiagStackDepth];
+};
+
+SRWLOCK g_soundDiagLock = SRWLOCK_INIT;
+SoundDiagPlay g_soundDiagRing[kSoundDiagRingSize] = {};
+int g_soundDiagRingNext = 0;
+int g_soundDiagRingCount = 0;
+constexpr int kSoundDiagSeenChainsSize = 1024;
+unsigned int g_soundDiagSeenChains[kSoundDiagSeenChainsSize] = {};
+int g_soundDiagSeenChainCount = 0;
+
+long long SoundDiagNowUs()
+{
+    static const long long s_freq = [] {
+        LARGE_INTEGER f{};
+        QueryPerformanceFrequency(&f);
+        return f.QuadPart > 0 ? f.QuadPart : 1LL;
+    }();
+    LARGE_INTEGER t{};
+    QueryPerformanceCounter(&t);
+    return static_cast<long long>((static_cast<double>(t.QuadPart) * 1000000.0) / static_cast<double>(s_freq));
+}
+
+// Formats up to kSoundDiagStackDepth Ghidra-normalised frames as
+// "0x1400....,0x1400....". Frames outside the main module stay as raw
+// runtime addresses, prefixed with '~' so they can't be mistaken for game VAs.
+void SoundDiagFormatStack(const SoundDiagPlay& play, char* out, size_t outSize)
+{
+    static const uintptr_t s_moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    static const size_t s_imageSize = [] {
+        if (s_moduleBase == 0) return static_cast<size_t>(0);
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(s_moduleBase);
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(s_moduleBase + dos->e_lfanew);
+        return static_cast<size_t>(nt->OptionalHeader.SizeOfImage);
+    }();
+    size_t used = 0;
+    out[0] = '\0';
+    for (unsigned short i = 0; i < play.frameCount && used + 1 < outSize; ++i) {
+        uintptr_t f = play.frames[i];
+        bool inMain = s_moduleBase != 0 && f >= s_moduleBase && f < s_moduleBase + s_imageSize;
+        int written = inMain
+            ? sprintf_s(out + used, outSize - used, "%s0x%llX", i ? "," : "",
+                        static_cast<unsigned long long>(ToGhidraAddressX64(reinterpret_cast<void*>(f))))
+            : sprintf_s(out + used, outSize - used, "%s~0x%llX", i ? "," : "",
+                        static_cast<unsigned long long>(f));
+        if (written <= 0) break;
+        used += static_cast<size_t>(written);
+    }
+}
+
+void SoundDiagReadName(const void* asset, char* out, size_t outSize)
+{
+    sprintf_s(out, outSize, "<unreadable>");
+#ifdef _WIN32
+    __try {
+        if (asset != nullptr) {
+            const char* namePtr = *reinterpret_cast<const char* const*>(asset);
+            if (namePtr != nullptr) {
+                sprintf_s(out, outSize, "%.48s", namePtr);
+            }
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        sprintf_s(out, outSize, "<fault reading name>");
+    }
+#endif
+}
+
+bool SoundDiagReadOrigin(const float* origin, float out[3])
+{
+    if (origin == nullptr) return false;
+#ifdef _WIN32
+    __try {
+        out[0] = origin[0];
+        out[1] = origin[1];
+        out[2] = origin[2];
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+#else
+    return false;
+#endif
+}
+} // namespace
+
 unsigned int __fastcall Hook_PlaySoundAlias(
     void* asset, void* listener, float param3, float param4, float param5, unsigned int channel,
     float* origin, unsigned int* voiceOut, unsigned int param9, char param10, float param11,
     unsigned int param12, int recursionDepth)
 {
-    long long fireIndex = ++g_playSoundAliasFireCount;
-    long long nowMs = static_cast<long long>(GetTickCount64());
     // Unbounded on purpose -- dev-only diagnostic toggle, not a shipped mod
     // feature meant to run indefinitely on every player's machine (unlike
     // this file's other, genuinely long-lived diagnostics that need the
     // issue #87 rate-limiting discipline). Direct instruction, 2026-09-26.
-    {
-        char nameBuf[64] = "<unreadable>";
-#ifdef _WIN32
-        __try {
-            if (asset != nullptr) {
-                const char* namePtr = *reinterpret_cast<const char* const*>(asset);
-                if (namePtr != nullptr) {
-                    sprintf_s(nameBuf, "%.48s", namePtr);
-                }
-            }
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            sprintf_s(nameBuf, "<fault reading name>");
-        }
-#endif
-        // MW32011NCP, 2026-09-26: added caller-address capture after live
-        // data confirmed the real bug -- a whole ~37-emitter ambient-loop
-        // batch (airconditioner_running_loop, emt_*, fire_*) re-firing
-        // identically, same channels, same tick, back-to-back and then
-        // again nearly every subsequent tick. Depth=0, so this isn't the
-        // chain-blend recursion; something is re-invoking the WHOLE
-        // "(re)start ambient emitters in range" batch every frame instead
-        // of once. Caller address pinpoints which native function that is.
-        uintptr_t callerGhidra = ToGhidraAddressX64(_ReturnAddress());
-        char buf[224];
-        sprintf_s(buf, "[x64-sound-diag] PlaySoundAlias fire #%lld: alias=\"%s\" channel=%u depth=%d tick=%lld caller=0x%llX",
-                   fireIndex, nameBuf, channel, recursionDepth, nowMs,
-                   static_cast<unsigned long long>(callerGhidra));
-        LogFromController(buf);
+    SoundDiagPlay play = {};
+    play.asset = asset;
+    play.entity = channel;
+    play.timeUs = SoundDiagNowUs();
+    play.originValid = SoundDiagReadOrigin(origin, play.origin);
+    // Skip this hook's own frame so frames[0] is the real caller
+    // (0x14027402B for the thin wrapper FUN_140273fd0).
+    void* rawFrames[kSoundDiagStackDepth] = {};
+    ULONG hash = 0;
+    play.frameCount = RtlCaptureStackBackTrace(1, kSoundDiagStackDepth, rawFrames, &hash);
+    play.stackHash = static_cast<unsigned int>(hash);
+    for (unsigned short i = 0; i < play.frameCount; ++i) {
+        play.frames[i] = reinterpret_cast<uintptr_t>(rawFrames[i]);
     }
-    return g_realPlaySoundAlias(asset, listener, param3, param4, param5, channel, origin, voiceOut,
-                                 param9, param10, param11, param12, recursionDepth);
+
+    unsigned int result = g_realPlaySoundAlias(asset, listener, param3, param4, param5, channel, origin, voiceOut,
+                                               param9, param10, param11, param12, recursionDepth);
+    play.handle = result;
+
+    char nameBuf[64];
+    SoundDiagReadName(asset, nameBuf, sizeof(nameBuf));
+
+    bool newChain = false;
+    bool haveDup = false;
+    SoundDiagPlay earlier = {};
+    AcquireSRWLockExclusive(&g_soundDiagLock);
+    play.fireIndex = ++g_playSoundAliasFireCount;
+    if (recursionDepth == 0 && result != 0xFFFFFFFFu) {
+        // Newest first, so the closest earlier match is the one reported.
+        for (int n = 0; n < g_soundDiagRingCount; ++n) {
+            int idx = (g_soundDiagRingNext - 1 - n + kSoundDiagRingSize) % kSoundDiagRingSize;
+            const SoundDiagPlay& prev = g_soundDiagRing[idx];
+            if (play.timeUs - prev.timeUs > kSoundDiagDupWindowUs) break;
+            if (prev.asset != play.asset || prev.entity != play.entity) continue;
+            if (prev.originValid != play.originValid) continue;
+            if (play.originValid) {
+                float dx = prev.origin[0] - play.origin[0];
+                float dy = prev.origin[1] - play.origin[1];
+                float dz = prev.origin[2] - play.origin[2];
+                if (dx * dx + dy * dy + dz * dz > kSoundDiagSameOriginDistSq) continue;
+            }
+            if (prev.handle == play.handle) break; // deduplicated refresh, not a second voice
+            earlier = prev;
+            haveDup = true;
+            break;
+        }
+    }
+    if (recursionDepth == 0) {
+        g_soundDiagRing[g_soundDiagRingNext] = play;
+        g_soundDiagRingNext = (g_soundDiagRingNext + 1) % kSoundDiagRingSize;
+        if (g_soundDiagRingCount < kSoundDiagRingSize) ++g_soundDiagRingCount;
+    }
+    bool chainKnown = false;
+    for (int i = 0; i < g_soundDiagSeenChainCount; ++i) {
+        if (g_soundDiagSeenChains[i] == play.stackHash) { chainKnown = true; break; }
+    }
+    if (!chainKnown && g_soundDiagSeenChainCount < kSoundDiagSeenChainsSize) {
+        g_soundDiagSeenChains[g_soundDiagSeenChainCount++] = play.stackHash;
+        newChain = true;
+    }
+    ReleaseSRWLockExclusive(&g_soundDiagLock);
+
+    uintptr_t callerGhidra = play.frameCount > 0
+        ? ToGhidraAddressX64(reinterpret_cast<void*>(play.frames[0])) : 0;
+    // Sized for the worst case (fixed text ~150, name 48, three unbounded
+    // %.1f floats ~48 each, numbers ~80): garbage origin floats can print
+    // dozens of digits, and sprintf_s overflow is fatal (known_issues_x64.md).
+    char buf[512];
+    sprintf_s(buf, "[x64-sound-diag] PlaySoundAlias fire #%lld: alias=\"%s\" entity=%u depth=%d tUs=%lld "
+                   "origin=%s(%.1f,%.1f,%.1f) ret=0x%X tid=%lu caller=0x%llX chain=0x%08X",
+              play.fireIndex, nameBuf, channel, recursionDepth, play.timeUs,
+              play.originValid ? "" : "none", play.origin[0], play.origin[1], play.origin[2],
+              result, GetCurrentThreadId(), static_cast<unsigned long long>(callerGhidra), play.stackHash);
+    LogFromController(buf);
+
+    if (newChain) {
+        char stackBuf[8 * 22 + 8];
+        SoundDiagFormatStack(play, stackBuf, sizeof(stackBuf));
+        char chainBuf[384];
+        sprintf_s(chainBuf, "[x64-sound-diag] new chain 0x%08X (first alias \"%s\"): %s",
+                  play.stackHash, nameBuf, stackBuf);
+        LogFromController(chainBuf);
+    }
+    if (haveDup) {
+        char stackNow[8 * 22 + 8];
+        char stackPrev[8 * 22 + 8];
+        SoundDiagFormatStack(play, stackNow, sizeof(stackNow));
+        SoundDiagFormatStack(earlier, stackPrev, sizeof(stackPrev));
+        char dupBuf[768];
+        sprintf_s(dupBuf, "[x64-sound-diag] DUP alias=\"%s\" entity=%u dtUs=%lld fire #%lld ret=0x%X "
+                          "stack=[%s] | earlier fire #%lld ret=0x%X stack=[%s]",
+                  nameBuf, channel, play.timeUs - earlier.timeUs, play.fireIndex, play.handle, stackNow,
+                  earlier.fireIndex, earlier.handle, stackPrev);
+        LogFromController(dupBuf);
+    }
+    return result;
 }
 
 // Rate-limited on purpose -- this function fires on every Pmove sub-step (potentially
@@ -9398,11 +9583,11 @@ void InstallAnalogInputHooksX64()
                     LogFromController(buf);
                 } else {
                     LogFromController("[x64-sound-diag] PlaySoundAlias diagnostic hook installed and enabled -- "
-                        "log-and-call-through only, zero behavior change. Watch the log for "
-                        "'[x64-sound-diag] PlaySoundAlias fire' during a real combat sequence to check for "
-                        "rapid repeated plays of the same alias at depth=0 (the signature of a real "
-                        "duplicate-playback bug, as opposed to depth>0 which is a normal chained/"
-                        "secondary-alias blend).");
+                        "log-and-call-through only, zero behavior change. Search the log for "
+                        "'[x64-sound-diag] DUP' after a real combat sequence: each one is the same alias, "
+                        "entity and origin starting a second, distinct voice within 150ms at depth 0, with "
+                        "both call stacks. '[x64-sound-diag] new chain' lines give the stack of every "
+                        "distinct call path the first time it plays.");
                 }
             }
         }
