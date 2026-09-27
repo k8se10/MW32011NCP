@@ -286,6 +286,46 @@ fixed two more real bugs.**
 Both fixes build-verified 0 errors/0 warnings (x64); x64 redeployed and
 confirmed via dumpbin. Not yet re-tested live after this fix pass.
 
+**Status update (2026-09-27, later still): third live-test pass -- movement
+was still janky after the dedup fix, live-reported "feels like its emulating
+k+m, its jittery, still stepping and plain janky, not at all like sp."**
+
+5. Real root cause, distinct from bug 3's multi-fire issue: unlike SP,
+   MP's own native tick body ALSO writes `param_2+0x1c`/`+0x1d` itself on
+   EVERY call, from a real mouse-residual quantization path (`floor()`-based,
+   confirmed in this same function's own decompile, first found while
+   researching the angle accumulators). Even with a controller and zero real
+   mouse movement, that native write does not reliably settle at a clean 0
+   the way SP's own native baseline does for controller-only play. The
+   additive design (`cmd[0x1c] = cmd[0x1c] + ourDelta`) was ported verbatim
+   from SP, where it's safe specifically because SP's own baseline is clean
+   -- for MP it meant our controller delta was compounding on top of a
+   fluctuating/quantized native residual on every single call, independent
+   of the multi-fire-per-tick issue already fixed in update 3. This produces
+   coarse, discrete-feeling movement -- literally the "feels like k+m"
+   description, since k+m movement on this engine genuinely is a
+   binary/quantized input, and compounding onto native residual noise made
+   controller movement start to resemble that same coarseness.
+
+   Fixed by DIRECTLY SETTING the byte from the current stick position
+   instead of adding to whatever's already there (`cmd[0x1c] = ClampToSByte(
+   addForward)`, no `curForward` read at all): idempotent by construction --
+   the same stick position always produces the same byte, regardless of
+   native residual or how many times this fires, sidestepping the whole
+   question of native write behavior entirely rather than trying to out-guess
+   it. **Accepted trade-off**: MP controller movement no longer combines
+   with simultaneous keyboard movement (a controller player pressing WASD at
+   the same time was never a real expected use case) -- smooth, correct
+   analog feel matters far more here than that combination. LOOK was left
+   additive/unchanged this pass (not reported as janky, and it's inherently
+   a continuous accumulator by design, not a per-tick absolute value the
+   same "direct set" fix could apply to) -- if look jank is reported later,
+   revisit whether its own native accumulator write has the same
+   non-clean-baseline problem movement did.
+
+Build-verified 0 errors/0 warnings (x64); x64 redeployed and confirmed via
+dumpbin. Not yet re-tested live after this fix pass.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to

@@ -9900,14 +9900,32 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
             RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
             (void)lookX; (void)lookY; // already consumed above, pre-hook
 
+            // REAL BUG FIX (2026-09-27, live-reported: "feels like its emulating k+m, its
+            // jittery, still stepping and plain janky, not at all like sp" -- persisted even
+            // after the per-tick dedup above). Root cause: unlike SP, MP's own native tick
+            // body ALSO writes param_2+0x1c/+0x1d itself every call, from a real mouse-
+            // residual quantization path (floor()-based, confirmed in this function's own
+            // decompile) -- even with a controller and zero real mouse movement, that native
+            // write does not reliably settle at a clean 0 the way SP's does for controller-
+            // only play. The additive design (read whatever's there, add our own delta) was
+            // ported verbatim from SP, where it's safe specifically because SP's own native
+            // baseline is clean; for MP it meant our controller delta was compounding on top
+            // of a fluctuating/quantized native residual every call, independent of the
+            // multi-fire-per-tick issue already fixed -- coarse, discrete-feeling movement,
+            // not smooth analog. Fixed by DIRECTLY SETTING the byte from the current stick
+            // position instead of adding to whatever's already there: idempotent by
+            // construction (same stick position -> same byte, regardless of native residual
+            // or how many times this fires), matching real analog-stick feel instead of
+            // layering on top of native mouse-adjacent noise. Trade-off, accepted: MP
+            // controller movement no longer combines with simultaneous keyboard movement
+            // (a controller player was never expected to also be pressing WASD) -- smooth,
+            // correct controller feel matters far more here than that combination.
             auto* cmd = reinterpret_cast<unsigned char*>(param2);
             if (moveX != 0.0f || moveY != 0.0f) {
-                int8_t curForward = static_cast<int8_t>(cmd[0x1c]);
-                int8_t curRight   = static_cast<int8_t>(cmd[0x1d]);
                 int addForward = static_cast<int>(moveY * 127.0f);
                 int addRight   = static_cast<int>(moveX * 127.0f);
-                cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(curForward + addForward));
-                cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(curRight + addRight));
+                cmd[0x1c] = static_cast<unsigned char>(ClampToSByteX64(addForward));
+                cmd[0x1d] = static_cast<unsigned char>(ClampToSByteX64(addRight));
             }
         }
         if (g_timestampPtrMP) {
