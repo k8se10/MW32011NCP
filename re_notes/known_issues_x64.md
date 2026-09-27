@@ -11429,6 +11429,85 @@ duplicate voice. Full static pass (angr decompiles, x86 call graph):
    (`ReverbConvertI3DL2ToNative`), and per-voice dry to the master plus a wet
    send to the reverb submix (Miles `AIL_set_sample_reverb_levels` semantics).
 
+### 2026-09-27 (after compaction) -- the XAudio2 layer reuses channels correctly; the duplicate must be issued upstream. Dup-pair diagnostic shipped
+
+**Status: Investigating (urgent). Needs one live session with the new diagnostic.**
+
+**1. The backend does not leak voices** 🟢
+- Loaded-sound start `FUN_14030edc0` (entry points `FUN_14030be50` /
+  `FUN_14030bf30`) takes two callbacks: a channel picker (`FUN_140270570`,
+  passed in `r9`) and a stop callback (thunk `0x14030c230` → `FUN_14030f150`,
+  passed on the stack). The order is: pick channel → **stop the channel's old
+  voice** → `CreateSourceVoice` (`FUN_14030dea0`) → `SubmitSourceBuffer` →
+  `Start`.
+- `FUN_14030f150` is a complete stop: `GetState` (+0xC8), `Stop(0,0)` (+0xA0),
+  `FlushSourceBuffers` (+0xB0) if buffers are queued, `DestroyVoice` (+0x90),
+  then it clears the slot.
+- The source-voice array `0x1443f6f28[ch]` has exactly two writers:
+  `FUN_14030dea0` (loaded sounds, reached only after the stop callback) and
+  `FUN_14030e050` (streams, channel ≥ 46). So a new voice can't silently
+  replace a live one on the same channel.
+- IXAudio2SourceVoice vtable offsets used (2.7): +0x60 SetVolume, +0x80
+  SetOutputMatrix, +0x90 DestroyVoice, +0x98 Start, +0xA0 Stop, +0xA8
+  SubmitSourceBuffer, +0xB0 FlushSourceBuffers, +0xB8 Discontinuity,
+  +0xC8 GetState, +0xD0 SetFrequencyRatio.
+
+**Consequence:** duplicated voices can only come from the same sound being
+**started twice** on two different channels, i.e. two play requests upstream
+of `FUN_140274100`, or the channel picker choosing a fresh channel instead of
+the one already holding that sound.
+
+**2. The 2026-09-26 "ambient batch every tick" is (mostly) by design** 🟡
+- `FUN_14003f3d0` (per-entity client update, called for every snapshot entity
+  from `FUN_14003f230` and for deferred type-8 entities from `FUN_140068ed0`,
+  once each per frame) **re-issues the entity's loop sound every frame**:
+  `if (es->loopSound) FUN_14004a730(...)` → `FUN_140273fd0` →
+  `FUN_140274100`, followed by `FUN_14026f730(handle, alias, 1, 0)`. The play
+  function's instance lookup (`FUN_14026fc90`) is what keeps that from
+  starting new voices. "Twice in the same tick" is consistent with two frames
+  falling inside one `GetTickCount64` tick. The new diagnostic tells the two
+  cases apart by the returned handle.
+- Entity type 6 (`FUN_140041720` case 6) re-issues a two-alias sound blend
+  every frame the same way, through `FUN_140273960`.
+
+**3. Complete direct-caller map of the play/blend function** 🟢
+- `FUN_140274100` ← thin wrappers `FUN_140273960`, `FUN_140273a20`,
+  `FUN_140273af0`, `FUN_140273bc0` (via `FUN_140273c20`), `FUN_140273e50`,
+  `FUN_140273ec0`, `FUN_140273fd0`, `FUN_140274030`, `FUN_140274090`, plus the
+  sound-module-internal `FUN_140279880`, `FUN_1402799e0` and `FUN_14027a470`.
+- `FUN_140273fd0` ← CG helpers `FUN_14004a620` (event handler
+  `FUN_140042540`, client-command dispatcher `FUN_1400595c0`), `FUN_14004a730`
+  (`FUN_14003f230`, `FUN_14003f3d0`, `FUN_140042540`, `FUN_1400595c0`),
+  `FUN_14004a6b0` (tail-jumped from `0x14004a460`/`0x14004a4c7`), plus UI and
+  one-off sounds (`shellshock_end_abort` in `FUN_14005fb70`/`FUN_14005fe70`/
+  `FUN_14005ff20`, `mp_player_join`/`leave` in `FUN_140086620`/`FUN_1400879e0`).
+- `FUN_140273960` ← `FUN_140041720` (entity type 6 blends), `FUN_14005ff20`,
+  `FUN_1402d71b0`. `FUN_140273e50` ← `FUN_140071eb0` (×2), `FUN_1402d7480`,
+  `FUN_1402d7510`. `FUN_140273a20` ← `FUN_140071eb0`.
+  `FUN_140274030` ← `FUN_14004a580`. `FUN_140274090` ← `FUN_14004a4f0`,
+  `FUN_14004a7b0`.
+
+**4. Dup-pair diagnostic (read-only)** — `Hook_PlaySoundAlias` in
+`proxy_d3d9/src/analog_input_hooks_x64.cpp`, upgraded:
+- Argument meanings corrected: `listener` is the second alias of a blend pair,
+  and `channel` is the entity number (2047 = world).
+- Per fire it logs microsecond QPC time, origin, returned handle, thread id,
+  caller and a stack-chain hash.
+- `[x64-sound-diag] new chain 0x…` logs the 8-frame stack of every distinct
+  call path the first time it plays.
+- `[x64-sound-diag] DUP …` fires when the same alias, entity and origin
+  (within 1 unit) start again at depth 0 within 150 ms **with a different
+  returned handle**. It prints the time gap and both stacks. A matching handle
+  (a deduplicated per-frame loop refresh) is not flagged.
+
+**Next:** one short session with AI gunfire and a red-barrel explosion, then
+`grep "DUP" proxy_d3d9.log`. The DUP stacks name the upstream double-issue
+directly. Diff that path against x86 (`FUN_006b2e00`'s callers,
+`provenance_scripts/cg32.py` + `dec32.py`) and fix it at the source. If no DUP
+fires while the echo is audible, the doubling happens below the play call
+(channel picker `FUN_140270570`, or the restart pair `FUN_140279880` /
+`FUN_1402799e0`), and that becomes the next target.
+
 ### Real, separate lead found, 2026-09-26 -- a native sun/cascade-shadow fast-vs-slow dispatcher, keyed off distinct dvars from the already-fixed per-light shadow loop; a live diagnostic hook shipped to confirm which path sun-ray maps are actually taking
 
 **Status: Investigating.** Direct user observation, from a longer multi-map test: "i think ik wha is making the lag, sun rays [screenshot of Dome, Wave 1, visible light shafts through a broken skylight] only maps with sun rays like this so far have been obsertved with the 4x slowdown." This is a real, independently-derived correlation from the user's own testing, separate from anything this project had already traced.
