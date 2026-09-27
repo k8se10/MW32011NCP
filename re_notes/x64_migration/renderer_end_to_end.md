@@ -40,7 +40,7 @@ MAIN THREAD (frontend)                                   BACKEND THREAD (RB)
 Com_Frame → client frame
   FUN_140078f80  (view setup wrapper)
     FUN_1401d83a0  per-frame render entry  ─┐
-      FUN_1401d2930  R_AddCmd (8-byte slot) │  queues typed RC_* commands into
+      RC emitters (§9.5) + FUN_1401d2930    │  queues typed RC_* commands into
       FUN_1401d7480  per-player view setup  │  the frame's backEndData command
         stage markers 1..6 → worker slots 2/3 list (+0x41A48)
           (cull, dpvs, shadow casters, gen drawsurfs)
@@ -157,8 +157,8 @@ window list, then `Release`s the device (`0x1418886d0`) and `IDirect3D9`
   as its only caller is its own `.pdata` unwind entry. The real caller is this
   direct call.
 - `FUN_1401d83a0` computes per-view rectangles from the resolution globals,
-  queues commands through **`FUN_1401d2930`** (`R_AddCmd`; context
-  `0x141896b98`), and runs **`FUN_1401d7480`** (per-player view setup: shadow
+  queues a `PROJECTION_SET(3D)` through **`FUN_1401d2930`** (command list
+  `0x141896b98`; the per-op emitters are listed in §9.5), and runs **`FUN_1401d7480`** (per-player view setup: shadow
   tier select `FUN_1401d8f70`, fog/DOF/vignette marshalling `FUN_1401d9a10`,
   stage markers 1–6, HUD tick `FUN_140039f40`).
 - Scene determination runs on **worker slots 2/3** (`FUN_1401ea560` →
