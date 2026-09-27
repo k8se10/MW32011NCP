@@ -25,6 +25,7 @@
 #include <cstdio>
 #include "mod_config.h"
 #include "game_exe_detect.h"
+#include "overlay_hud.h" // v0.0.3-x64 -- real hardware-support error modal (ShowOverlayMessageUntilDismissed)
 #include "dxvk_interop_x64.h" // Vulkan SDK types -- must come BEFORE
     // sl_helpers_vk.h below, which uses VkPhysicalDeviceVulkan12Features/etc.
     // without including any Vulkan header itself.
@@ -74,6 +75,12 @@ PFun_slIsFeatureLoaded_t* g_slIsFeatureLoaded = nullptr; // 2026-09-27, real
     // DLSS_NR detection -- resolved best-effort (not part of the FATAL
     // missing-exports check below, since it's diagnostic-only and this
     // SDK version is already confirmed to export it either way).
+using PFun_slIsFeatureSupported_t = sl::Result(sl::Feature, const sl::AdapterInfo&);
+PFun_slIsFeatureSupported_t* g_slIsFeatureSupported = nullptr; // v0.0.3-x64, real
+    // hardware-support check (driver too old, non-RTX adapter, etc.) -- resolved
+    // best-effort like g_slIsFeatureLoaded above; RegisterDxvkVulkanDeviceWithStreamline
+    // falls back to slGetFeatureRequirements' own eErrorFeatureMissing/similar result
+    // if this export is ever absent, so it isn't part of the FATAL check.
 using PFun_slAllocateResources_t = sl::Result(sl::CommandBuffer*, sl::Feature, const sl::ViewportHandle&);
 PFun_slAllocateResources_t* g_slAllocateResources = nullptr; // 2026-09-27, real
     // pre-warm mechanism -- see StreamlineAllocateResourcesX64's own comment
@@ -153,6 +160,8 @@ bool TryLoadStreamlineInterposer()
         GetProcAddress(slModule, "slIsFeatureLoaded")); // best-effort, not FATAL if missing
     g_slAllocateResources = reinterpret_cast<PFun_slAllocateResources_t*>(
         GetProcAddress(slModule, "slAllocateResources")); // best-effort, not FATAL if missing
+    g_slIsFeatureSupported = reinterpret_cast<PFun_slIsFeatureSupported_t*>(
+        GetProcAddress(slModule, "slIsFeatureSupported")); // best-effort, not FATAL if missing
     if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo
         || !g_slGetNewFrameToken || !g_slSetTagForFrame || !g_slSetConstants
         || !g_slEvaluateFeature || !g_slGetFeatureFunction) {
@@ -283,6 +292,47 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
     uint32_t queueFamilyIndex = g_dxvkVkQueueFamilyIndexX64;
     // Non-null instance/device/queue is already guaranteed here -- ResolveAndCacheDxvkVulkanHandlesX64
     // itself returns false (handled above) unless all three resolved to a real, non-null handle.
+
+    // v0.0.3-x64: real hardware-support check, before spending any more work on registration. Without
+    // this, StreamlineEnabled=1 on a non-RTX GPU (or an RTX GPU with an out-of-date driver) used to fail
+    // silently somewhere further down the chain (slGetFeatureRequirements, or later still at evaluate
+    // time) with nothing but a log line the player would never see. slIsFeatureSupported reports the
+    // real reason (no supported adapter, driver/OS too old, HWS disabled, etc.) directly. Best-effort:
+    // if this export is missing (older SDK build), fall through to the existing checks below exactly as
+    // before -- this is an earlier, friendlier error path, not the only one.
+    if (g_slIsFeatureSupported) {
+        sl::AdapterInfo adapterInfo{};
+        adapterInfo.vkPhysicalDevice = vkPhysDev;
+        sl::Result supportResult = g_slIsFeatureSupported(sl::kFeatureDLSS, adapterInfo);
+        if (supportResult != sl::Result::eOk) {
+            const char* reason =
+                (supportResult == sl::Result::eErrorAdapterNotSupported) ? "this GPU is not an NVIDIA RTX GPU (DLSS needs Tensor Cores)" :
+                (supportResult == sl::Result::eErrorNoSupportedAdapterFound) ? "no supported NVIDIA RTX GPU was found" :
+                (supportResult == sl::Result::eErrorDriverOutOfDate) ? "the NVIDIA driver is too old for DLSS" :
+                (supportResult == sl::Result::eErrorOSOutOfDate) ? "Windows is too old for DLSS" :
+                (supportResult == sl::Result::eErrorOSDisabledHWS) ? "Hardware-accelerated GPU scheduling is disabled in Windows" :
+                "the SDK reported it is unsupported on this system";
+            char logBuf[300];
+            sprintf_s(logBuf, "[streamline] slIsFeatureSupported(DLSS) FAILED (result=%d) -- %s. "
+                "slSetVulkanInfo not called this session; StreamlineEnabled stays off for this run.",
+                static_cast<int>(supportResult), reason);
+            LogFromController(logBuf);
+
+            static bool s_dlssUnsupportedModalShownX64 = false; // once per process -- a device reset must not re-show it
+            if (!s_dlssUnsupportedModalShownX64) {
+                s_dlssUnsupportedModalShownX64 = true;
+                char modalBuf[512];
+                sprintf_s(modalBuf,
+                    "\x03" "DLSS is not available\n\n"
+                    "\x01" "\xE2\x9A\xA0 %s (StreamlineEnabled=1 in mw3ncp_config.ini). The rest of "
+                    "Vulkan/DXVK rendering is unaffected -- only DLSS/DLAA itself is disabled for this "
+                    "session.\n\n"
+                    "Enter / Space / Click to continue:", reason);
+                ShowOverlayMessageUntilDismissed(modalBuf, OverlayAnimStyle::Plain);
+            }
+            return false;
+        }
+    }
 
     sl::FeatureRequirements reqs{};
     sl::Result reqResult = g_slGetFeatureRequirements(sl::kFeatureDLSS, reqs);

@@ -567,6 +567,7 @@ void ReadGraphicsApi(const char* path, GraphicsApi& outValue)
     char buf[32];
     GetPrivateProfileStringA("Video", "GraphicsApi", GraphicsApiName(outValue), buf, sizeof(buf), path);
     outValue = ParseGraphicsApi(buf, outValue);
+    NoteIfUnknownOption("Video", "GraphicsApi", buf, GraphicsApiName(outValue), "LegacyD3D9, Vulkan");
 }
 
 void ReadGlyphStyle(const char* path, GlyphStyle& outValue)
@@ -574,6 +575,7 @@ void ReadGlyphStyle(const char* path, GlyphStyle& outValue)
     char buf[32];
     GetPrivateProfileStringA("Bindings", "GlyphStyle", GlyphStyleName(outValue), buf, sizeof(buf), path);
     outValue = ParseGlyphStyle(buf, outValue);
+    NoteIfUnknownOption("Bindings", "GlyphStyle", buf, GlyphStyleName(outValue), "Xbox360, XboxModern, PlayStation");
 }
 
 void ReadButtonLayout(const char* path, ButtonLayout& outValue)
@@ -581,6 +583,8 @@ void ReadButtonLayout(const char* path, ButtonLayout& outValue)
     char buf[32];
     GetPrivateProfileStringA("Bindings", "ButtonLayout", ButtonLayoutName(outValue), buf, sizeof(buf), path);
     outValue = ParseButtonLayout(buf, outValue);
+    NoteIfUnknownOption("Bindings", "ButtonLayout", buf, ButtonLayoutName(outValue),
+                         "Default, Tactical, Lefty, TacticalLefty, Custom");
 }
 
 void ReadStickLayout(const char* path, StickLayout& outValue)
@@ -588,6 +592,7 @@ void ReadStickLayout(const char* path, StickLayout& outValue)
     char buf[32];
     GetPrivateProfileStringA("Bindings", "StickLayout", StickLayoutName(outValue), buf, sizeof(buf), path);
     outValue = ParseStickLayout(buf, outValue);
+    NoteIfUnknownOption("Bindings", "StickLayout", buf, StickLayoutName(outValue), "Default, Southpaw, Legacy, LegacySouthpaw");
 }
 
 // Writes a fresh, fully-commented default INI -- called only when no file exists yet,
@@ -1312,6 +1317,48 @@ ButtonMap ResolveButtonMap(ButtonLayout layout, bool flipTriggers)
     return m;
 }
 
+// v0.0.3-x64: one dismiss-required modal per load, listing every value NoteConfigIssue recorded
+// (LoadModConfig's own clamp/enum/parse checks above). No-op if nothing was corrected this load, so a
+// clean config file never shows anything. Built with strcat_s and an explicit remaining-space check at
+// each append rather than one big sprintf_s, since g_configIssues holds up to kMaxConfigIssues real,
+// unbounded-in-practice strings and this project has hit the "sprintf_s with more content than the
+// buffer" crash class enough times (known_issues_x64.md, 2026-09-05/13/14/16) to avoid it here by
+// construction: a line that would overflow the modal is simply not appended, and the trailing "...and
+// N more" line always accounts for exactly what got left out.
+void ShowConfigIssuesModalIfAny()
+{
+    if (g_configIssueCount == 0) return;
+
+    // Must not exceed g_overlayText's own buffer (overlay_hud.cpp, currently 2048 bytes) -- kept as a
+    // literal here rather than a shared constant since overlay_hud.h doesn't expose one; ShowOverlayMessage-
+    // UntilDismissed itself truncates safely (strncpy_s/_TRUNCATE) if this ever drifts out of sync, so a
+    // mismatch degrades to a truncated modal, never a buffer overrun.
+    char msg[2048];
+    int written = sprintf_s(msg, "\x03" "mw3ncp_config.ini -- %d value(s) corrected on load\n\n",
+                             g_configIssueTotal);
+    int shown = 0;
+    for (int i = 0; i < g_configIssueCount; ++i) {
+        char line[kConfigIssueLineSize + 8];
+        int lineLen = sprintf_s(line, "\x01" "%s\n", g_configIssues[i]);
+        // Leave room for the trailer appended below (worst case ~140 bytes) even on the last line.
+        if (written + lineLen + 200 >= static_cast<int>(sizeof(msg))) break;
+        strcat_s(msg, line);
+        written += lineLen;
+        ++shown;
+    }
+    if (g_configIssueTotal > shown) {
+        char more[96];
+        int moreLen = sprintf_s(more, "\x01" "...and %d more (see proxy_d3d9.log for the full list)\n",
+                                 g_configIssueTotal - shown);
+        if (written + moreLen + 140 < static_cast<int>(sizeof(msg))) {
+            strcat_s(msg, more);
+        }
+    }
+    strcat_s(msg, "\nEach corrected value falls back to the setting shown above -- edit "
+                  "mw3ncp_config.ini to change it.\n\nEnter / Space / Click to continue:");
+    ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);
+}
+
 void LoadModConfig()
 {
     char path[MAX_PATH];
@@ -1371,7 +1418,7 @@ void LoadModConfig()
     // needed (see that function's own comment for why). Only guard against a
     // negative strength, which WOULD still misbehave (ratio^negative blows up as
     // ratio->0).
-    if (g_modConfig.adsSlowdownStrength < 0.0f) g_modConfig.adsSlowdownStrength = 0.0f;
+    ClampFloatSetting("Look", "AdsSlowdownStrength", g_modConfig.adsSlowdownStrength, 0.0f, 3.4e38f);
     // issue #44 (2026-07-31): a same-day round trip. The default first dropped
     // 0.65 -> 0.45 to make pistols/iron sights more slowed, then got reverted back
     // to 0.65 once live testing showed that also made high-zoom scopes "too harsh"
@@ -1386,15 +1433,14 @@ void LoadModConfig()
                                g_modConfig.adsSlowdownBaseline);
     // Same guard as strength above -- a negative baseline would flip the sign of the
     // whole scale factor (baseline * ratio^strength), inverting look direction.
-    if (g_modConfig.adsSlowdownBaseline < 0.0f) g_modConfig.adsSlowdownBaseline = 0.0f;
+    ClampFloatSetting("Look", "AdsSlowdownBaseline", g_modConfig.adsSlowdownBaseline, 0.0f, 3.4e38f);
     // Issue #44's real, decoupled fix (2026-07-31) -- see mod_config.h's own comment.
     // Clamped to [0, 1]: negative would ADD speed at low zoom (nonsensical), and
     // above 1.0 the (1 - strength*ratio^power) term could go negative, which would
     // invert look direction the same class of bug as the old AdsSlowdownStrength
     // linear-blend issue this project already fixed once before (see that comment).
     ReadFloat(path, "Look", "AdsCloseRangeSlowdownStrength", g_modConfig.adsCloseRangeSlowdownStrength);
-    if (g_modConfig.adsCloseRangeSlowdownStrength < 0.0f) g_modConfig.adsCloseRangeSlowdownStrength = 0.0f;
-    if (g_modConfig.adsCloseRangeSlowdownStrength > 1.0f) g_modConfig.adsCloseRangeSlowdownStrength = 1.0f;
+    ClampFloatSetting("Look", "AdsCloseRangeSlowdownStrength", g_modConfig.adsCloseRangeSlowdownStrength, 0.0f, 1.0f);
     ReadBool(path, "Look", "InvertLook", g_modConfig.invertLook);
     ReadUlong(path, "Look", "AccelerationRampMs", g_modConfig.lookAccelerationRampMs);
     ReadUlong(path, "Stance", "ProneHoldThresholdMs", g_modConfig.proneHoldThresholdMs);
@@ -1407,11 +1453,9 @@ void LoadModConfig()
     ReadBool(path, "General", "DisableControllerInput", g_modConfig.disableControllerInputX64);
     ReadBool(path, "Movement", "AutoMantleEnabled", g_modConfig.autoMantleEnabled);
     ReadFloat(path, "Movement", "AutoMantleForwardConeDegrees", g_modConfig.autoMantleForwardConeDegrees);
-    if (g_modConfig.autoMantleForwardConeDegrees < 1.0f) g_modConfig.autoMantleForwardConeDegrees = 1.0f;
-    if (g_modConfig.autoMantleForwardConeDegrees > 180.0f) g_modConfig.autoMantleForwardConeDegrees = 180.0f;
+    ClampFloatSetting("Movement", "AutoMantleForwardConeDegrees", g_modConfig.autoMantleForwardConeDegrees, 1.0f, 180.0f);
     ReadFloat(path, "Movement", "AutoMantleMinStickMagnitude", g_modConfig.autoMantleMinStickMagnitude);
-    if (g_modConfig.autoMantleMinStickMagnitude < 0.0f) g_modConfig.autoMantleMinStickMagnitude = 0.0f;
-    if (g_modConfig.autoMantleMinStickMagnitude > 1.0f) g_modConfig.autoMantleMinStickMagnitude = 1.0f;
+    ClampFloatSetting("Movement", "AutoMantleMinStickMagnitude", g_modConfig.autoMantleMinStickMagnitude, 0.0f, 1.0f);
     // [Sprint] MaxStaminaSeconds/RegenSeconds removed 2026-07-19 (task #9): the real
     // +sprint kbutton migration made this mod's own custom stamina/cooldown timer
     // (and its divide-by-zero guard that used to live here) dead code -- the engine's
@@ -1448,12 +1492,12 @@ void LoadModConfig()
     ReadBool(path, "Plugins", "Enabled", g_modConfig.pluginsEnabled);
     ReadBool(path, "Vibration", "Enabled", g_modConfig.vibrationEnabled);
     ReadFloat(path, "Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity);
-    if (g_modConfig.vibrationFireIntensity < 0.0f) g_modConfig.vibrationFireIntensity = 0.0f;
+    ClampFloatSetting("Vibration", "FireIntensity", g_modConfig.vibrationFireIntensity, 0.0f, 3.4e38f);
     ReadUlong(path, "Vibration", "FireDurationMs", g_modConfig.vibrationFireDurationMs);
     ReadFloat(path, "Vibration", "DamagePerPoint", g_modConfig.vibrationDamagePerPoint);
-    if (g_modConfig.vibrationDamagePerPoint < 0.0f) g_modConfig.vibrationDamagePerPoint = 0.0f;
+    ClampFloatSetting("Vibration", "DamagePerPoint", g_modConfig.vibrationDamagePerPoint, 0.0f, 3.4e38f);
     ReadFloat(path, "Vibration", "DamageMaxIntensity", g_modConfig.vibrationDamageMaxIntensity);
-    if (g_modConfig.vibrationDamageMaxIntensity < 0.0f) g_modConfig.vibrationDamageMaxIntensity = 0.0f;
+    ClampFloatSetting("Vibration", "DamageMaxIntensity", g_modConfig.vibrationDamageMaxIntensity, 0.0f, 3.4e38f);
     ReadUlong(path, "Vibration", "DamageDurationMs", g_modConfig.vibrationDamageDurationMs);
     {
         // Not read via GetPrivateProfileStringA directly into g_modConfig.overlayFontFamily
@@ -1497,7 +1541,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "FullScreenPassthroughTest", g_modConfig.fullScreenPassthroughTest);
     ReadBool(path, "Gyro", "Enabled", g_modConfig.gyroEnabled);
     ReadFloat(path, "Gyro", "Sensitivity", g_modConfig.gyroSensitivity);
-    if (g_modConfig.gyroSensitivity < 0.0f) g_modConfig.gyroSensitivity = 0.0f;
+    ClampFloatSetting("Gyro", "Sensitivity", g_modConfig.gyroSensitivity, 0.0f, 3.4e38f);
     ReadBool(path, "Gyro", "InvertPitch", g_modConfig.gyroInvertPitch);
     ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
     ReadBool(path, "Gyro", "OnlyWhileAds", g_modConfig.gyroOnlyWhileAds);
@@ -1505,7 +1549,8 @@ void LoadModConfig()
     ReadBool(path, "Video", "StreamlineEnabled", g_modConfig.streamlineEnabled);
     {
         int v = GetPrivateProfileIntA("Experimental", "DLSSModeX64", g_modConfig.dlssModeX64, path);
-        if (v < 0 || v > 6) v = 3; // out-of-range -> fall back to eMaxQuality, never an invalid enum value
+        // out-of-range -> fall back to eMaxQuality (3), never an invalid enum value
+        ClampIntSetting("Experimental", "DLSSModeX64", v, 0, 6, 3);
         g_modConfig.dlssModeX64 = v;
     }
     ReadBool(path, "Experimental", "DlssNeuralRenderingEnabled", g_modConfig.dlssNeuralRenderingEnabledX64);
@@ -1516,15 +1561,19 @@ void LoadModConfig()
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
-    { unsigned long dv = static_cast<unsigned long>(g_modConfig.smaaDebugView); ReadUlong(path, "Video", "SmaaDebugView", dv); g_modConfig.smaaDebugView = (dv > 3) ? 0 : static_cast<int>(dv); }
-    if (g_modConfig.fsrSharpenStrength < 0.0f) g_modConfig.fsrSharpenStrength = 0.0f;
-    if (g_modConfig.fsrSharpenStrength > 1.0f) g_modConfig.fsrSharpenStrength = 1.0f;
+    {
+        unsigned long dv = static_cast<unsigned long>(g_modConfig.smaaDebugView);
+        ReadUlong(path, "Video", "SmaaDebugView", dv);
+        int v = static_cast<int>(dv);
+        ClampIntSetting("Video", "SmaaDebugView", v, 0, 3, 0);
+        g_modConfig.smaaDebugView = v;
+    }
+    ClampFloatSetting("Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength, 0.0f, 1.0f);
     ReadBool(path, "Video", "MotionBlurEnabled", g_modConfig.motionBlurEnabled);
     ReadFloat(path, "Video", "MotionBlurStrength", g_modConfig.motionBlurStrength);
-    if (g_modConfig.motionBlurStrength < 0.0f) g_modConfig.motionBlurStrength = 0.0f;
+    ClampFloatSetting("Video", "MotionBlurStrength", g_modConfig.motionBlurStrength, 0.0f, 3.4e38f);
     ReadFloat(path, "Video", "MotionBlurCenterFalloff", g_modConfig.motionBlurCenterFalloff);
-    if (g_modConfig.motionBlurCenterFalloff < 0.0f) g_modConfig.motionBlurCenterFalloff = 0.0f;
-    if (g_modConfig.motionBlurCenterFalloff > 1.0f) g_modConfig.motionBlurCenterFalloff = 1.0f;
+    ClampFloatSetting("Video", "MotionBlurCenterFalloff", g_modConfig.motionBlurCenterFalloff, 0.0f, 1.0f);
     ReadBool(path, "Video", "ForceAnisotropicFiltering", g_modConfig.forceAnisotropicFiltering);
     ReadBool(path, "Video", "ForceHighQualityShadows", g_modConfig.forceHighQualityShadows);
     ReadBool(path, "Video", "ForceHighQualityLighting", g_modConfig.forceHighQualityLighting);
@@ -1550,19 +1599,18 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "SkipRedundantScenePostfxGuaranteedCalls",
              g_modConfig.skipRedundantScenePostfxGuaranteedCallsX64);
     ReadFloat(path, "Experimental", "ReverbWetScale", g_modConfig.reverbWetScaleX64);
-    if (g_modConfig.reverbWetScaleX64 < 0.0f) g_modConfig.reverbWetScaleX64 = 0.0f;
-    if (g_modConfig.reverbWetScaleX64 > 1.0f) g_modConfig.reverbWetScaleX64 = 1.0f;
+    ClampFloatSetting("Experimental", "ReverbWetScale", g_modConfig.reverbWetScaleX64, 0.0f, 1.0f);
     ReadBool(path, "Experimental", "OcclusionLodScaleFix", g_modConfig.occlusionLodScaleFixX64);
     // Graduated 2026-09-26 (LIVE-CONFIRMED, no legitimate visual downside
     // -- see mod_config.h's own comment) from [Experimental] to [Video].
     {
         int v = GetPrivateProfileIntA("Video", "PauseBlurStepCap", g_modConfig.pauseBlurStepCapX64, path);
-        if (v < 0) v = 0;
+        ClampIntSetting("Video", "PauseBlurStepCap", v, 0, INT_MAX, 0);
         g_modConfig.pauseBlurStepCapX64 = v;
     }
     {
         int v = GetPrivateProfileIntA("Experimental", "LiveBlurStepCap", g_modConfig.liveBlurStepCapX64, path);
-        if (v < 0) v = 0;
+        ClampIntSetting("Experimental", "LiveBlurStepCap", v, 0, INT_MAX, 0);
         g_modConfig.liveBlurStepCapX64 = v;
     }
 
@@ -1663,6 +1711,8 @@ void LoadModConfig()
             : "[config] upgraded mw3ncp_config.ini's schema marker (no legacy values "
               "needed carrying over)");
     }
+
+    ShowConfigIssuesModalIfAny();
 }
 
 // ---- Config hot-reload QoL feature (2026-07-31, user request) ---------------------
