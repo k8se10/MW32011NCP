@@ -829,19 +829,34 @@ constexpr int kVariantCount = 4;
 // Replaces the old high-render-scale warning modal (its x86 wording was obsolete): shown ONCE per mod version, then
 // the version is recorded in a tiny state file beside the game exe so it never reappears until the next release.
 // kWelcomeFeatureList is LIVE CONTENT -- update it whenever the feature set changes (CLAUDE.md / AGENTS.md rule).
+//
+// Space budget: the modal canvas is 640x540 (kWarningTextureWidth/Height, overlay_hud.cpp) at a 22px line height with
+// no scrolling, so the whole message (heading + this list + the notes below it) must stay within ~22 lines. Measured
+// against the real font (assets/fonts/IsothermSans-UI.ttf) for v0.0.3-x64: bottom of the last line at y=508 of 540,
+// widest list line ~440px of the 558px wrap width (so no line wraps). Re-measure after any edit that adds a line.
 constexpr const char* kWelcomeFeatureList =
-    "\x02" "\xE2\x9C\x94 Native controller support and menu navigation\n"
-    "\x02" "\xE2\x9C\x94 Controller button prompts and vibration\n"
-    "\x02" "\xE2\x9C\x94 Four netcode security fixes\n"
+    "\x02" "\xE2\x9C\x94 NEW: Vulkan renderer with optional NVIDIA DLSS/DLAA\n"
+    "\x02" "\xE2\x9C\x94 NEW: Major FPS fixes, up to ~3x at high render scale\n"
+    "\x02" "\xE2\x9C\x94 NEW: Controller menu navigation in Multiplayer\n"
+    "\x02" "\xE2\x9C\x94 NEW: \"Everything sounds like a room\" reverb fixed\n"
+    "\x02" "\xE2\x9C\x94 Native controller support, prompts and vibration\n"
+    "\x02" "\xE2\x9C\x94 Four netcode security fixes (every mode, MP included)\n"
     "\x02" "\xE2\x9C\x94 Frame pacing and faster loading\n"
-    "\x02" "\xE2\x9C\x94 Render scale (now including MP), FSR, motion blur\n"
+    "\x02" "\xE2\x9C\x94 Render scale, FSR and motion blur\n"
     "\x02" "\xE2\x9C\x94 Plugin API for sub-mods";
-    // 2026-09-23: "anisotropic" REMOVED from this list -- known_issues_x64.md issue #6
-    // found ForceAnisotropicFiltering/ForceHighQualityShadows/ForceHighQualityLighting
-    // are silent no-ops on x64 (the underlying native dvar-write function has no x64
-    // equivalent yet) -- this list had been claiming a broken feature as working since
-    // the port. "motion blur" stays a real claim -- confirmed working (2026-09-12/13)
-    // and now also fixed for keyboard/mouse this same release.
+    // v0.0.3-x64 claims, each backed by a live confirmation in PATCHNOTES.md:
+    //  - Vulkan: GraphicsApi defaults to Vulkan on iw5sp.exe (SP only). DLSS/DLAA: opt-in
+    //    ([Video] StreamlineEnabled, default off), SP + Vulkan only, live-confirmed working
+    //    end to end including above 100% render scale and the ROUND 24 ghosting fix.
+    //  - "~3x": the blur-step caps ("the 67 bug") -- 23.3 -> 76.1fps average at 250% on Dome,
+    //    both caps on by default (PauseBlurStepCap=2, LiveBlurStepCap=3).
+    //  - MP menu navigation: InstallMenuNavigationHooksX64 runs under iw5mp.exe. In-game MP
+    //    controller movement/look is NOT supported yet -- the early-release note says so.
+    //  - Reverb: ReverbWetScale defaults to 0.5 (graduated 2026-09-26, live-confirmed).
+    // Deliberately NOT claimed yet: ForceAnisotropicFiltering/ForceHighQualityShadows/
+    // ForceHighQualityLighting. The x64 dvar write path that makes them work landed this
+    // release (dvar_write_x64.cpp, known_issues_x64.md issue #6) but is build-verified only;
+    // add them back here once the [x64-dvarwrite] read-back lines are confirmed live.
 
 bool ShowWelcomeModalIfNewVersion()
 {
@@ -858,10 +873,9 @@ bool ShowWelcomeModalIfNewVersion()
     sprintf_s(msg,
               "\x03" "Thanks for downloading MW32011NCP (Native Community Patches) v%s.\n\n"
               "\x03" "This version includes:\n%s\n\n"
-              "\x01" "\xE2\x9A\xA0 EARLY RELEASE: expect hidden bugs and unfinished or unported features. Survival is the only"
-              " recommended mode for now (controller support in Campaign and Multiplayer is incomplete or unsupported)." 
-              "\n\n"
-              "\x02" "\xE2\x9C\x94 The netcode security fixes protect every mode, Multiplayer included.\n\n"
+              "\x01" "\xE2\x9A\xA0 EARLY RELEASE: expect hidden bugs and unfinished or unported features. Survival is the"
+              " recommended mode. Campaign controller support is incomplete; in Multiplayer it covers menu navigation"
+              " only. Vulkan and DLSS are Campaign/Survival only.\n\n"
               "Settings live in mw3ncp_config.ini.\n\nEnter / Space / Click to continue:",
               kModVersionString, kWelcomeFeatureList);
     ShowOverlayMessageUntilDismissed(msg, OverlayAnimStyle::Plain);

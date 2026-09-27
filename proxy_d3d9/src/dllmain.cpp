@@ -922,8 +922,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // SP-only-resolved global, unlike motion blur/FSR (whose required in-level
             // safety-gate signature has ZERO matches under iw5mp.exe -- not safe to
             // enable yet, see known_issues_x64.md issue #4) or the forced-quality dvar
-            // toggles (currently silent no-ops on x64 entirely, SP included -- a
-            // separate, deeper bug, known_issues_x64.md issue #6). See
+            // toggles (the x64 dvar write path they need, dvar_write_x64.cpp, is SP-only
+            // until an MP main-thread drain point is traced -- known_issues_x64.md
+            // issue #6). See
             // InstallRenderScaleHookX64()'s own header comment (analog_input_hooks_x64.cpp)
             // for the full scoping rationale.
             InstallRenderScaleHookX64();
@@ -975,17 +976,31 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             // what IS active, and the same "Enter / Space / Click to
             // continue:" close every dismiss-required modal in this project
             // now ends with, instead of one flat, uncoloured line.
+            //
+            // 2026-09-27 (v0.0.3-x64 release pass) -- x64 wording updated to what MP
+            // really has now: controller MENU navigation (InstallMenuNavigationHooksX64,
+            // above) works, in-game controller movement/look/buttons still do not
+            // (no MP gameplay input hooks yet, mp_port_plan.md), and the MP performance
+            // fixes installed above (blur-step caps, render-view skips, console-font
+            // skip, wait coalescing, .iwd read cache, memory-detection fix) run here
+            // alongside InternalRenderScalePercent. The Win32 build installs none of the
+            // MP hooks above, so it keeps the original wording.
             ShowOverlayMessageUntilDismissed(
                 "\x03" "Multiplayer\n\n"
+#if defined(_M_X64) || defined(_WIN64)
+                "\x01" "\xE2\x9A\xA0 Controller support here covers menu navigation only -- "
+                "in-game movement, aiming and actions still need keyboard/mouse.\n\n"
+#else
                 "\x01" "\xE2\x9A\xA0 No gameplay functionality yet -- controller input and "
                 "menu navigation are not supported in Multiplayer. Use keyboard/mouse.\n\n"
+#endif
                 "\x02" "\xE2\x9C\x94 The netcode security fixes are active and protect this "
                 "mode too.\n\n"
 #if defined(_M_X64) || defined(_WIN64)
-                "\x02" "\xE2\x9C\x94 InternalRenderScalePercent (the visual-enhancement suite's "
-                "render-resolution override) is also active here.\n\n"
+                "\x02" "\xE2\x9C\x94 Render scale (InternalRenderScalePercent) and the "
+                "performance fixes are also active here.\n\n"
 #endif
-                // FUTURE (once MP has real, partial gameplay support -- swap the warning
+                // FUTURE (once MP has real in-game controller support -- swap the warning
                 // paragraph above for this one, nothing else needs to change):
                 // "\x01" "\xE2\x9A\xA0 Multiplayer is in pre-alpha and will contain bugs and "
                 // "issues. It is not on par with Campaign/Survival.\n\n"

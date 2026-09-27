@@ -22,7 +22,7 @@ native call exists, never a config tweak):
 | Component | What it does | Release-gating? | Status |
 |---|---|---|---|
 | **Controller support** | Real analog movement/look/every button for Campaign & Survival, matching console behavior | 🔴 Yes — Survival gates the release; Campaign ships best-effort and has never gated it (same as on `-x86`) | Survival: Gameplay Complete (2026-09-22) — see [What works](#what-works-right-now) |
-| **Visual/performance enhancements** | Internal render scale (SP and MP), FSR 1.0 sharpening, motion blur (any input device), stutter/threading fixes, frame pacing/wait coalescing/IWD read cache | 🔴 Yes — the gate | Render scale, motion blur, and the three ported perf techniques (frame pacing/wait coalescing/IWD cache) live-confirmed; FSR build-verified only; SMAA parked, FXAA build-verified — see [What works](#what-works-right-now). **The forced anisotropic filtering/shadow/lighting quality toggles are currently non-functional on x64** (a silent no-op, not a crash) — see [Known gaps](#known-gaps) |
+| **Visual/performance enhancements** | Internal render scale (SP and MP), FSR 1.0 sharpening, motion blur (any input device), stutter/threading fixes, frame pacing/wait coalescing/IWD read cache | 🔴 Yes — the gate | Render scale, motion blur, and the three ported perf techniques (frame pacing/wait coalescing/IWD cache) live-confirmed; FSR build-verified only; SMAA parked, FXAA build-verified — see [What works](#what-works-right-now). **The forced anisotropic filtering/shadow/lighting quality toggles now have a real x64 write path** (v0.0.3-x64, Campaign/Survival; build-verified, not yet live-confirmed) — see [Known gaps](#known-gaps) |
 | **Netcode security patches** | Finds and fixes real, exploitable vulnerabilities in the base game's own netcode | ⚪ No — not held to the SP controller-support gate below (same repo, absorbed 2026-09-12 — not a separate project) | **Complete, end to end — all 4 tracked vulnerabilities resolved** (3 fixed, 1 confirmed already safe), closing genuine RCE-class holes present since before this project existed, with no known official Activision fix. 2 of 3 active fixes independently confirmed firing against real MP traffic; the third (SP/Spec-Ops P2P) is build-verified and resolves correctly live, just not yet observed against a real P2P session — see [Security](#security-netcode-vulnerability-patches) |
 | **Multiplayer (`iw5mp.exe`)** | Same controller/security methodology, ported to the separate MP binary | ⚪ No — allowed to lag SP by 2-4 releases until beta | Active reverse-engineering, opt-in-only when it ships — see [Multiplayer](#multiplayer) |
 
@@ -96,14 +96,19 @@ and verifies its own fix, per standard responsible-disclosure practice.
 
 ## Status
 
-> **`v0.0.2-x64` is out now.** Survival is the recommended way to
-> use the mod (Gameplay Complete — every core control, including Predator Missile guidance, is live-confirmed);
-> Campaign ships best-effort, and Multiplayer has no controller/menu-navigation support yet — but its first real
-> visual-enhancement feature (internal render scale) now works there. The netcode security fixes protect every mode,
-> Multiplayer included. Still early software — expect hidden bugs and unfinished or unported features. Known gaps
-> are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+> **`v0.0.3-x64` is out now** — the biggest release in the project's history: native Vulkan rendering by default in
+> Campaign/Survival, opt-in NVIDIA DLSS/DLAA for RTX GPUs, major performance fixes (up to ~3x FPS at high render
+> scale), the "everything sounds like it's in a room" reverb fix, and controller menu navigation in Multiplayer.
+> Survival is the recommended way to use the mod (Gameplay Complete — every core control, including Predator Missile
+> guidance, is live-confirmed); Campaign ships best-effort, and Multiplayer has controller menu navigation but no
+> in-game controller movement/aiming yet (render scale and the performance fixes also run there). The netcode security
+> fixes protect every mode, Multiplayer included. Still early software — expect hidden bugs and unfinished or unported
+> features. Known gaps are listed below and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
+>
+> **Planned development break: 2026-09-27 to 2026-10-04.** `v0.0.3-x64` is the LTS candidate for the `0.0.x` line
+> ([`LTS_POLICY.md`](LTS_POLICY.md)), and this week lets it settle under real play with nothing new landing on top.
 
-**Alpha, `v0.0.2-x64` line.** On 2026-09-03 MW3 received its first real
+**Alpha, `v0.0.3-x64` line.** On 2026-09-03 MW3 received its first real
 binary update in the game's history, recompiling both `iw5sp.exe`/`iw5mp.exe`
 from 32-bit to 64-bit — a hard architectural break that invalidated every
 hook this project had. The old 32-bit (`-x86`) line is fully discontinued;
@@ -158,7 +163,7 @@ ships as-is, verified as it's touched.
 | Feature | `LegacyD3D9` | `Vulkan` | Note |
 |---|---|---|---|
 | `StreamlineEnabled` / NVIDIA DLSS | ❌ Not supported | ✅ | Genuinely Vulkan-only by design — NVIDIA's Streamline SDK has no D3D9 support at all (confirmed directly from NVIDIA's own SDK), needs DXVK's own Vulkan-interop interface underneath it |
-| `ForceAnisotropicFiltering` / `ForceHighQualityShadows` / `ForceHighQualityLighting` | ❌ Silent no-op | ❌ Silent no-op | **Not a backend difference** — these three are currently non-functional on x64 entirely, on either backend (see [known_issues_x64.md issue #6](re_notes/known_issues_x64.md)); the real x64 dvar-setter these rely on isn't wired up yet |
+| `ForceAnisotropicFiltering` / `ForceHighQualityShadows` / `ForceHighQualityLighting` | ⚠ Fixed in code, live test pending | ⚠ Fixed in code, live test pending | **Not a backend difference** — v0.0.3-x64 added the real x64 dvar write path these rely on (`dvar_write_x64.cpp`, [known_issues_x64.md issue #6](re_notes/known_issues_x64.md)); Campaign/Survival only, build-verified, and every write logs an `[x64-dvarwrite]` read-back line for confirmation |
 | `SkipRedundantShadowActivation` (default on, 2026-09-26) | ⚠ Expected to work, not independently confirmed | ✅ Live-confirmed | A native engine-level fix (skips a redundant per-light render-view reactivation), independent of which D3D9 implementation is underneath it in principle — but every live test so far (30→40fps intensive mission, 17→27fps pause menu, 28-30→41fps Survival) was run under `Vulkan`; `LegacyD3D9` hasn't been separately tested yet |
 | `ProjectionJitterEnabled` | ⚠ Real no-op | ⚠ Real no-op (groundwork only) | Pure DLSS/temporal-accumulation groundwork — writes real jitter into the projection matrix under either backend, but nothing currently consumes it (no TAA/DLSS resolve pass exists yet), so it's a harmless, purposeless shimmer either way until that lands |
 
@@ -393,8 +398,14 @@ no-ops on x64, added 2026-09-04 to stop a real x86-only crash risk, never
 replaced with a working x64 path). Nothing in the UI indicates this. Only
 the Controller tab and the Custom Binds tab (both backed by this mod's own
 config, not real game settings) actually work. See
-`re_notes/x64_feature_parity_audit.md` row #64 for the full trace — closing
-this needs real x64 reverse-engineering work, not attempted yet.
+`re_notes/x64_feature_parity_audit.md` row #64 for the full trace.
+
+**Update, v0.0.3-x64**: the dvar half is closed in code. Dvar reads now
+return real values, and writes go through the new x64 dvar write path
+(`dvar_write_x64.cpp`; Campaign/Survival only, build-verified, not yet
+live-confirmed). Keybind reads/writes and localized-string lookups are
+still x86-only, so the keybind-backed settings remain stubs until those
+are ported too.
 
 **Lower priority than it first looked**: this whole screen never actually
 finished maturing on `-x86` either (confirmed 2026-09-14 against
@@ -593,7 +604,7 @@ statement, kept current in one place: [`LTS_POLICY.md`](LTS_POLICY.md#support-sc
    to the DLL. See the [wiki Configuration page](../../wiki/Configuration)
    for every available key.
 
-Download the latest `v0.0.2-x64` release from this repo's
+Download the latest `v0.0.3-x64` release from this repo's
 [Releases page](../../releases/latest) or [Nexus Mods](https://www.nexusmods.com/callofdutymodernwarfare3/mods/29)
 — both ship the same zip (`d3d9.dll` + `LICENSE` + `PATCHNOTES.md` + a short
 `README.txt`). Building from source requires Windows, MSVC (Visual Studio
