@@ -552,7 +552,15 @@ void PrewarmDlssOptionsX64(void* device)
     g_lastOptionsMode = mode;
     g_optionsEverSucceeded = g_optionsEverSucceeded || ok;
 
-    char buf[200];
+    // REAL BUG, caught live via crash dump analysis, 2026-09-27: this literal's real
+    // worst case (uint32_t/int printed at their maximum negative/digit-count width) is
+    // 238 bytes -- buf[200] was too small, and this UCRT fails fast (0xc0000409/
+    // FAST_FAIL_INVALID_ARG) rather than truncating, crashing BOTH iw5sp.exe/iw5mp.exe
+    // on every launch since this call runs unconditionally from Hook_CreateDevice, before
+    // anything else in the mod gets a chance to run. The exact same recurring bug class
+    // this project has hit and fixed many times before (known_issues_x64.md, 2026-09-05/
+    // 13/14/16/26) -- widened generously (400, not just "big enough for today").
+    char buf[400];
     sprintf_s(buf, "[x64-streamline-evaluate] Pre-warmed slDLSSSetOptions at device-registration time "
         "(display=%ux%u mode=%d, ok=%d) -- real DLSS resource allocation now happens at an idle moment, "
         "not on the first real gameplay frame.", displayWidth, displayHeight, mode, ok ? 1 : 0);
@@ -677,7 +685,9 @@ void RunDlssEvaluateAndCompositeX64(void* device)
     }
 
     if (heartbeat) {
-        char buf[150];
+        char buf[200]; // widened from 150 during this session's own sprintf_s sweep --
+            // real worst case (count at INT64_MIN) is 148 bytes, a 1-byte margin at 150
+            // was too tight per this project's own standing lesson.
         sprintf_s(buf, "[x64-streamline-composite] StretchRect succeeded (count=%lld) -- DLSS's "
             "enhanced output composited before this frame's HUD/UI draws.", s_compositeCount);
         LogFromController(buf);
