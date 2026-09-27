@@ -156,6 +156,12 @@ the size-only "last match" fed DLSS a bloom/blur intermediate. The input is
 now selected by engine render-target ID via the existing `R_SetRenderTarget`
 hook. Needs a Windows build and one test at 200%.
 
+**Update (ROUND 23):** live test showed the scene target (id 2) is 4x MSAA,
+and the engine's resolved copies (ids 3/4) are StretchRect destinations that
+are never bound, so DLSS had no input. The proxy now resolves the MSAA scene
+into its own single-sampled texture before evaluate, and records only
+single-sampled depth. Needs a Windows build and a test at 200%.
+
 ### Decisions needed from the user (all open, with recommendations)
 
 1. **Aim slowdown near targets in MP** (`adsCloseRangeSlowdownStrength`

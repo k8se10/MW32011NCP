@@ -125,6 +125,14 @@ typedef HRESULT(WINAPI* ColorFillFn)(void* This, void* pSurface, const RECT* pRe
 // path below -- see TagColorResourceForFrame's own header comment for the
 // real "huge fps cost" bug this closes.
 constexpr int kSurfaceGetDescVtableIndexX64 = 12;
+
+// IDirect3DDevice9::StretchRect (slot 34) -- same standard vtable ordering as the
+// constants above (streamline_evaluate_x64.cpp's own composite uses the same slot).
+// 2026-09-27 (ROUND 23): used to resolve the engine's multisampled scene target.
+constexpr int kStretchRectVtableIndexRes = 34;
+constexpr DWORD kD3DTEXF_NONE = 0;
+typedef HRESULT(WINAPI* StretchRectFnRes)(void* This, void* pSourceSurface, const RECT* pSourceRect,
+    void* pDestSurface, const RECT* pDestRect, DWORD Filter);
 struct SurfaceDescX64 { DWORD Format, Type, Usage, Pool, MultiSampleType, MultiSampleQuality, Width, Height; };
 typedef HRESULT(WINAPI* SurfaceGetDescFnX64)(void* This, SurfaceDescX64* pDesc);
 
@@ -213,6 +221,20 @@ VkImageView g_cachedDepthView = VK_NULL_HANDLE;
 // only reads the image's handle/create-info, no flush, no CS-thread sync.
 void* g_frameSceneDepthSurfaceX64 = nullptr;
 void* g_frameSceneColorSurfaceX64 = nullptr;
+// 2026-09-27 (ROUND 23): the engine's scene target (R_RENDERTARGET_SCENE, id 2)
+// is 4x MSAA in real configs (live log: engineRtId=2 samples=4), and the engine
+// resolves it with StretchRect into RESOLVED_SCENE/RESOLVED_POST_SUN -- which are
+// never BOUND as render targets, so the SetRenderTarget hook never sees a
+// single-sampled scene colour at all. When the last accepted scene-colour bind
+// of the frame is multisampled it is recorded here instead (raw, non-owning,
+// same per-frame lifetime rules as g_frameSceneColorSurfaceX64), and
+// ResolveMsaaSceneColorForDlssX64 resolves it into the proxy-owned
+// single-sampled texture below right before evaluate.
+void* g_frameSceneColorMsaaSurfaceX64 = nullptr;
+void* g_msaaResolveTexture = nullptr; // IDirect3DTexture9*, owned
+void* g_msaaResolveSurface = nullptr; // IDirect3DSurface9*, level 0 of the above, owned
+uint32_t g_msaaResolveWidth = 0, g_msaaResolveHeight = 0;
+DWORD g_msaaResolveFormat = 0;
 VkImage g_cachedColorImage = VK_NULL_HANDLE;
 VkImageView g_cachedColorView = VK_NULL_HANDLE;
 
@@ -401,6 +423,19 @@ void TagDepthResourceForFrame(void* depthSurface)
         return;
     }
 
+    // 2026-09-27 (ROUND 23): DLSS needs single-sampled depth. The engine binds
+    // a 4x-MSAA depth-stencil with its multisampled scene target and a shared
+    // 1x depth-stencil (created at the same requested scene size,
+    // FUN_1401d44f0) with its single-sampled targets; keep the latest 1x one.
+    if (info.samples != VK_SAMPLE_COUNT_1_BIT) {
+        if (heartbeat) {
+            char buf[160];
+            sprintf_s(buf, "[x64-streamline-depth] multisampled depth (samples=%d) not recorded as DLSS "
+                "depth -- keeping the frame's single-sampled depth.", static_cast<int>(info.samples));
+            LogFromController(buf);
+        }
+        return;
+    }
     g_frameSceneDepthSurfaceX64 = depthSurface;
 
     if (heartbeat) {
@@ -584,18 +619,26 @@ void TagColorResourceForFrame(void* renderTarget)
 
     if (!resolutionMatches) return; // a real, different render target this frame -- not the scene color
     if (info.samples != VK_SAMPLE_COUNT_1_BIT) {
-        // 2026-09-27 (ROUND 22): DLSS cannot consume a multisampled image;
-        // the engine's MSAA $scene is resolved elsewhere. Never tag it.
+        // 2026-09-27 (ROUND 23): DLSS cannot consume a multisampled image, and
+        // the engine's own resolved copies are never bound as render targets
+        // (see g_frameSceneColorMsaaSurfaceX64). Record it as this frame's
+        // scene colour SOURCE; ResolveMsaaSceneColorForDlssX64 resolves it into
+        // a proxy-owned single-sampled texture right before evaluate, and that
+        // texture is what gets tagged.
+        g_frameSceneColorMsaaSurfaceX64 = renderTarget;
+        g_frameSceneColorSurfaceX64 = nullptr;
         if (heartbeat) {
-            char buf[180];
+            char buf[256];
             sprintf_s(buf, "[x64-streamline-color] engine target id %d is multisampled (samples=%d) -- "
-                "not a valid DLSS input, skipped.", engineRtId, static_cast<int>(info.samples));
+                "recorded as the scene-colour source; it will be resolved before DLSS evaluates.",
+                engineRtId, static_cast<int>(info.samples));
             LogFromController(buf);
         }
         return;
     }
 
     g_frameSceneColorSurfaceX64 = renderTarget;
+    g_frameSceneColorMsaaSurfaceX64 = nullptr; // a later single-sampled scene bind supersedes it
 
     if (!ResolveVulkanFunctionsIfNeeded()) return;
 
@@ -1186,8 +1229,100 @@ void ClearStreamlineFrameSurfacesX64()
 {
     g_frameSceneDepthSurfaceX64 = nullptr;
     g_frameSceneColorSurfaceX64 = nullptr;
+    g_frameSceneColorMsaaSurfaceX64 = nullptr;
     g_taggedInputColorX64 = DlssTaggedImageX64{};
     g_taggedOutputColorX64 = DlssTaggedImageX64{};
+}
+
+
+// 2026-09-27 (ROUND 23): if this frame's scene colour was multisampled (see
+// g_frameSceneColorMsaaSurfaceX64), resolve it into a proxy-owned single-
+// sampled render-target texture of the same size and format with the standard
+// D3D9 MSAA resolve (StretchRect, same size, D3DTEXF_NONE -- DXVK turns this
+// into a real vkCmdResolveImage), and make that texture this frame's DLSS
+// scene-colour input. Must run on the render thread, BEFORE
+// EvaluateStreamlineDlssX64 (whose post-flush re-tag then resolves and tags
+// the resolved texture's VkImage). No-op when the scene colour was already
+// single-sampled. Returns false only if a resolve was needed and failed
+// (logged, rate-limited) -- the evaluate then skips this frame.
+bool ResolveMsaaSceneColorForDlssX64(void* device)
+{
+    if (!g_frameSceneColorMsaaSurfaceX64) return true; // nothing to resolve
+    if (!device) return false;
+
+    static long long s_failCount = 0;
+    auto logFail = [](const char* what, HRESULT hr) {
+        ++s_failCount;
+        if (s_failCount <= 10 || (s_failCount % 1000) == 0) {
+            char buf[220];
+            sprintf_s(buf, "[x64-streamline-resolve] %s FAILED (hr=0x%08lX, count=%lld) -- DLSS skipped "
+                "this frame.", what, static_cast<unsigned long>(hr), s_failCount);
+            LogFromController(buf);
+        }
+    };
+
+    void* source = g_frameSceneColorMsaaSurfaceX64;
+    void** srcVtbl = *reinterpret_cast<void***>(source);
+    auto getDesc = reinterpret_cast<SurfaceGetDescFnX64>(srcVtbl[kSurfaceGetDescVtableIndexX64]);
+    SurfaceDescX64 desc{};
+    HRESULT hr = getDesc(source, &desc);
+    if (FAILED(hr)) { logFail("GetDesc on the multisampled scene target", hr); return false; }
+
+    if (!g_msaaResolveTexture || g_msaaResolveWidth != desc.Width || g_msaaResolveHeight != desc.Height ||
+        g_msaaResolveFormat != desc.Format) {
+        if (g_msaaResolveSurface) {
+            reinterpret_cast<IUnknown*>(g_msaaResolveSurface)->Release();
+            g_msaaResolveSurface = nullptr;
+        }
+        if (g_msaaResolveTexture) {
+            reinterpret_cast<IUnknown*>(g_msaaResolveTexture)->Release();
+            g_msaaResolveTexture = nullptr;
+        }
+        void** devVtbl = *reinterpret_cast<void***>(device);
+        auto createTexture = reinterpret_cast<CreateTextureFn>(devVtbl[kCreateTextureVtableIndex]);
+        hr = createTexture(device, desc.Width, desc.Height, 1, kD3DUSAGE_RENDERTARGET, desc.Format,
+            kD3DPOOL_DEFAULT, &g_msaaResolveTexture, nullptr);
+        if (FAILED(hr) || !g_msaaResolveTexture) {
+            g_msaaResolveTexture = nullptr;
+            logFail("CreateTexture for the single-sampled resolve target", hr);
+            return false;
+        }
+        void** texVtbl = *reinterpret_cast<void***>(g_msaaResolveTexture);
+        auto getSurfaceLevel = reinterpret_cast<GetSurfaceLevelFn>(texVtbl[kGetSurfaceLevelVtableIndex]);
+        hr = getSurfaceLevel(g_msaaResolveTexture, 0, &g_msaaResolveSurface);
+        if (FAILED(hr) || !g_msaaResolveSurface) {
+            reinterpret_cast<IUnknown*>(g_msaaResolveTexture)->Release();
+            g_msaaResolveTexture = nullptr;
+            g_msaaResolveSurface = nullptr;
+            logFail("GetSurfaceLevel on the resolve target", hr);
+            return false;
+        }
+        g_msaaResolveWidth = desc.Width;
+        g_msaaResolveHeight = desc.Height;
+        g_msaaResolveFormat = desc.Format;
+        char buf[220];
+        sprintf_s(buf, "[x64-streamline-resolve] Created a %ux%u single-sampled resolve target (D3DFORMAT %lu) "
+            "for the %u-sample scene colour.", desc.Width, desc.Height, static_cast<unsigned long>(desc.Format),
+            static_cast<unsigned>(desc.MultiSampleType));
+        LogFromController(buf);
+    }
+
+    void** devVtbl = *reinterpret_cast<void***>(device);
+    auto stretchRect = reinterpret_cast<StretchRectFnRes>(devVtbl[kStretchRectVtableIndexRes]);
+    hr = stretchRect(device, source, nullptr, g_msaaResolveSurface, nullptr, kD3DTEXF_NONE);
+    if (FAILED(hr)) { logFail("StretchRect MSAA resolve", hr); return false; }
+
+    static long long s_resolveCount = 0;
+    ++s_resolveCount;
+    if (s_resolveCount <= 5 || (s_resolveCount % 5000) == 0) {
+        char buf[200];
+        sprintf_s(buf, "[x64-streamline-resolve] Resolved the %u-sample %ux%u scene colour for DLSS "
+            "(count=%lld).", static_cast<unsigned>(desc.MultiSampleType), desc.Width, desc.Height,
+            s_resolveCount);
+        LogFromController(buf);
+    }
+    g_frameSceneColorSurfaceX64 = g_msaaResolveSurface; // this frame's DLSS scene-colour input
+    return true;
 }
 
 // 2026-09-27: the scene-color input and DLSS output as tagged for this

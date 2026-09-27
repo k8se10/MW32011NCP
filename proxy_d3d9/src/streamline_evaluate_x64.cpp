@@ -81,6 +81,7 @@ extern void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp -- mu
     // before evaluate, now that both are called from the same earlier per-frame point.
 extern void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, same reason.
 extern bool GetDlssOutputTextureSizeX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp, 2026-09-27
+extern bool ResolveMsaaSceneColorForDlssX64(void* device); // streamline_resources_x64.cpp, 2026-09-27 (ROUND 23)
 extern void GetDlssTaggedImagesX64(DlssTaggedImageX64& inputColor, DlssTaggedImageX64& outputColor); // streamline_resources_x64.cpp, 2026-09-27
 extern VkPhysicalDevice GetDxvkVkPhysicalDeviceX64(); // streamline_integration_x64.cpp, 2026-09-27
 extern void* GetDlssOutputSurfaceX64(); // streamline_resources_x64.cpp, 2026-09-27 -- the
@@ -1210,6 +1211,10 @@ void RunDlssEvaluateAndCompositeX64(void* device)
     if (!UpdateDlssEffectiveOutputX64(device)) return;
     TagStreamlineOutputColorX64();
     TagStreamlineMotionVectorsX64();
+    // 2026-09-27 (ROUND 23): the engine's scene target is multisampled in real
+    // configs; resolve it into a single-sampled texture DLSS can read. No-op
+    // when the frame's scene colour was already single-sampled.
+    if (!ResolveMsaaSceneColorForDlssX64(device)) return;
 
     bool evaluated = EvaluateStreamlineDlssX64();
     if (!evaluated) return; // already logged its own real failure reason -- nothing to composite
