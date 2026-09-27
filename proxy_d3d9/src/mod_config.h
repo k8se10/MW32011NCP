@@ -810,6 +810,30 @@ struct ModConfig
     // ratio, not tied to any specific "quality tier" render-scale value.
     int dlssModeX64 = 3;
 
+    // [Experimental] DlssNeuralRenderingEnabledX64 (2026-09-27) -- STRICTLY
+    // OPT-IN, OFF by default. Requests sl::kFeatureDLSS_NR (=1004, "DLSS 5"
+    // Neural Rendering) alongside kFeatureDLSS at slInit() time and logs
+    // whether the runtime plugin (sl.dlss_nr.dll) is actually present/loaded
+    // -- detection/registration only, no real evaluate path wired yet.
+    // REAL BLOCKER, not fixable by more code: this feature's own options
+    // struct (DLSSNROptions, declared in NVIDIA's sl_dlss_nr.h) is NOT in
+    // NVIDIA's public Streamline GitHub repo -- confirmed by checking it
+    // directly, and independently confirmed by real production engine code
+    // (GaijinEntertainment/DagorEngine's own streamline_adapter.cpp gates
+    // its own DLSS_NR support behind `#if __has_include(<sl_dlss_nr.h>)`,
+    // meaning even that codebase doesn't ship the header -- it's real,
+    // developer-program-gated by NVIDIA, not something to guess at from a
+    // third-party reverse-engineered copy of unverified accuracy. Wiring the
+    // real slDLSSNRSetOptions/evaluate path needs that real header (or
+    // independently confirmed field layout) plus the real nvngx_dlssnr.dll/
+    // sl.dlss_nr.dll runtime binaries, neither of which this project
+    // sources itself (same "never fetch from an untrusted/leaked source"
+    // standard as every other vendored binary here) -- both are on the user
+    // to obtain through NVIDIA's own legitimate channels if this is to go
+    // further. See re_notes/x64_migration/vulkan_dlss_pipeline_research.md
+    // item 17's DLSS-NR entry for the full research trail.
+    bool dlssNeuralRenderingEnabledX64 = false;
+
     // [Video] InternalRenderScalePercent (issue #88, 2026-08-25) -- STRICTLY OPT-IN,
     // 0/disabled by default. Real motivation, direct user framing: "basically the plan
     // is to allow better texture and internal render res as again above 1080p it looks

@@ -1385,6 +1385,7 @@ void LoadModConfig()
         if (v < 0 || v > 6) v = 3; // out-of-range -> fall back to eMaxQuality, never an invalid enum value
         g_modConfig.dlssModeX64 = v;
     }
+    ReadBool(path, "Experimental", "DlssNeuralRenderingEnabled", g_modConfig.dlssNeuralRenderingEnabledX64);
     {
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;

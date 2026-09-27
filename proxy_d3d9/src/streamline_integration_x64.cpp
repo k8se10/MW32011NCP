@@ -69,6 +69,11 @@ PFun_slGetFeatureFunction_t* g_slGetFeatureFunction = nullptr; // 2026-09-26 -- 
 // registered first per that function's own doc comment), cached after.
 using PFun_slDLSSSetOptions_t = sl::Result(const sl::ViewportHandle&, const sl::DLSSOptions&);
 PFun_slDLSSSetOptions_t* g_slDLSSSetOptions = nullptr;
+using PFun_slIsFeatureLoaded_t = sl::Result(sl::Feature, bool&);
+PFun_slIsFeatureLoaded_t* g_slIsFeatureLoaded = nullptr; // 2026-09-27, real
+    // DLSS_NR detection -- resolved best-effort (not part of the FATAL
+    // missing-exports check below, since it's diagnostic-only and this
+    // SDK version is already confirmed to export it either way).
 bool g_streamlineInitialized = false;
 bool g_streamlineVulkanInfoSet = false;
 sl::FrameToken* g_streamlineCurrentFrameToken = nullptr; // owned by Streamline itself,
@@ -139,6 +144,8 @@ bool TryLoadStreamlineInterposer()
         GetProcAddress(slModule, "slEvaluateFeature"));
     g_slGetFeatureFunction = reinterpret_cast<PFun_slGetFeatureFunction_t*>(
         GetProcAddress(slModule, "slGetFeatureFunction"));
+    g_slIsFeatureLoaded = reinterpret_cast<PFun_slIsFeatureLoaded_t*>(
+        GetProcAddress(slModule, "slIsFeatureLoaded")); // best-effort, not FATAL if missing
     if (!g_slInit || !g_slShutdown || !g_slGetFeatureRequirements || !g_slSetVulkanInfo
         || !g_slGetNewFrameToken || !g_slSetTagForFrame || !g_slSetConstants
         || !g_slEvaluateFeature || !g_slGetFeatureFunction) {
@@ -406,7 +413,20 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     // Requesting DLSS (Super Resolution) as the one feature to load for now,
     // matching the real, confirmed-universal (RTX 20-series+) baseline this
     // project's own hardware-tier research settled on.
-    sl::Feature featuresToLoad[] = { sl::kFeatureDLSS };
+    // 2026-09-27: sl::kFeatureDLSS_NR (=1004, "DLSS 5" Neural Rendering)
+    // requested alongside kFeatureDLSS when [Experimental]
+    // DlssNeuralRenderingEnabled=1 -- detection/registration only for now,
+    // see g_modConfig.dlssNeuralRenderingEnabledX64's own comment
+    // (mod_config.h) for the real blocker (NVIDIA's own DLSS_NR options
+    // struct header, sl_dlss_nr.h, isn't in the public Streamline repo --
+    // confirmed directly, and independently confirmed by real production
+    // code, GaijinEntertainment/DagorEngine's own `#if __has_include` gate
+    // on it). Requesting the feature is safe and harmless even without the
+    // runtime plugin present -- slInit() already tolerates a requested
+    // feature whose plugin fails to load (this project's own kFeatureDLSS
+    // path already demonstrated that before the projectId fix).
+    sl::Feature featuresToLoad[] = { sl::kFeatureDLSS, sl::kFeatureDLSS_NR };
+    uint32_t numFeaturesToLoad = g_modConfig.dlssNeuralRenderingEnabledX64 ? 2 : 1;
     sl::Preferences pref{};
     // 2026-09-24: eUseFrameBasedResourceTagging added -- real, live-caught
     // bug. slSetTagForFrame() failed every time with eErrorInvalidIntegration
@@ -421,7 +441,7 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
         | sl::PreferenceFlags::eUseFrameBasedResourceTagging;
     pref.renderAPI = sl::RenderAPI::eVulkan;
     pref.featuresToLoad = featuresToLoad;
-    pref.numFeaturesToLoad = 1;
+    pref.numFeaturesToLoad = numFeaturesToLoad;
     pref.engine = sl::EngineType::eCustom;
     pref.engineVersion = "MW32011NCP";
     // 2026-09-27: REAL ROOT CAUSE of "Please provide correct application id" /
@@ -468,6 +488,31 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     // device registration fails -- the return value reports slInit()'s own
     // outcome; registration state is g_streamlineVulkanInfoSet.
     RegisterDxvkVulkanDeviceWithStreamline(d3d9Device);
+
+    // 2026-09-27: real DLSS_NR ("DLSS 5" Neural Rendering) load-status
+    // detection -- diagnostic only. Confirms whether the requested feature's
+    // own plugin (sl.dlss_nr.dll) actually loaded, independent of whether
+    // this project can yet DO anything with it (it can't -- see
+    // g_modConfig.dlssNeuralRenderingEnabledX64's own comment, mod_config.h,
+    // for the real remaining blocker: no verified DLSSNROptions struct
+    // layout, no vendored runtime binary).
+    if (g_modConfig.dlssNeuralRenderingEnabledX64) {
+        if (!g_slIsFeatureLoaded) {
+            LogFromController("[streamline] DlssNeuralRenderingEnabled=1, but slIsFeatureLoaded "
+                "failed to resolve -- cannot confirm whether sl.dlss_nr.dll actually loaded.");
+        } else {
+            bool loaded = false;
+            sl::Result nrResult = g_slIsFeatureLoaded(sl::kFeatureDLSS_NR, loaded);
+            char buf[300];
+            sprintf_s(buf, "[streamline] DLSS_NR (\"DLSS 5\" Neural Rendering) load status: "
+                "result=%d loaded=%d -- detection only, no real evaluate path wired yet (real "
+                "blocker: no verified DLSSNROptions struct/runtime binary -- see "
+                "re_notes/x64_migration/vulkan_dlss_pipeline_research.md item 17).",
+                static_cast<int>(nrResult), loaded ? 1 : 0);
+            LogFromController(buf);
+        }
+    }
+
     return true;
 }
 
