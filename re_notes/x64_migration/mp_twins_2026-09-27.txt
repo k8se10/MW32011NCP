@@ -1,0 +1,48 @@
+# SP -> MP twin candidates for every proxy signature that has NO hit in iw5mp.exe
+# (see signature_resolution_sp_mp_2026-09-27.txt for the 31 signatures that already resolve in MP).
+# Method (static, re-runnable, provenance_scripts/):
+#   fnfeat.py    per-function features (strings, imports, constants, size, calls) for both exes
+#   cgmatch.py   seeds = 31 signature pairs + 659 functions with a unique identical string set,
+#                then call-graph propagation: callee lists paired by order (difflib alignment when
+#                lengths differ) and lone unmatched callers paired; 6489 function pairs total
+#   layoutcheck.py  independent validation: (a) compile-unit layout delta from trusted neighbours,
+#                (b) neighbourhood consistency = how many of the 16 nearest SP pairs land next to
+#                the candidate in MP, in the same order
+# Tiers: HIGH = >=14/16 neighbours or layout-delta agreement or >=4 identical strings;
+#        MED = 11-13/16; LOW = <=7/16 (needs manual RE); REJECTED = call-graph pair contradicted.
+# All addresses are Ghidra-space VAs (image base 0x140000000), RE reference only -- shipped hooks
+# must use MP signatures generated from these functions.
+#
+# signature                                  SP fn        MP twin       tier      evidence
+kApplyDrawAlignSignature                     0x14008d020  0x1400ba970   HIGH      cg, neighbours 15/16
+kBackendSleep1Signature                      0x1401be460  0x1401e4090   HIGH      cg + layout delta x4, neighbours 16/16
+kGscStringTableAccessSignature               0x14025e950  0x1402a2800   HIGH      cg + layout, = MP fn of kGscMethodTableAccessSignature (same VM_Execute)
+kIwdReadCallSignature                        0x1403bb340  0x14041f9f0   HIGH      cg + layout, neighbours 16/16
+kMissileGuidanceDispatchSignatureX64         0x140014dc0  0x140038ce0   HIGH      cg, neighbours 16/16, top feature match
+kMissileSteerConsumerSignatureX64            0x14000f860  0x1400331d0   HIGH      cg, neighbours 15/16
+kMixReverbApplySignature                     0x14030e740  0x14036da20   HIGH      cg + layout, feature score 3.0
+kOcclusionCheckSignature                     0x140278d50  0x1402c22d0   HIGH      cg, neighbours 15/16
+kPlaySoundAliasSignature                     0x140274100  0x1402be790   HIGH      cg, neighbours 14/16
+kPmoveTickSignature                          0x1400168a0  0x14003a890   HIGH      cg, neighbours 14/16, top feature match
+kRenderSleep1Signature                       0x14018b840  0x1401b1750   HIGH      cg + layout x3, neighbours 16/16, string match
+kReverbActivateSignature                     0x140277f90  0x1402c18b0   HIGH      cg, neighbours 16/16, top feature match
+kReverbDeactivateSignature                   0x1402701c0  0x1402bb970   HIGH      cg, neighbours 14/16, top feature match
+kSavedScreenCaptureSignature                 0x14018a780  0x1401b0690   HIGH      cg + layout (same +0xF40 to STRETCH_RAW in both exes)
+kScenePostfxFirstCallSignature               0x1401939f0  0x1401b98f0   HIGH      cg, neighbours 15/16
+kSprintTickSignature                         0x140014a80  0x1400389d0   HIGH      cg, neighbours 16/16, top feature match
+kCursorDrawDispatcherSignatureX64 (UI_Refresh) 0x14029d170 0x14030b3b0  HIGH      6 identical strings ("pregame","main_specops","%s.%i %s",...), neighbours 10/16; cg pair 0x140091fc0 REJECTED (0/16)
+kUiContextAnchorSignature (UI_KeyEvent)      0x14029baa0  0x140309270   HIGH      string ("cl_paused") score 4.26, neighbours 12/16; cg pair 0x1402ed6c0 REJECTED (0/16)
+kConsoleShutdownASignature                   0x140082890  0x1400d6d40   MED       cg, neighbours 12/16 (near MP console-font init 0x1400d54c0)
+kConsoleShutdownBSignature                   0x140082a50  0x1400d6f80   MED       cg, neighbours 11/16
+kAnchorSignature                             0x14007c3a0  0x1400ce950   LOW       cg only, neighbours 7/16
+kGetEffectiveFovX64Signature                 0x140069e60  0x140073400   LOW       cg only, neighbours 4/13
+kMountedAimTickSignature                     0x14007de20  0x1400d0350   LOW       cg only, neighbours 7/16 (near MP kbutton 0x1400d0be0, plausible)
+kMovementTickSignature                       0x14007d9f0  0x1400d0050   LOW       cg only, neighbours 7/16 (near MP kbutton 0x1400d0be0, plausible)
+kInLevelFlagSignature                        0x14007d500  -             REJECTED  cg pair 0x1400663c0 0/16
+kOpenPauseMenuForCinematicSignature          0x140082e70  -             REJECTED  cg pair 0x1400ca9a0 0/16
+kActionSlotSignature                         0x14006dee0  -             OPEN      no candidate
+kAngleAccumSignature                         0x14007dd3a  -             OPEN      no .pdata features (fragment of CL input code)
+kCursorGateSignature                         0x14029d4f4  -             OPEN      site inside UI_Refresh -> search inside MP 0x14030b3b0
+kPauseToggleSignature                        0x1400823b0  -             OPEN      no candidate (MP has no SP-style pause)
+kScenePostfxLastCallSignature                0x14019406f  -             OPEN      site inside post-FX -> search inside MP 0x1401b98f0's sibling
+kWeaponNextSignature                         0x1400706d0  -             OPEN      no candidate

@@ -28,7 +28,7 @@ chosen to match id-Tech/IW naming, not recovered symbols.
 2. ✅ Draw path deep dive: scene passes, draw-surf lists, key layout, render targets, code materials, post-FX chain, frame submit (§7–§8)
 3. ✅ UI/menu pipeline end to end (§9)
 4. ✅ Ray tracing design on the DXVK fork (§10, `rt_design_dxvk.md`)
-5. MP port plan (controller + performance fixes)
+5. ✅ MP port plan (controller + performance fixes) (§11, `mp_port_plan.md`)
 
 ---
 
@@ -901,4 +901,29 @@ Full design: [`rt_design_dxvk.md`](rt_design_dxvk.md). Summary:
 
 ---
 
-*Next stage: MP port plan for the controller pipeline and performance fixes (§11).*
+## 11. MP port plan: controller pipeline and performance fixes (stage 5)
+
+Full plan: [`mp_port_plan.md`](mp_port_plan.md), twin table
+[`mp_twins_2026-09-27.txt`](mp_twins_2026-09-27.txt). Summary:
+
+- **Signatures:** 31 of 63 proxy signatures already hit in MP. For the 32
+  that don't, a static SP→MP matcher (string-set seeds plus call-graph
+  propagation, 6,489 function pairs) validated by layout deltas and
+  neighbourhood consistency gives:
+  - **18 HIGH-confidence twins**, including Pmove, sprint, missile steering,
+    `UI_KeyEvent`, `UI_Refresh`, the wait-coalescing sleeps, the IWD read,
+    post-FX, saved-screen capture and the audio functions;
+  - 2 MED, 4 LOW;
+  - 2 rejected, 6 open (action slots, weapon next, angle accumulation, the
+    cursor gate, pause toggle (N/A in MP), the post-FX last site (candidate
+    found)).
+- **Real blocker:** the per-feature data-offset audit (MP struct layouts and
+  globals differ). The plan moves hooks to per-exe descriptors with one
+  detour body and per-exe resolved data, failing closed.
+- **Order:** refactor with SP unchanged → performance fixes with hitting
+  signatures → wait coalescing/IWD → menu navigation → glyphs → MP in-match
+  signal → movement/look → killstreak steering → weapon/action slots →
+  rumble → cursor gate.
+- **MP safety:** everything off by default, private-match validation, no
+  server-trusted state beyond real-controller usercmds. Target-based aim
+  slowdown is a user decision (recommendation: SP-only).
