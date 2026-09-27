@@ -587,19 +587,26 @@ bool EvaluateStreamlineDlssX64()
     if (waitResult == VK_TIMEOUT) {
         static long long s_timeoutCount = 0;
         ++s_timeoutCount;
-        char buf[200];
+        char buf[400]; // widened from 200, ROUND 18 -- the revised message below is 270 bytes
+            // worst case (count at INT64_MIN), per this project's own sprintf_s-overflow lesson.
         sprintf_s(buf, "[x64-streamline-evaluate] vkWaitForFences TIMED OUT after 2s (count=%lld) -- "
-            "DLSS's own recorded GPU work never signaled completion. Skipping this frame's result "
-            "rather than waiting indefinitely.", s_timeoutCount);
+            "DLSS's own recorded GPU work never signaled completion. Disabling DLSS for the rest of "
+            "this session (the command buffer is still pending on the GPU and cannot be safely "
+            "reused).", s_timeoutCount);
         LogFromController(buf);
         // Do NOT reset the fence here -- it may still signal later; resetting
         // a fence the driver hasn't actually finished with is undefined per
-        // the Vulkan spec. Leave it and let the NEXT frame's vkResetCommandBuffer/
-        // vkBeginCommandBuffer attempt naturally re-synchronize (a real,
-        // accepted limitation of this v1, single-buffered design -- a second,
-        // genuinely stuck fence would need a full command-pool/fence recreate,
-        // not attempted here since the guard above should prevent the real
-        // trigger from recurring).
+        // the Vulkan spec.
+        // REVISED, 2026-09-27 (ROUND 18): this used to fall through and let
+        // the NEXT frame call vkResetCommandBuffer/vkBeginCommandBuffer on the
+        // same g_commandBuffer -- but a timed-out submission leaves it in the
+        // PENDING state, and resetting or re-recording a pending command
+        // buffer is itself invalid usage per the Vulkan spec
+        // (VUID-vkResetCommandBuffer-commandBuffer-00045), stacking a second
+        // fault on top of whatever made the GPU stall. Same session-long
+        // latch as device loss: stop touching DLSS entirely rather than
+        // compound it.
+        g_dlssDeviceLostX64 = true;
         return false;
     }
     g_vkResetFences(vkDevice, 1, &g_fence);

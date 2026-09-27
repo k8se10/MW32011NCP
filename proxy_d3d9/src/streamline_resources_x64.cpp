@@ -94,8 +94,10 @@ constexpr int kCreateTextureVtableIndex = 23;
 constexpr int kGetSurfaceLevelVtableIndex = 18;
 constexpr DWORD kD3DUSAGE_RENDERTARGET = 0x00000001;
 constexpr DWORD kD3DPOOL_DEFAULT = 0;
-constexpr DWORD kD3DFMT_A8R8G8B8 = 21; // matches the real scene color's own
-    // confirmed VkFormat 44 (VK_FORMAT_B8G8R8A8_UNORM) via DXVK's translation.
+constexpr DWORD kD3DFMT_A8B8G8R8 = 32; // VK_FORMAT_R8G8B8A8_UNORM via DXVK's
+    // translation -- the DLSS output buffer's format, see TagOutputColorResourceForFrame's
+    // own 2026-09-27 comment for why not A8R8G8B8 (21, B8G8R8A8_UNORM) any more.
+constexpr DWORD kD3DRTYPE_TEXTURE = 3; // D3DRESOURCETYPE -- D3D9VkExtImageDescX64::Type
 constexpr DWORD kD3DFMT_G16R16F = 115; // standard D3D9 2-channel 16-bit float --
     // the real, standard format for a motion-vector buffer (X/Y offset per pixel).
 constexpr int kColorFillVtableIndex = 35; // IDirect3DDevice9::ColorFill -- same
@@ -204,11 +206,11 @@ VkImageView g_cachedColorView = VK_NULL_HANDLE;
 // once, lazily, as a real D3D9 RENDERTARGET texture at the real native/
 // display resolution ("internal render scaled percent is what we feed into
 // dlss" -- the INPUT side; the OUTPUT side is the real display resolution
-// this project's own upscale target is), via this project's own already-
-// established CreateTexture pattern (overlay_hud.cpp's own
-// EnsureBlurTexture/CreateFullscreenCaptureTexture etc.), then resolved to
-// a real Vulkan image/view through the SAME DXVK interop chain as
-// depth/color input. Recreated if the real native resolution ever changes.
+// this project's own upscale target is), via DXVK's own interop CreateImage
+// with VK_IMAGE_USAGE_STORAGE_BIT (2026-09-27 -- DLSS writes this through a
+// storage image; see TagOutputColorResourceForFrame's own comment), then
+// resolved to a real Vulkan image/view through the SAME DXVK interop chain
+// as depth/color input. Recreated if the real native resolution ever changes.
 void* g_outputColorTexture = nullptr; // real IDirect3DTexture9*, we own this
 void* g_outputColorSurface = nullptr; // real IDirect3DSurface9*, GetSurfaceLevel(0) of the above
 uint32_t g_outputColorWidth = 0;
@@ -617,14 +619,65 @@ void TagOutputColorResourceForFrame()
         g_cachedOutputColorImage = VK_NULL_HANDLE;
         g_cachedOutputColorView = VK_NULL_HANDLE;
 
-        void** deviceVtbl = *reinterpret_cast<void***>(device);
-        auto createTexture = reinterpret_cast<CreateTextureFn>(deviceVtbl[kCreateTextureVtableIndex]);
-        HRESULT hr = createTexture(device, targetWidth, targetHeight, 1,
-            kD3DUSAGE_RENDERTARGET, kD3DFMT_A8R8G8B8, kD3DPOOL_DEFAULT, &g_outputColorTexture, nullptr);
-        if (FAILED(hr) || !g_outputColorTexture) {
+        // REAL FIX, 2026-09-27 -- the DLSS evaluate GPU hang/device loss
+        // on level load (vulkan_dlss_pipeline_research.md item 17, ROUND 18).
+        // This texture used to be created via plain IDirect3DDevice9::
+        // CreateTexture(RENDERTARGET, A8R8G8B8). Read against DXVK's own
+        // source (d3d9_common_texture.cpp CreatePrimaryImage/OptimizeLayout):
+        // that yields a VkImage with usage TRANSFER_SRC|TRANSFER_DST|SAMPLED|
+        // COLOR_ATTACHMENT (0x17) -- NO VK_IMAGE_USAGE_STORAGE_BIT -- held in
+        // VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL. DLSS writes its output
+        // with a compute-shader storage-image write, which the Vulkan spec
+        // forbids on an image without STORAGE usage (undefined behavior at
+        // the GPU level -- a real, sufficient explanation for the first
+        // evaluate's fence never signaling and the device then being lost,
+        // independent of any cold-start timing). DXVK's own interop
+        // CreateImage is the real, supported way to add Vulkan usage flags
+        // to a D3D9 texture: ImageUsage is OR'd straight into the VkImage's
+        // usage, and DXVK's OptimizeLayout then keeps a STORAGE image in
+        // VK_IMAGE_LAYOUT_GENERAL -- the layout storage writes require.
+        // Format is D3DFMT_A8B8G8R8 (VK_FORMAT_R8G8B8A8_UNORM, whose
+        // STORAGE_IMAGE support is mandatory per the Vulkan spec) rather
+        // than A8R8G8B8 (B8G8R8A8_UNORM, whose storage support is optional);
+        // the composite StretchRect into the A8R8G8B8 scene target takes
+        // DXVK's own blit path for the format change (d3d9_device.cpp
+        // StretchRect, !AreFormatsSimilar -> vkCmdBlitImage), a standard,
+        // supported conversion.
+        IUnknown* deviceUnknown = reinterpret_cast<IUnknown*>(device);
+        ID3D9VkInteropDeviceX64* interopDevice = nullptr;
+        HRESULT hr = deviceUnknown->QueryInterface(IID_ID3D9VkInteropDevice_X64,
+            reinterpret_cast<void**>(&interopDevice));
+        if (FAILED(hr) || !interopDevice) {
             char buf[200];
-            sprintf_s(buf, "[x64-streamline-output] CreateTexture FAILED (hr=0x%08lX) for a real "
-                "%ux%u DLSS output buffer.", hr, targetWidth, targetHeight);
+            sprintf_s(buf, "[x64-streamline-output] QueryInterface for ID3D9VkInteropDevice FAILED "
+                "(hr=0x%08lX) -- cannot create a storage-capable DLSS output buffer.", hr);
+            LogFromController(buf);
+            return;
+        }
+
+        D3D9VkExtImageDescX64 desc{};
+        desc.Type = kD3DRTYPE_TEXTURE;
+        desc.Width = targetWidth;
+        desc.Height = targetHeight;
+        desc.Depth = 1;
+        desc.MipLevels = 1;
+        desc.Usage = kD3DUSAGE_RENDERTARGET; // keeps it a valid StretchRect source/RT
+        desc.Format = kD3DFMT_A8B8G8R8;
+        desc.Pool = kD3DPOOL_DEFAULT;
+        desc.MultiSample = 0; // D3DMULTISAMPLE_NONE -- textures can't be multisampled
+        desc.MultiSampleQuality = 0;
+        desc.Discard = false;
+        desc.IsAttachmentOnly = false; // DXVK adds SAMPLED
+        desc.IsLockable = false;
+        desc.ImageUsage = VK_IMAGE_USAGE_STORAGE_BIT;
+
+        hr = interopDevice->CreateImage(&desc, &g_outputColorTexture);
+        interopDevice->Release();
+        if (FAILED(hr) || !g_outputColorTexture) {
+            char buf[250];
+            sprintf_s(buf, "[x64-streamline-output] DXVK CreateImage FAILED (hr=0x%08lX) for a real "
+                "%ux%u storage-capable DLSS output buffer -- DLSS will not evaluate.",
+                hr, targetWidth, targetHeight);
             LogFromController(buf);
             g_outputColorTexture = nullptr;
             return;

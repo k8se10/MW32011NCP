@@ -9,8 +9,8 @@
 // directly: that header drags in DXVK's own d3d9.h/MIDL_INTERFACE setup
 // (built against DXVK's bundled mingw-directx-headers), which collides with
 // the Windows SDK d3d9.h this proxy already builds against. Only the IID and
-// the first two vtable slots (after IUnknown's three) are declared here --
-// those are the only methods this project calls, and a COM vtable is laid
+// a prefix of the vtable (extended over time, see each slot's own comment) is
+// declared here -- a COM vtable is laid
 // out in declaration order, so declaring a prefix of it is ABI-correct as
 // long as no later slot is ever called through this type. Any change to
 // DXVK's upstream declaration order or IID must be mirrored here.
@@ -21,6 +21,7 @@
 #pragma once
 
 #include <unknwn.h>
+#include <cstddef> // offsetof -- D3D9VkExtImageDescX64's own layout static_asserts
 
 // Vulkan-Headers submodule inside the vendored DXVK subtree
 // (dxvk/include/vulkan, pinned by DXVK itself). Angle-bracket include to
@@ -37,6 +38,8 @@ static const IID IID_ID3D9VkInteropDevice_X64 =
 
 struct ID3D9VkInteropTextureX64; // forward decl -- TransitionTextureLayout's own
     // first parameter type, real struct declared further down this file.
+struct D3D9VkExtImageDescX64; // forward decl -- CreateImage's own first
+    // parameter type, real struct declared right after the interface below.
 
 // EXTENDED, 2026-09-27: real, live-confirmed root cause of a genuine
 // VK_ERROR_DEVICE_LOST fault (this project's own live testing) -- this
@@ -100,10 +103,58 @@ struct ID3D9VkInteropDeviceX64 : public IUnknown {
     // submit new commands."
     virtual void STDMETHODCALLTYPE ReleaseSubmissionQueue() = 0;
 
-    // Later slots (LockDevice, UnlockDevice, WaitForResource, CreateImage)
-    // intentionally not declared -- never call anything beyond slot 8
-    // through this type without first declaring it here in DXVK's order.
+    // Vtable slots 9-11 -- never called by this project, declared only to keep
+    // the vtable layout correct for CreateImage (slot 12) below. Parameter
+    // types kept ABI-identical without d3d9.h (see this file's own top
+    // comment): IDirect3DResource9* -> void*.
+    virtual void STDMETHODCALLTYPE LockDevice() = 0;
+    virtual void STDMETHODCALLTYPE UnlockDevice() = 0;
+    virtual bool STDMETHODCALLTYPE WaitForResource(
+        void* pResource,
+        DWORD MapFlags) = 0;
+
+    // Vtable slot 12 -- DXVK: "Creates a custom image/surface/texture."
+    // EXTENDED, 2026-09-27: the ONLY way to create a real D3D9 texture whose
+    // backing VkImage carries extra Vulkan usage flags (D3D9VkExtImageDesc::
+    // ImageUsage, OR'd straight into VkImageCreateInfo::usage by DXVK's own
+    // D3D9CommonTexture::CreatePrimaryImage). Plain IDirect3DDevice9::
+    // CreateTexture never adds VK_IMAGE_USAGE_STORAGE_BIT for an ordinary
+    // RENDERTARGET, but DLSS writes its output through a compute-shader
+    // storage-image write -- see streamline_resources_x64.cpp's own
+    // TagOutputColorResourceForFrame comment for the real bug this closes.
+    // ppResult receives an IDirect3DResource9* of desc->Type (a real
+    // IDirect3DTexture9* for D3DRTYPE_TEXTURE), caller owns one reference.
+    virtual HRESULT STDMETHODCALLTYPE CreateImage(
+        const D3D9VkExtImageDescX64* desc,
+        void**                       ppResult) = 0;
 };
+
+// Mirrors DXVK's own D3D9VkExtImageDesc (d3d9_interfaces.h) field for field,
+// in declaration order. D3DRESOURCETYPE/D3DFORMAT/D3DPOOL/D3DMULTISAMPLE_TYPE
+// are all 4-byte C enums in the real SDK, declared DWORD here (ABI-identical)
+// for the same no-d3d9.h reason as above. The static_asserts below pin the
+// real layout (10 x 4-byte fields, 3 x 1-byte bools, 1 pad byte, then the
+// 4-byte VkImageUsageFlags) so any accidental drift fails at compile time
+// instead of passing garbage usage flags to DXVK at runtime.
+struct D3D9VkExtImageDescX64 {
+    DWORD             Type;               // D3DRESOURCETYPE -- SURFACE/TEXTURE/CUBETEXTURE/VOLUMETEXTURE
+    UINT              Width;
+    UINT              Height;
+    UINT              Depth;              // must be 1 unless Type is VOLUMETEXTURE
+    UINT              MipLevels;
+    DWORD             Usage;              // D3DUSAGE_* flags
+    DWORD             Format;             // D3DFORMAT
+    DWORD             Pool;               // D3DPOOL
+    DWORD             MultiSample;        // D3DMULTISAMPLE_TYPE, must be NONE unless Type is SURFACE
+    DWORD             MultiSampleQuality;
+    bool              Discard;            // depth stencils only
+    bool              IsAttachmentOnly;   // false -> DXVK adds VK_IMAGE_USAGE_SAMPLED_BIT
+    bool              IsLockable;
+    VkImageUsageFlags ImageUsage;         // additional Vulkan image usage flags
+};
+static_assert(sizeof(D3D9VkExtImageDescX64) == 48, "D3D9VkExtImageDescX64 must match DXVK's D3D9VkExtImageDesc layout");
+static_assert(offsetof(D3D9VkExtImageDescX64, Discard) == 40, "D3D9VkExtImageDescX64 must match DXVK's D3D9VkExtImageDesc layout");
+static_assert(offsetof(D3D9VkExtImageDescX64, ImageUsage) == 44, "D3D9VkExtImageDescX64 must match DXVK's D3D9VkExtImageDesc layout");
 
 // {D56344F5-8D35-46FD-806D-94C351B472C1} -- copied verbatim from DXVK's
 // __CRT_UUID_DECL(ID3D9VkInteropTexture, ...) in d3d9_interfaces.h. A real,
