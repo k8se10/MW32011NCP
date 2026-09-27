@@ -508,6 +508,57 @@ bool EvaluateStreamlineDlssX64()
     return true; // genuine, complete, fence-signaled success -- safe to composite this frame.
 }
 
+// 2026-09-27: called once, from streamline_integration_x64.cpp's own
+// TryInitStreamlineX64 immediately after device registration succeeds --
+// see that call site's own comment for the real bug this closes (DLSS's
+// first, heaviest resource allocation used to happen cold, on the first
+// real GAMEPLAY frame instead of here, at a quiet/idle moment). Calls
+// StreamlineDLSSSetOptionsX64 directly with the real display resolution
+// and the CONFIGURED mode (not the DLAA-effective one -- at this early
+// point nothing has rendered yet, so GetStreamlineInternalRenderResolutionX64
+// would have nothing real to report; EvaluateStreamlineDlssX64's own
+// existing lazy re-check still runs later and correctly upgrades to the
+// DLAA-effective resolution/mode once real gameplay starts and a mismatch
+// is actually detected -- that becomes a smaller, cheaper re-configure
+// call, not this original cold allocation). Deliberately does not touch
+// g_dlssEffectiveModeX64/g_dlssEffectiveOutputWidthX64/HeightX64 -- those
+// describe the DLAA-override decision specifically, not this generic
+// pre-warm, and streamline_resources_x64.cpp's own output-buffer sizing
+// already falls back to the real display resolution until those are set.
+void PrewarmDlssOptionsX64(void* device)
+{
+    // REAL BUG, caught before shipping: this used to call
+    // GetLastKnownRenderDevice() instead of taking the device directly --
+    // that global (overlay_hud.cpp) is only ever set from inside
+    // Hook_EndScene, which hasn't fired even once yet at the point this
+    // function runs (called from Hook_CreateDevice's own call chain,
+    // before any frame exists) -- it would have silently no-op'd on
+    // !device, defeating the entire point of this fix. The caller
+    // (TryInitStreamlineX64, streamline_integration_x64.cpp) already has
+    // the real device pointer from CreateDevice's own parameters -- use
+    // that directly instead.
+    if (!device) return;
+    int nativeW = 1920, nativeH = 1080;
+    GetRealScreenSize(device, nativeW, nativeH);
+    if (nativeW <= 0 || nativeH <= 0) return;
+
+    uint32_t displayWidth = static_cast<uint32_t>(nativeW);
+    uint32_t displayHeight = static_cast<uint32_t>(nativeH);
+    int mode = g_modConfig.dlssModeX64;
+
+    bool ok = StreamlineDLSSSetOptionsX64(displayWidth, displayHeight, mode);
+    g_lastOptionsWidth = displayWidth;
+    g_lastOptionsHeight = displayHeight;
+    g_lastOptionsMode = mode;
+    g_optionsEverSucceeded = g_optionsEverSucceeded || ok;
+
+    char buf[200];
+    sprintf_s(buf, "[x64-streamline-evaluate] Pre-warmed slDLSSSetOptions at device-registration time "
+        "(display=%ux%u mode=%d, ok=%d) -- real DLSS resource allocation now happens at an idle moment, "
+        "not on the first real gameplay frame.", displayWidth, displayHeight, mode, ok ? 1 : 0);
+    LogFromController(buf);
+}
+
 // 2026-09-27: public accessor for streamline_resources_x64.cpp -- the real
 // DLSS OUTPUT texture (kBufferTypeScalingOutputColor) must be sized to match
 // whatever resolution Streamline was actually told is the output this frame,

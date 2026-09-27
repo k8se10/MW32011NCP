@@ -376,6 +376,13 @@ bool RegisterDxvkVulkanDeviceWithStreamline(IUnknown* d3d9Device)
 // "sprintf_s with an unbounded interpolated string" crash class enough times
 // (known_issues_x64.md, 2026-09-05/13/14/16) that avoiding it entirely here
 // is safer than sizing a buffer defensively.
+extern void PrewarmDlssOptionsX64(void* device); // streamline_evaluate_x64.cpp, 2026-09-27 --
+    // see this function's own call site comment (right after
+    // RegisterDxvkVulkanDeviceWithStreamline, below) for the real bug this closes.
+    // Takes the real device pointer directly -- GetLastKnownRenderDevice()
+    // (overlay_hud.cpp) isn't set yet at this point in the frame (only
+    // Hook_EndScene sets it, and no frame has rendered yet here).
+
 void StreamlineLogCallbackX64(sl::LogType type, const char* msg)
 {
     if (!msg) return;
@@ -488,6 +495,28 @@ bool TryInitStreamlineX64(IUnknown* d3d9Device)
     // device registration fails -- the return value reports slInit()'s own
     // outcome; registration state is g_streamlineVulkanInfoSet.
     RegisterDxvkVulkanDeviceWithStreamline(d3d9Device);
+
+    // REAL BUG FIX, 2026-09-27: live-reported theory, direct user diagnosis
+    // ("its our dlss pipeline, it loads too late the vieport initialises the
+    // goes black in game") -- slDLSSSetOptions (which triggers DLSS's own
+    // real, heavy first-time GPU resource allocation) used to only ever fire
+    // lazily, on the first real GAMEPLAY frame (gated behind menu/in-level/
+    // clcState checks inside EvaluateStreamlineDlssX64) -- meaning that heavy
+    // allocation happened cold, in the middle of an already-busy gameplay
+    // frame, rather than at a quiet, idle moment. Combined with a large
+    // render-scale-driven DLAA resolution, this is a real, plausible driver-
+    // level TDR/VK_ERROR_DEVICE_LOST trigger (see this session's own real
+    // device-loss finding, streamline_evaluate_x64.cpp's own
+    // g_dlssDeviceLostX64 comment). Fixed by pre-warming slDLSSSetOptions
+    // HERE, immediately after device registration succeeds -- while the
+    // frame is still simple/idle (at or near the main menu, well before any
+    // real gameplay content exists) -- using the real display resolution.
+    // EvaluateStreamlineDlssX64's own existing lazy re-check still runs later
+    // and correctly upgrades to the DLAA-effective resolution/mode once real
+    // gameplay starts and a render-scale mismatch is actually detected -- but
+    // that becomes a smaller, cheaper RE-configure call, not DLSS's original
+    // cold, heavy first-time allocation.
+    if (g_streamlineVulkanInfoSet) PrewarmDlssOptionsX64(d3d9Device);
 
     // 2026-09-27: real DLSS_NR ("DLSS 5" Neural Rendering) load-status
     // detection -- diagnostic only. Confirms whether the requested feature's
