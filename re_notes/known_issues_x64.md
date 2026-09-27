@@ -11330,6 +11330,105 @@ Bit 3 of a byte at offset `+0x54` of a channel's own definition struct (looked u
 
 **LIVE-CONFIRMED, same day.** Direct user report after testing with real overlapping gunfire: "perfection." Both halves of the fix hold together: the single-voice case stays correct at `ReverbWetScale=0.5`, and the concurrent-voice `sqrt(N)` normalization stops the reverb wash from piling up when multiple guns fire at once. **Issue #10 is resolved** -- the full chain, start to finish: real duplicate-alias-trigger investigation (found real but unrelated, a separate ambient-loop bug, still open) -> user's own re-scoping to "world/AI sourced sounds specifically" -> occlusion-check diagnostic (negative result) -> reverb-zone activate/deactivate trace (confirmed logic-identical to x86, ruling out the trigger mechanism) -> the decisive discovery that x64 replaced Miles Sound System entirely with a from-scratch X3DAudioCalculate-based mixer -> found the real mix-application function and its per-channel exemption flag -> live data showing the player's own weapon channel never reaches the mixer at all, while every other channel gets the level's `wet=0.9` applied via a flat, unshaped multiply -> a reversible `ReverbWetScale` config experiment -> the user's own sharp diagnosis that concurrent voices need their own cap -> `sqrt(N)` normalization. Default `ReverbWetScaleX64` stays `1.0` (unchanged) in the C++ source -- this remains an opt-in `[Experimental]` tuning value, not graduated to a default-on fix, since the "right" scale is a subjective listening-test result on one system/session, not something RE alone can prove is universally correct. Live config value: `ReverbWetScale=0.5`.
 
+### 2026-09-27 -- REOPENED: the shipped wet-scale fix only masks it. Static RE shows the x64 backend has NO reverb at all, and the "small room" sound is duplicated voices (user-confirmed)
+
+**Status: Reopened / investigating (urgent).** Live user report: the 2026-09-26 fix
+(`ReverbWetScale=0.5` plus 1/sqrt(N) normalisation) "didn't really work that
+well". The user then confirmed directly: **"Duplicated voices. That's exactly
+it."** Both shipped mechanisms only turn the level down; neither removes the
+duplicate voice. Full static pass (angr decompiles, x86 call graph):
+
+**1. The x64 audio graph has no reverb effect of any kind** 🟢
+- `FUN_14030dcb0` (XAudio2 init): `LoadLibraryExW(L"XAudio2_7.DLL", SEARCH_SYSTEM32)`,
+  `CoCreateInstance(CLSID_XAudio2 2.7 @0x1404405b0, IID_IXAudio2 @0x1404405c0)`,
+  `Initialize(0, XAUDIO2_DEFAULT_PROCESSOR)`, `CreateMasteringVoice` (+0x50) →
+  `0x14440f940`, `RegisterForCallbacks` (+0x30), `GetDeviceDetails` (+0x20) →
+  stereo (2) or 5.1 (6) into `0x1425b3f9c` (dvar `snd_outputConfiguration`).
+- The binary contains **no** `CLSID_AudioReverb`, `FXReverb`, `FXEcho`, `FXEQ`,
+  `IXAPO` or `IXAPOParameters` GUIDs, **no** I3DL2/EAX preset parameter tables,
+  and no `CreateSubmixVoice` path for a reverb bus. The 26 room-type names
+  (`generic`…`psychotic` @ `0x1403e6a90`, the classic EAX environment list Miles'
+  `AIL_set_room_type` consumed) are resolved by the reverb-zone code, but
+  nothing turns them into DSP. `soundtables/mp_common_reverb.csv` /
+  `mp_common_filter.csv` are loaded (`FUN_140062e0e`) as data only.
+- **`FUN_14030e740` (per-channel mixer):**
+  1. Fills the X3DAudio listener/emitter; the distance curve comes from the
+     alias volume-falloff curve (`FUN_1402bff40`).
+  2. `X3DAudioCalculate`.
+  3. Clamps the matrix to [0,1].
+  4. Speaker post-processing: `FUN_14030da50` (distance-based lerp of a per-alias
+     parameter) + `FUN_14030cab0` (stereo: blends a fraction of each channel's
+     energy into the others — a spread/"omnidirectional" stage) or
+     `FUN_14030d1d0` (5.1).
+  5. **Multiplies every direct output-matrix coefficient by the zone `wet`**
+     (unless alias flag `+0x54` bit 3 is set).
+  6. `IXAudio2Voice::SetOutputMatrix` (+0x80) straight to the mastering voice.
+
+  "Wet" is a plain gain on the dry signal, and "dry" is not used by this
+  mixer at all. It's a hand-made approximation of Miles' dry-plus-reverb-bus
+  model with no actual reverb. User's verdict, which the RE backs up:
+  "Clearly is just a poor attempt at recreating the original sound", and
+  "imagine adding fake reverb when actually upgrading the API".
+- Mixer callers: `FUN_14030bf30`, `FUN_14030c760`, `FUN_14030f640`.
+  Source voices at `0x1443f6f28[channel]`. Channel state array `0x1425bfb30`
+  (stride 0x130): alias ptr at `+0xC8` (`0x1425bfbf8`), state at `+0x00`
+  (2 = playing), stream/loaded split at channel index 46 (streams ≥46, voice
+  state blocks at `0x1443f7fb0`, stride 6832).
+
+**2. Follow-on/restart logic differs structurally from x86** 🟢
+- x64 has TWO "channel finished → start follow-on alias" routines, chosen
+  per channel by `IXAudio2SourceVoice::GetState` (+0xC8) `BuffersQueued`
+  (sites `0x14030c4d9/4e3`, `0x14030c7c9/7d3`, `0x14030f774/83a`):
+  - `FUN_140279880` (queue drained): stop the channel, replay alias `+0x18`.
+  - `FUN_1402799e0` (still queued): if state == 2, alias flag `+0x54` bit 0
+    clear, and **progress `FUN_14030b210(ch, 0)` ≥ 1.0**, then stop and start
+    the follow-on early. `FUN_14030b210` = `SamplesPlayed /
+    (dataLen/blockAlign)`, with a modulo only when its second argument is set,
+    so it's unbounded for a buffer that keeps playing.
+  - Stop helpers: `FUN_14030c240` (streams: GetState, Stop(0,0),
+    FlushSourceBuffers, DestroyVoice, frees the stream slot) and thunk
+    `0x14030c230` (loaded sounds).
+- x86 has ONE routine, `FUN_006b3430`, reached only from `FUN_004bd5b0`
+  (Miles end-of-sample callback path), plus the queued-sound flush
+  `FUN_006b3f80`. That's event-driven on x86 and polling on x64.
+
+**3. Play-call topology x86 vs x64** 🟢
+- x86 `FUN_006b2e00` (play/blend): 9 callers — 7 in game code
+  (`0x45f452`, `0x46203e`, `0x477f5f`, `0x4c9c3a`, `0x4f5f16`, `0x50040e`,
+  `0x50daa6`) and 2 in the sound module (`FUN_006b3430`, `FUN_006b3f80`).
+- x64 `FUN_140274100`: a new layer of thin wrappers
+  (`FUN_140273960/a20/bc0/e50/fd0`, `FUN_140274030/090`) plus in-module
+  `FUN_140279880`, `FUN_1402799e0` and `FUN_14027a470` (`S_Update`).
+- Client-game play helpers: `FUN_14004a620` (position, z+60),
+  `FUN_14004a730` (position), `FUN_14004a6b0` (entity). Each plays through
+  wrapper `FUN_140273fd0`, then calls `FUN_14026f730(handle, alias, 1, 0)`.
+  Callers: the CG event handler `FUN_140042540` and the client command
+  dispatcher `FUN_1400595c0` (types 3/5/6), plus `FUN_14003f3d0`
+  (per-entity sound events, reached from `FUN_14003f230` snapshot processing
+  and from `FUN_140068ed0` for **deferred** local-client type-8 entities).
+  Checked: the deferral is not a duplicate, since each entity is processed once.
+- The live 2026-09-26 capture already recorded the duplicate: the whole
+  37-channel ambient batch fired twice in the same tick, and again the next
+  tick, all at depth 0, all via wrapper return `0x14027402B` (inside
+  `FUN_140273fd0`). **The level above that wrapper has not been captured
+  yet**, which is the missing piece.
+
+**Next steps (resume here)**
+1. Extend `Hook_PlaySoundAlias` with a `CaptureStackBackTrace` of 4–6 frames
+   (Ghidra-normalised), plus origin/entity and the voice-out handle. Flag a
+   "dup pair" whenever the same alias and position replays within 50 ms while
+   the first voice is still playing. One short session then names the upstream
+   duplicate source.
+2. Fix the duplicate at its source: a missing "already playing" gate or a
+   double-dispatch path, compared line by line against its x86 counterpart
+   via `provenance_scripts/cg32.py` + `dec32.py`.
+3. Then decide on the reverb itself. Retire the `ReverbWetScale`/sqrt(N)
+   masking and, if wanted, restore real reverb the way the XAudio2 API
+   intends: a submix voice carrying the built-in XAudio2 2.7 reverb
+   (`XAudio2CreateReverb`), parameters from the 26 EAX/I3DL2 presets
+   (`ReverbConvertI3DL2ToNative`), and per-voice dry to the master plus a wet
+   send to the reverb submix (Miles `AIL_set_sample_reverb_levels` semantics).
+
 ### Real, separate lead found, 2026-09-26 -- a native sun/cascade-shadow fast-vs-slow dispatcher, keyed off distinct dvars from the already-fixed per-light shadow loop; a live diagnostic hook shipped to confirm which path sun-ray maps are actually taking
 
 **Status: Investigating.** Direct user observation, from a longer multi-map test: "i think ik wha is making the lag, sun rays [screenshot of Dome, Wave 1, visible light shafts through a broken skylight] only maps with sun rays like this so far have been obsertved with the 4x slowdown." This is a real, independently-derived correlation from the user's own testing, separate from anything this project had already traced.

@@ -1,0 +1,66 @@
+kActionSlotSignature                         SP 1 hit @0x14006dee0 (fn 0x14006dee0) MP 0 hit
+kAnchorSignature                             SP 1 hit @0x14007c3a0 (fn 0x14007c3a0) MP 0 hit
+kAngleAccumSignature                         SP 1 hit @0x14007dd84 (fn 0x14007dd3a) MP 0 hit
+kApplyDrawAlignSignature                     SP 1 hit @0x14008d020 (fn 0x14008d020) MP 0 hit
+kBackendSleep1Signature                      SP 1 hit @0x1401be469 (fn 0x1401be460) MP 0 hit
+kBlurLoopSignature                           SP 1 hit @0x14018eec0 (fn 0x14018eec0) MP 1 hit @0x1401b4e10 (fn 0x1401b4e10)
+kComputeAuxMetricSignature                   SP 1 hit @0x1401b7c90 (fn 0x1401b7c77) MP 1 hit @0x1401dd8c0 (fn 0x1401dd8a7)
+kConsoleFontInitSignature                    SP 1 hit @0x140081900 (fn 0x140081900) MP 1 hit @0x1400d54c0 (fn 0x1400d54c0)
+kConsoleShutdownASignature                   SP 1 hit @0x140082890 (fn 0x140082890) MP 0 hit
+kConsoleShutdownBSignature                   SP 1 hit @0x140082a50 (fn 0x140082a50) MP 0 hit
+kCursorDrawDispatcherSignatureX64            SP 1 hit @0x14029d170 (fn 0x14029d170) MP 0 hit
+kCursorGateSignature                         SP 1 hit @0x14029d4f4 (fn 0x14029d4f4) MP 0 hit
+kDrawTextSignature                           SP 1 hit @0x14029a2b0 (fn 0x14029a2b0) MP 1 hit @0x140303bc0 (fn 0x140303bc0)
+kFindDvarX64Signature                        SP 1 hit @0x1402c3890 (fn 0x1402c3890) MP 1 hit @0x140324270 (fn 0x140324270)
+kFontAssetLoadThunkSignature                 SP 1 hit @0x1401b7cb0 (fn 0x1401b7c77) MP 1 hit @0x1401dd8e0 (fn 0x1401dd8a7)
+kGetDvarStringX64Signature                   SP 1 hit @0x1402c3b50 (fn 0x1402c3b50) MP 1 hit @0x140324530 (fn 0x140324530)
+kGetEffectiveFovX64Signature                 SP 1 hit @0x140069e60 (fn 0x140069e60) MP 0 hit
+kGetLocalizedStringSignature                 SP 1 hit @0x14029f120 (fn 0x14029f120) MP 1 hit @0x14030eca0 (fn 0x14030eca0)
+kGetTopmostActiveMenuSignature               SP 1 hit @0x1402aaa80 (fn 0x1402aaa6c) MP 1 hit @0x1402f82d0 (fn 0x1402f82bc)
+kGscMethodTableAccessSignature               SP 1 hit @0x140260184 (fn 0x14025e950) MP 1 hit @0x1402a4034 (fn 0x1402a2800)
+kGscStringTableAccessSignature               SP 1 hit @0x14025ed6b (fn 0x14025e950) MP 0 hit
+kHudElemTextDrawSignature                    SP 1 hit @0x140046a30 (fn 0x140046a30) MP 1 hit @0x140068780 (fn 0x140068780)
+kHurtTextDrawSignature                       SP 1 hit @0x14018fb70 (fn 0x14018fb70) MP 1 hit @0x1401b5ac0 (fn 0x1401b5ac0)
+kInLevelFlagSignature                        SP 1 hit @0x14007d56a (fn 0x14007d500) MP 0 hit
+kIwdReadCallSignature                        SP 1 hit @0x1403bb625 (fn 0x1403bb340) MP 0 hit
+kKbuttonActivateSignature                    SP 1 hit @0x14007e460 (fn 0x14007e412) MP 1 hit @0x1400d0ea0 (fn 0x1400d0be0)
+kKbuttonDeactivateSignature                  SP 1 hit @0x14007e490 (fn 0x14007e412) MP 1 hit @0x1400d0ed0 (fn 0x1400d0be0)
+kMasterSequencerReactivationSignature        SP 6 hit @0x140186b05 (fn 0x140186a60) MP 6 hit @0x1401aca15 (fn 0x1401ac970)
+kMemDetectSignature                          SP 1 hit @0x1402ea710 (fn 0x1402ea710) MP 1 hit @0x140347960 (fn 0x140347960)
+kMenuKeyEventSignature                       SP 1 hit @0x1402aac50 (fn 0x1402aac50) MP 1 hit @0x1402f84a0 (fn 0x1402f84a0)
+kMissileGuidanceDispatchSignatureX64         SP 1 hit @0x140014dc0 (fn 0x140014dc0) MP 0 hit
+kMissileSteerConsumerSignatureX64            SP 1 hit @0x14000f860 (fn 0x14000f860) MP 0 hit
+kMixReverbApplySignature                     SP 1 hit @0x14030e740 (fn 0x14030e740) MP 0 hit
+kMotionBlurTriggerSignature                  SP 1 hit @0x14018def0 (fn 0x14018def0) MP 1 hit @0x1401b3e40 (fn 0x1401b3e40)
+kMountedAimTickSignature                     SP 1 hit @0x14007de20 (fn 0x14007de20) MP 0 hit
+kMovementTickSignature                       SP 1 hit @0x14007d9f0 (fn 0x14007d9f0) MP 0 hit
+kOcclusionCheckSignature                     SP 1 hit @0x140278d50 (fn 0x140278d50) MP 0 hit
+kOcclusionScreenAreaSignature                SP 1 hit @0x140195cb0 (fn 0x140195cb0) MP 1 hit @0x1401bb960 (fn 0x1401bb960)
+kOpenPauseMenuForCinematicSignature          SP 1 hit @0x140082e70 (fn 0x140082e70) MP 0 hit
+kOrchestratorExtraCallASignature             SP 1 hit @0x14018e488 (fn 0x14018e3ae) MP 1 hit @0x1401b43d8 (fn 0x1401b42fe)
+kOrchestratorExtraCallBSignature             SP 1 hit @0x14018e5f4 (fn 0x14018e571) MP 1 hit @0x1401b4544 (fn 0x1401b44c1)
+kPauseToggleSignature                        SP 1 hit @0x1400823b0 (fn 0x1400823b0) MP 0 hit
+kPerLightShadowDispatchSignature             SP 1 hit @0x140196ad0 (fn 0x140196ad0) MP 1 hit @0x1401bc780 (fn 0x1401bc780)
+kPlaySoundAliasSignature                     SP 1 hit @0x140274100 (fn 0x140274100) MP 0 hit
+kPmoveTickSignature                          SP 1 hit @0x1400168a0 (fn 0x1400168a0) MP 0 hit
+kProjectionMatrixBuildSignature              SP 1 hit @0x1401e13e0 (fn 0x1401e13e0) MP 1 hit @0x1402065b0 (fn 0x1402065b0)
+kProjectionPassDispatchSignature             SP 1 hit @0x14018e720 (fn 0x14018e720) MP 1 hit @0x1401b4670 (fn 0x1401b4670)
+kRenderResComputeSignature                   SP 1 hit @0x1401bd1d0 (fn 0x1401bd1d0) MP 1 hit @0x1401e2e00 (fn 0x1401e2e00)
+kRenderSleep1Signature                       SP 1 hit @0x14018b88b (fn 0x14018b840) MP 0 hit
+kRenderViewSelectSignature                   SP 1 hit @0x1401dfd80 (fn 0x1401dfd80) MP 1 hit @0x140204f50 (fn 0x140204f50)
+kRenderWait1Signature                        SP 5 hit @0x1401a1147 (fn 0x1401a1130) MP 5 hit @0x1401c6d37 (fn 0x1401c6d20)
+kReverbActivateSignature                     SP 1 hit @0x140277f90 (fn 0x140277f90) MP 0 hit
+kReverbDeactivateSignature                   SP 1 hit @0x1402701c0 (fn 0x1402701c0) MP 0 hit
+kSavedScreenCaptureSignature                 SP 1 hit @0x14018a780 (fn 0x14018a780) MP 0 hit
+kScenePostfxFirstCallSignature               SP 1 hit @0x1401939f0 (fn 0x1401939f0) MP 0 hit
+kScenePostfxLastCallSignature                SP 1 hit @0x1401940b6 (fn 0x14019406f) MP 0 hit
+kScreenCaptureCmdSignature                   SP 1 hit @0x14018b6c0 (fn 0x14018b6c0) MP 1 hit @0x1401b15d0 (fn 0x1401b15d0)
+kSeedMouseBaselineSignature                  SP 1 hit @0x1402eb810 (fn 0x1402eb810) MP 1 hit @0x140348c50 (fn 0x140348c50)
+kSprintTickSignature                         SP 1 hit @0x140014a80 (fn 0x140014a80) MP 0 hit
+kSqrtDomainErrorSignature                    SP 1 hit @0x140395608 (fn 0x140395608) MP 1 hit @0x1403fa9b8 (fn 0x1403fa9b8)
+kSunShadowDispatchSignature                  SP 1 hit @0x14019c450 (fn 0x14019c450) MP 1 hit @0x1401c2100 (fn 0x1401c2100)
+kUiContextAnchorSignature                    SP 1 hit @0x14029baa0 (fn 0x14029baa0) MP 0 hit
+kVmNotifySignature                           SP 1 hit @0x140261e10 (fn 0x140261e10) MP 1 hit @0x1402a5cc0 (fn 0x1402a5cc0)
+kWeaponNextSignature                         SP 1 hit @0x1400706d0 (fn 0x1400706d0) MP 0 hit
+kWorkerWaitSignature                         SP 2 hit @0x140249f84 (fn 0x140249f80) MP 5 hit @0x14021ba06 (fn 0x14021b8d0)
+kZoneReloadPrimitiveSignature                SP 1 hit @0x1401bc4f0 (fn 0x1401bc4f0) MP 1 hit @0x1401e2120 (fn 0x1401e2120)
