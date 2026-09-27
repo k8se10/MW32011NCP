@@ -2172,6 +2172,10 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     // well would set a second, different set of constants in the same frame
     // (Streamline rejects that -- eErrorDuplicatedConstants, ROUND 7).
     g_engineMainCmdBufStateX64 = renderState;
+    // Real, world-space camera position at this call -- still needed below by
+    // the (unrelated) projection-jitter zero-position gate, which predates
+    // ROUND 24 and was never part of the DLSS camera path being replaced here.
+    const float* camPos = reinterpret_cast<const float*>(base + 0x1590);
 
     if (g_projectionMatrixBuildFireCount <= 5 || (g_projectionMatrixBuildFireCount % 5000) == 0) {
         const float* row0 = reinterpret_cast<const float*>(base + 0x14d0);
