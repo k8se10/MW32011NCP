@@ -839,13 +839,24 @@ static bool UpdateDlssEffectiveOutputX64(void* device)
                 "holds -- mw3ncp_config.ini's own DLSSModeX64 value is NOT changed.",
                 inputWidth, inputHeight, displayWidth, displayHeight, configuredMode);
             LogFromController(buf);
+            // Modal markup (overlay_hud.cpp, RenderWarningTextMask): each '\n' ends a
+            // paragraph that word-wraps on its own, and the first byte may be a colour
+            // marker. Keep every marker in its OWN string literal ("\x03" "DLSS ...") --
+            // a C hex escape consumes every following hex digit, so the original
+            // "\x03DLSS" compiled to '=' (0x3D) + "LSS" and lost the heading colour.
+            // The bloom/depth-of-field line is ROUND 23/24's known, deliberately
+            // deferred tradeoff: DLSS runs before post-FX and is composited after it.
             ShowOverlayMessageUntilDismissed(
-                "\x03DLSS Mode Auto-Switched (This Session Only)\n\n"
-                "\x01Render scale above 100% is incompatible with DLSS's upscale\n"
-                "modes -- switched to DLAA for as long as this holds.\n\n"
-                "DLAA is EXPENSIVE: it runs the full neural network at your\n"
-                "entire supersampled resolution, not a cheap fallback.\n\n"
-                "Your DLSSModeX64 config setting is unchanged.");
+                "\x03" "DLSS switched to DLAA (this session only)\n\n"
+                "\x01" "\xE2\x9A\xA0 Render scale is above 100%, which DLSS's upscaling modes "
+                "cannot use, so DLAA runs instead for as long as that holds. DLAA works at "
+                "your full render-scale resolution and costs noticeably more GPU time than "
+                "upscaling.\n\n"
+                "Bloom and depth of field are not applied to the DLSS image above 100% "
+                "render scale yet.\n\n"
+                "Your DLSSModeX64 setting in mw3ncp_config.ini is unchanged.\n\n"
+                "Enter / Space / Click to continue:",
+                OverlayAnimStyle::Plain);
         } else {
             LogFromController("[x64-streamline-evaluate] Render-scale input no longer exceeds the "
                 "display resolution -- DLAA override lifted, using the configured DLSSModeX64 again.");

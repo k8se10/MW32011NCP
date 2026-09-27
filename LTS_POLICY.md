@@ -7,7 +7,20 @@ reconstructed from a GitHub Releases page or inferred from patch notes.
 
 ## Current status
 
-**No release exists yet on the `-x64` line, so no LTS designation is active.**
+**Current LTS: none yet on the `-x64` line.** v0.0.1-x64 (2026-09-22),
+v0.0.2-x64 (2026-09-23) and v0.0.3-x64 (2026-09-27) have shipped; none has
+completed the 4-week window below yet.
+
+**LTS candidate for the `0.0.x` line: v0.0.3-x64**, released 2026-09-27. It
+becomes eligible for promotion on 2026-10-25, provided no confirmed major
+regression resets the clock first (see **Promotion process**).
+
+**Development break: 2026-09-27 to 2026-10-04.** A planned one-week break
+starts on v0.0.3-x64's release day so the candidate can sit under real play
+with nothing new landing on top of it. The break doesn't shorten the 4-week
+window; the reports that come in during it are part of what the promotion
+decision is judged on.
+
 The prior `-x86` line's own LTS history (its Current LTS and LTS candidate)
 was withdrawn outright when that line was discontinued following MW3's
 x86→x64 recompile — see [`README.md`](README.md) and

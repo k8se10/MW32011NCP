@@ -3,6 +3,51 @@
 Condensed from `PATCHNOTES.md` in the source repo — see there for the full,
 itemized detail behind each entry.
 
+## v0.0.3-x64 — Alpha (2026-09-27)
+
+The biggest release in this project's history.
+
+**Native Vulkan rendering and NVIDIA DLSS/DLAA.** Campaign/Survival now
+render through Vulkan by default, using this project's own bundled DXVK
+fork (built into `d3d9.dll`, nothing extra to install; set
+`GraphicsApi=LegacyD3D9` for the old path, and Multiplayer always uses
+D3D9). On top of it, DLSS/DLAA via NVIDIA Streamline is working end to end
+as an opt-in for RTX GPUs (`StreamlineEnabled=1`), including above 100%
+render scale, where it switches to DLAA automatically for that session.
+Known gaps: bloom and depth of field aren't applied to the DLSS image above
+100% render scale yet, and moving objects don't have their own motion
+vectors yet.
+
+**Major performance fixes, all on by default.** The biggest is "the 67
+bug": a blur/downsample loop whose cost grew with render scale, and the
+cause of the long-standing "the pause menu runs worse than gameplay"
+problem. Fixing it took Dome at 250% render scale from 23 fps to a 76 fps
+average, and the pause menu now runs faster than gameplay. A lost
+shadow-quality check, three redundant per-frame render-view setups and a
+repeated console-font reload (all introduced by Activision's own 64-bit
+recompile) are skipped too, each with a measured gain.
+
+**World audio no longer sounds like it's in a small room.** The reverb
+bug where everything except your own gun echoed like an enclosed space is
+fixed and on by default (`ReverbWetScale=0.5`; `1.0` restores the old mix).
+
+**Multiplayer:** controller menu navigation (D-pad + A/B, B back) now
+works in MP's menus, and the performance fixes above also run there.
+In-game controller movement/aiming in MP is not supported yet.
+
+Also: the forced anisotropic filtering/shadow/lighting options and the
+Custom Options screen's vanilla settings finally have a real write path on
+x64 (not yet live-tested); the pause-menu Back glyph flicker has a fix
+(not yet live-tested); motion blur works again for controller as well as
+mouse; and new built-in diagnostics (F9/F10/F11) make performance reports
+far easier to investigate.
+
+**A one-week development break starts on release day (2026-09-27 to
+2026-10-04)** so this release can settle under real play. v0.0.3-x64 is
+the LTS candidate for this line: if it holds up for 4 weeks with no major
+regression, it becomes the long-term-support release (see `LTS_POLICY.md`
+on GitHub). Please keep reporting bugs during the break.
+
 ## v0.0.2-x64 — Alpha (2026-09-23)
 
 **Internal render scale now works in Multiplayer** — the first
