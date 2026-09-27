@@ -148,6 +148,56 @@ live in MP.
 Build-verified 0 errors/0 warnings (x64 and Win32); x64 redeployed and
 confirmed via dumpbin. Not yet live-tested in a private match.
 
+**Status update (2026-09-27, later still): LOOK SHIPPED, direct instruction
+"look for the angle accumaltors."** Previously OPEN ("no .pdata features,
+fragment of CL input code," per the very first status update above) --
+resolved by dumping the FULL raw stitched disassembly of the now-confirmed
+MP movement-tick function (`FUN_1400d0050`) via `DumpDisasm.java` against a
+real `Function.getBody()` iteration (which correctly follows Ghidra's own
+chunk-stitching, unlike a flat linear byte-range disassembly, which is what
+had made this "no .pdata features" in the first place -- the accumulator
+reads sit far outside the function's own first `.pdata` chunk).
+
+Found the real pack-preamble at `0x1400d029f`: two RIP-relative `movss`
+reads (`DAT_140e21454`, `DAT_140e21458`) into stack scratch, immediately
+followed by `CALL 0x14001e2c0` (MP's own angle-pack function, `FUN_14001e2c0`,
+the twin of SP's `FUN_140003fc0`) -- the exact same shape as SP's own
+`kAngleAccumSignature`. PITCH-vs-YAW identity cross-checked two independent
+ways before trusting either address:
+1. Traced which of the movement-tick's own two native mouse-delta outputs
+   (`FUN_1400cfb60`'s 2nd/3rd out-params) each accumulator's own native
+   update derives from: the first output feeds both `DAT_140e21458` AND
+   `usercmd+0x1d` (rightmove); the second feeds both `DAT_140e21454` AND
+   `usercmd+0x1c` (forwardmove) -- matching the already-established
+   forwardmove=vertical/rightmove=horizontal convention.
+2. Matched the READ ORDER against SP's own confirmed convention: SP resolves
+   pitch first, yaw second; MP's pack preamble reads `DAT_140e21454` first,
+   `DAT_140e21458` second -- the identical order.
+
+Both checks agree: `DAT_140e21454` = pitch, `DAT_140e21458` = yaw. New
+`kAngleAccumSignatureMP` (confirmed UNIQUE, 1 occurrence, in `iw5mp.exe` via
+a direct offline pattern scan) resolves both via the same
+`SigScan::ResolveRipRelative(addr, 8)` / `addr+14` offset pattern SP's own
+resolve code already uses (pitch instruction is 8 bytes, yaw instruction
+starts 14 bytes later -- 8 + the 6-byte stack-store instruction between them
+-- identical gap to SP's).
+
+**Shipped**: `Hook_MovementTickMP` now injects LOOK pre-hook (before
+`g_realMovementTickMP` runs), reusing the exact same formula/sign convention
+as SP's own `Hook_MovementTick` (`GetAdsLookRateScaleX64()` *
+`GetLookAccelerationScaleX64()`, `invertLook`, both accumulators
+subtracted-from) -- these helper functions are already null-safe against
+MP's still-unresolved FOV/dvar dependencies (gracefully fall back to no
+ADS-zoom slowdown rather than crash or misbehave), so no new gating was
+needed to reuse them safely. `g_pitchAccum`/`g_yawAccum` are shared globals
+with SP (single-process, mutually exclusive install paths, same pattern
+already used for `g_kbuttonActivate`/`g_kbuttonDeactivate`).
+
+**MP now has 7 real working controller inputs, up from 0**: Sprint, Hold
+Breath, CrouchProne auto-stand, left-stick movement, right-stick look, Fire,
+ADS, and Reload. Build-verified 0 errors/0 warnings (x64); x64 redeployed
+and confirmed via dumpbin. Not yet live-tested in a private match.
+
 **Status: plan with the static groundwork done.** Stage 5 of the renderer
 reference (`renderer_end_to_end.md` §11 links here). Direct instruction:
 "Port the entire current controller pipeline and performance fixes all to

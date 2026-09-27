@@ -2670,6 +2670,27 @@ constexpr const char* kMovementTickSignature =
 constexpr const char* kAngleAccumSignature =
     "F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 44 24 38 F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 44 24 44 E8 ?? ?? ?? ??";
 
+// MP twin (mp_port_plan.md step 7, 2026-09-27, "look for the angle accumulators" --
+// previously OPEN, "no .pdata features, fragment of CL input code," per the earlier status
+// update). Same real pack-preamble shape as SP's own kAngleAccumSignature above (two
+// RIP-relative movss reads into stack scratch, immediately followed by a CALL to the real
+// x64 angle-pack function, MP's own FUN_14001e2c0), found inside the now-confirmed MP
+// movement-tick function (FUN_1400d0050, see kMovementTickSignatureMP's own comment) via a
+// full raw disassembly dump (DumpDisasm.java against the new analyzed MP project) rather
+// than blind pattern-hunting. PITCH-vs-YAW identity independently cross-checked two ways,
+// not assumed from address order alone: (1) tracing which of the movement-tick's own two
+// native mouse-delta outputs (FUN_1400cfb60's 2nd/3rd out-params) each accumulator's own
+// native update derives from -- the first output feeds both DAT_140e21458 AND
+// usercmd+0x1d (rightmove), the second feeds both DAT_140e21454 AND usercmd+0x1c
+// (forwardmove), matching the already-established forwardmove=vertical/rightmove=
+// horizontal usercmd convention; (2) the READ ORDER in the pack preamble itself -- SP's own
+// kAngleAccumSignature resolves PITCH first, YAW second (this comment's own header above),
+// and MP's pack preamble reads DAT_140e21454 first, DAT_140e21458 second, the identical
+// order -- so DAT_140e21454 = pitch, DAT_140e21458 = yaw, consistent with both angles.
+// Confirmed UNIQUE (1 occurrence) in iw5mp.exe via a direct offline pattern scan.
+constexpr const char* kAngleAccumSignatureMP =
+    "F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 44 24 40 F3 0F 10 05 ?? ?? ?? ?? F3 0F 11 44 24 4C E8 ?? ?? ?? ??";
+
 using MovementTickFn = void(__fastcall*)(void* param1, unsigned int param2);
 MovementTickFn g_realMovementTick = nullptr;
 
@@ -9741,13 +9762,15 @@ void InstallMenuNavigationHooksX64()
     }
 }
 
-// MP controller pipeline (mp_port_plan.md step 7, 2026-09-27): movement (left stick) plus
-// Fire/ADS/Reload. Direct instruction: "we need all buttons and sticks to work." See
-// kMovementTickSignatureMP's own header comment for the real per-param calling-convention
-// difference from SP and the confirmation trail. Scope, explicitly NOT everything yet:
-//   - LOOK (right stick) is NOT wired -- MP's angle-accumulator addresses are still
-//     unresolved (OPEN in mp_port_plan.md), and this project's own signature-scanning
-//     policy requires a verified address before ever writing to one, not a guess.
+// MP controller pipeline (mp_port_plan.md step 7, 2026-09-27): movement (left stick), LOOK
+// (right stick), and Fire/ADS/Reload. Direct instruction: "we need all buttons and sticks
+// to work." See kMovementTickSignatureMP's own header comment for the real per-param
+// calling-convention difference from SP and the confirmation trail, and
+// kAngleAccumSignatureMP's own comment for how MP's pitch/yaw accumulators were found and
+// identity-confirmed. LOOK is injected PRE-hook (before g_realMovementTickMP runs), same
+// requirement as SP's own Hook_MovementTick: the native call both consumes AND packs the
+// accumulators in one pass, so our contribution must already be sitting in them first.
+// Scope, explicitly NOT everything yet:
 //   - The sniper Fire/ADS notify-bind-dispatch fix (g_notifyBindDispatch, SP-only
 //     kNotifyBindFuncOffset) is NOT ported -- its own MP address hasn't been researched.
 //     Fire/ADS may reproduce SP's own pre-fix sniper-class regression (known_issues_x64.md
@@ -9755,10 +9778,38 @@ void InstallMenuNavigationHooksX64()
 //   - D-pad action slots, Weapnext, CrouchProne/Jump/Melee/Lethal/Tactical/Interact/
 //     Scoreboard are NOT wired -- mp_port_plan.md marks their own signatures OPEN (no
 //     candidate found yet, MP's action slots differ structurally -- killstreaks).
+//   - Gyro-aim, ADS-FOV look-slowdown's own zoom-magnitude nuance, and the missile-guidance
+//     diagnostic SP's own Hook_MovementTick carries are not ported -- this is the core
+//     move+look+Fire/ADS/Reload set only.
 void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param3)
 {
     GameplayHookCtxScopeX64 gameplayCtx;
     g_lastGameplayTickMsX64 = GetTickCount();
+
+    // LOOK first, PRE-hook -- see this function's own header comment for why.
+    if (param2 && g_pitchAccum && g_yawAccum && !g_modConfig.disableControllerInputX64) {
+        float leftX, leftY, rightX, rightY;
+        if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
+            float moveXUnused, moveYUnused, lookX, lookY;
+            RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveXUnused, moveYUnused, lookX, lookY);
+            float dt = Controller_DeltaTimeSeconds();
+            if (dt > 0.0f && (lookX != 0.0f || lookY != 0.0f)) {
+                // Same formula/sign convention as SP's own Hook_MovementTick -- see that
+                // function's own comment for the full derivation history.
+                float scale = GetAdsLookRateScaleX64() * GetLookAccelerationScaleX64();
+                float yawRate = g_modConfig.lookDegreesPerSecondHorizontal * scale;
+                float pitchRate = g_modConfig.lookDegreesPerSecondVertical * scale;
+                float pitchInput = g_modConfig.invertLook ? -lookY : lookY;
+                float yawDelta = lookX * yawRate * dt;
+                float pitchDelta = pitchInput * pitchRate * dt;
+                *g_yawAccum -= yawDelta;
+                *g_pitchAccum -= pitchDelta;
+            } else {
+                g_lookAccelStartMsX64 = 0;
+            }
+        }
+    }
+
     g_realMovementTickMP(param1, param2, param3);
 
     if (param2 && !g_modConfig.disableControllerInputX64) {
@@ -9766,7 +9817,7 @@ void __fastcall Hook_MovementTickMP(int param1, void* param2, unsigned int param
         if (Controller_GetLeftStick(leftX, leftY) && Controller_GetRightStick(rightX, rightY)) {
             float moveX, moveY, lookX, lookY;
             RouteStickAxes_Exported(leftX, leftY, rightX, rightY, g_modConfig.stickLayout, moveX, moveY, lookX, lookY);
-            (void)lookX; (void)lookY; // LOOK not wired yet for MP -- see this function's own header comment
+            (void)lookX; (void)lookY; // already consumed above, pre-hook
 
             auto* cmd = reinterpret_cast<unsigned char*>(param2);
             if (moveX != 0.0f || moveY != 0.0f) {
@@ -9946,10 +9997,36 @@ void InstallMpAnchorAndSprintHooksX64()
                     LogFromController(buf);
                 } else {
                     LogFromController("[x64-mp-movement] MP Movement-tick hook installed and enabled -- controller "
-                        "left-stick movement plus Fire/ADS/Reload are active. LOOK (right stick), D-pad action "
+                        "left-stick movement, right-stick look, and Fire/ADS/Reload are active. D-pad action "
                         "slots, Weapnext, CrouchProne/Jump/Melee/Lethal/Tactical/Interact/Scoreboard remain "
                         "unported (see Hook_MovementTickMP's own header comment).");
                 }
+            }
+        }
+    }
+
+    // LOOK (right stick) -- resolves g_pitchAccum/g_yawAccum for MP. Independent of the
+    // Movement hook above (a failure here only disables look; movement/Fire/ADS/Reload
+    // still work, matching Hook_MovementTickMP's own null-checked guard).
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kAngleAccumSignatureMP);
+        if (!r.found) {
+            LogFromController("[x64-mp-look] FATAL: MP angle-accumulator signature did not resolve -- controller "
+                "right-stick look will not work this session");
+        } else {
+            uintptr_t pitchInsnAddr = r.address;
+            uintptr_t yawInsnAddr = r.address + 14;
+            g_pitchAccum = reinterpret_cast<float*>(SigScan::ResolveRipRelative(pitchInsnAddr, 8));
+            g_yawAccum = reinterpret_cast<float*>(SigScan::ResolveRipRelative(yawInsnAddr, 8));
+            if (!g_pitchAccum || !g_yawAccum) {
+                LogFromController("[x64-mp-look] FATAL: MP angle-accumulator RIP-relative resolution failed -- "
+                    "controller right-stick look will not work this session");
+            } else {
+                char buf[192];
+                sprintf_s(buf, "[x64-mp-look] MP angle accumulators resolved: pitch=0x%p yaw=0x%p -- look "
+                    "injection active, folded into the MP Movement hook (same tick, pre-call write).",
+                    (void*)g_pitchAccum, (void*)g_yawAccum);
+                LogFromController(buf);
             }
         }
     }
