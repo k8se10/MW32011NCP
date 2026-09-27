@@ -8995,12 +8995,26 @@ extern "C" const char* GetCurrentJitterProbeCandidateNameX64()
 extern "C" LONG ConsumeBackNativeDrawCountX64() { return InterlockedExchange(&g_backNativeDrawsSinceVisibleX64, 0); }
 
 // Pause-menu Back hint, drawn by overlay_hud every rendered frame while the pause menu is up (see g_backHintValidX64).
-// "Paused menu" = a menu is active, the gameplay tick has gone stale, and the client is in a level (clcState != 0),
-// which excludes the main menu.
+// "Paused menu" = a menu is active, the client is in a level (clcState != 0, excludes the main menu), and the real
+// topmost menu is "pausedmenu" (checked below).
+// REVISED 2026-09-27 (pause Back glyph / native ESC flicker): this used to also require IsGameplayPausedX64() -- the
+// gameplay tick being stale for >250 ms, a timing guess standing in for a pause flag (cl_paused does not work as one
+// on x64, user-confirmed). That guess was false for the first 250 ms of every pause and on any late gameplay tick,
+// and each time it dropped, this returned false: overlay_hud stopped drawing the hardcoded glyph and Hook_DrawTextX64
+// fell back to requesting a glyph from whichever native Back draw came next (including the offscreen blur-pass copies
+// at other positions) -- the glyph jumped/flickered. The topmost-menu name is the real identity check and already
+// excluded every other menu, so the pause gate is now menu-active + in-level + that name, nothing timing-based.
+// ALSO REVISED 2026-09-27: now gated on ShouldDrawGlyphOverlay_Exported() (controller is the active input) -- the SAME
+// gate Hook_DrawTextX64's corner-hint block already requires before it suppresses the native "Back ^2ESC^7" text.
+// overlay_hud.cpp calls this ungated every visible frame, so whenever the active-input check read keyboard/mouse
+// (a mouse move past the deadzone, including any cursor movement while the pause menu is open), the native ESC text
+// was left unsuppressed while this glyph still drew on top of it; as the check flipped back and forth the native ESC
+// flickered in and out under our B glyph. One gate for both sides: either the native hint (keyboard/mouse) or ours
+// (controller), never both.
 extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t prefixSize, char* suffix, size_t suffixSize,
                                     char* asset, size_t assetSize)
 {
-    if (!IsGameplayPausedX64()) return false;
+    if (!ShouldDrawGlyphOverlay_Exported()) return false;
     if (!IsMenuActiveX64_Exported()) return false;
     int clc = -1;
     if (!TryGetClcStateX64(&clc) || clc == 0) return false;
@@ -9025,7 +9039,7 @@ extern "C" bool GetPausedBackHintX64(float* x, float* y, char* prefix, size_t pr
             ++s_menuNameLogs;
             strncpy_s(s_lastLoggedMenuName, menuName, _TRUNCATE);
             char mb[200];
-            sprintf_s(mb, "[x64-menuname] topmost menu=\"%s\" (paused-tick=1, in level)", menuName);
+            sprintf_s(mb, "[x64-menuname] topmost menu=\"%s\" (menu active, in level)", menuName);
             LogFromController(mb);
         }
         if (!haveName) {

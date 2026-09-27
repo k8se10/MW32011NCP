@@ -712,9 +712,17 @@ struct MenuHintSlot {
     // land at genuinely different real pixel positions (e.g. a Survival buy-station
     // popup using its own UI's corner convention, not the standard menu one).
     bool isBackShortcut = false;
+    // Persistent slot ownership (2026-09-27, pause-menu Back glyph flicker). A hint keeps the SAME slot for as long
+    // as it is requested or still fading out, instead of being re-appended at whatever index this frame's request
+    // order gives it. The old append-per-frame pool keyed each slot's hold+fade state by INDEX, so any change in
+    // request order (another hint appearing/disappearing, a native draw landing before or after the pause Back
+    // request) moved the Back glyph to a different index whose fade state started again from alpha 0 -- a visible
+    // flicker -- while its old index kept drawing a stale fading copy. inUse = owned by a live or fading hint;
+    // requestedThisFrame = re-requested since the last visible pass (drives UpdateHintFade).
+    bool inUse = false;
+    bool requestedThisFrame = false;
 };
 MenuHintSlot g_menuHintSlots[kMaxMenuHintSlots] = {};
-int g_menuHintSlotCountThisFrame = 0; // how many of the slots above are live for the CURRENT frame
 
 // In-game hint text renders noticeably larger than the toast notification's own 20px
 // (live-reported 2026-07-31: default 20px read as too small next to a 34px icon,
@@ -1736,6 +1744,9 @@ float UpdateHintFade(HintFadeState& s, bool requestedNow, DWORD now)
     if (outA < 0.0f) outA = 0.0f;
     return outA < inA ? outA : inA;
 }
+// Hold + fade state for each g_menuHintSlots entry, same index. Reset whenever a slot is (re)assigned to a new hint in
+// RequestMenuHintOverlay, so a newly shown hint always fades in from its own start rather than inheriting another's.
+HintFadeState g_menuHintFade[kMaxMenuHintSlots];
 
 void DrawGenericTexturedQuad(void* device, void* texture, float x, float y, float w, float h, DWORD color = 0xFFFFFFFF,
                               float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f,
@@ -2671,18 +2682,21 @@ void DrawMenuHintsIfRequested(void* device)
             RequestMenuHintOverlay(backX, backY, backPrefix, backSuffix, backAsset, 0xFFFFFFFFu, /*isBackShortcut=*/true);
     }
 #endif
-    int count = g_menuHintSlotCountThisFrame;
-    g_menuHintSlotCountThisFrame = 0;
-    // Hold + fade persistence per pool slot (see UpdateHintFade). Slot contents persist across frames (only the count is
-    // reset), so a slot that was not re-requested this frame is simply re-drawn from its last contents while it is held
-    // or fading; it fades in when first requested and fades out after it stops being requested.
-    static HintFadeState s_menuFade[kMaxMenuHintSlots];
+    // Hold + fade persistence per owned slot (see UpdateHintFade and MenuHintSlot::inUse). A slot that was not
+    // re-requested since the last visible pass is re-drawn from its own last contents while held or fading, then
+    // released once fully faded out.
+    int count = 0;
     float menuAlpha[kMaxMenuHintSlots] = {};
     bool anyMenuHint = false;
     const DWORD nowTick = GetTickCount();
     for (int i = 0; i < kMaxMenuHintSlots; ++i) {
-        menuAlpha[i] = UpdateHintFade(s_menuFade[i], i < count, nowTick);
+        MenuHintSlot& slot = g_menuHintSlots[i];
+        if (!slot.inUse) continue;
+        if (slot.requestedThisFrame) ++count;
+        menuAlpha[i] = UpdateHintFade(g_menuHintFade[i], slot.requestedThisFrame, nowTick);
+        slot.requestedThisFrame = false;
         if (menuAlpha[i] > 0.0f) anyMenuHint = true;
+        else slot.inUse = false; // fully faded out -- free for the next new hint
     }
 #if defined(_M_X64) || defined(_WIN64)
     // Per-visible-frame trace of the menu-hint pipeline (dev only: [Experimental] UnboundedDevLog). Answers, for a
@@ -8667,23 +8681,28 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
     // frame first, independent of position -- same "last call wins == native paint
     // order" reasoning as the position-based fix, just keyed on semantic role
     // instead of pixel proximity for this one specific, uniquely-identifiable hint.
+    // 2026-09-27: both searches below run over every OWNED slot (MenuHintSlot::inUse), not only the ones requested so
+    // far this frame, so a hint re-requested every frame lands back in its own slot and keeps its own fade state -- see
+    // MenuHintSlot::inUse. "Last call wins" within a frame is unchanged: the later request overwrites the same slot.
     if (isBackShortcut) {
-        for (int i = 0; i < g_menuHintSlotCountThisFrame; ++i) {
+        for (int i = 0; i < kMaxMenuHintSlots; ++i) {
             MenuHintSlot& existing = g_menuHintSlots[i];
-            if (existing.isBackShortcut) {
+            if (existing.inUse && existing.isBackShortcut) {
                 strncpy_s(existing.prefixText, prefixText, _TRUNCATE);
                 strncpy_s(existing.suffixText, suffixText, _TRUNCATE);
                 strncpy_s(existing.assetName, assetName, _TRUNCATE);
                 existing.x = x;
                 existing.y = y;
                 existing.color = color;
+                existing.requestedThisFrame = true;
                 return;
             }
         }
     }
     constexpr float kSamePositionToleragePx = 20.0f;
-    for (int i = 0; i < g_menuHintSlotCountThisFrame; ++i) {
+    for (int i = 0; i < kMaxMenuHintSlots; ++i) {
         MenuHintSlot& existing = g_menuHintSlots[i];
+        if (!existing.inUse) continue;
         if (fabsf(existing.x - x) < kSamePositionToleragePx && fabsf(existing.y - y) < kSamePositionToleragePx) {
             strncpy_s(existing.prefixText, prefixText, _TRUNCATE);
             strncpy_s(existing.suffixText, suffixText, _TRUNCATE);
@@ -8692,11 +8711,35 @@ void RequestMenuHintOverlay(float x, float y, const char* prefixText, const char
             existing.y = y;
             existing.color = color;
             existing.isBackShortcut = isBackShortcut;
+            existing.requestedThisFrame = true;
             return;
         }
     }
-    if (g_menuHintSlotCountThisFrame >= kMaxMenuHintSlots) return;
-    MenuHintSlot& slot = g_menuHintSlots[g_menuHintSlotCountThisFrame++];
+    // New hint: take a free slot; if none is free, reclaim the owned slot that has gone longest without a request
+    // (necessarily one only held/fading, never one requested this frame) -- a fading-out hint must not starve a newly
+    // appearing one (issue #51's own slot-starvation precedent). Every slot requested this frame = pool genuinely full
+    // this frame: dropped, same safe degradation as before.
+    int freeIndex = -1;
+    for (int i = 0; i < kMaxMenuHintSlots && freeIndex < 0; ++i) {
+        if (!g_menuHintSlots[i].inUse) freeIndex = i;
+    }
+    if (freeIndex < 0) {
+        const DWORD now = GetTickCount();
+        DWORD oldestAge = 0;
+        for (int i = 0; i < kMaxMenuHintSlots; ++i) {
+            if (g_menuHintSlots[i].requestedThisFrame) continue;
+            const DWORD age = now - g_menuHintFade[i].lastSeenMs; // unsigned difference: GetTickCount-wrap safe
+            if (freeIndex < 0 || age > oldestAge) {
+                freeIndex = i;
+                oldestAge = age;
+            }
+        }
+    }
+    if (freeIndex < 0) return;
+    MenuHintSlot& slot = g_menuHintSlots[freeIndex];
+    g_menuHintFade[freeIndex] = HintFadeState{};
+    slot.inUse = true;
+    slot.requestedThisFrame = true;
     slot.isBackShortcut = isBackShortcut;
     strncpy_s(slot.prefixText, prefixText, _TRUNCATE);
     strncpy_s(slot.suffixText, suffixText, _TRUNCATE);
