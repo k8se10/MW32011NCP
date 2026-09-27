@@ -66,6 +66,13 @@ void RunDlssEvaluateAndCompositeX64(void* device); // streamline_evaluate_x64.cp
 void ResetDlssCompositeFrameGuardX64(); // streamline_evaluate_x64.cpp, 2026-09-27 --
     // per-real-frame guard reset, same shape/reason as g_motionBlurRanThisFrame's
     // own reset below (FUN_14018def0 can fire more than once per real frame).
+void RunDlssMainMenuWarmupOnceX64(void* device); // streamline_evaluate_x64.cpp, 2026-09-27 --
+    // direct user-requested Option #1 experiment: a real, one-shot DLSS evaluate
+    // attempt at the main menu, before any gameplay gate applies -- see its own
+    // header comment for the full rationale. Mutually exclusive with
+    // RunDlssEvaluateAndCompositeX64 (menu-active vs. in-level), safe to call every
+    // frame from the same trigger since it no-ops immediately after its own
+    // one-shot latch trips.
 extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
     // 2026-09-26 -- the single correct "is it safe/meaningful to do real
     // Streamline-adjacent work right now" gate (false unless StreamlineEnabled,
@@ -4592,6 +4599,11 @@ extern "C" void TriggerMotionBlurFromEngineHook()
     // Independently gated/guarded inside -- a no-op unless StreamlineEnabled=1 and
     // this frame's own real gameplay gates (menu/in-level/clcState) all pass.
     RunDlssEvaluateAndCompositeX64(device);
+    // 2026-09-27: the main-menu warm-up experiment (Option #1) shares the same real
+    // per-viewport boundary -- mutually exclusive with the call above (menu-active vs.
+    // in-level), and independently one-shot-latched inside, so calling it every frame
+    // here is safe and costs nothing once it's fired (or been skipped) once.
+    RunDlssMainMenuWarmupOnceX64(device);
 }
 
 // Phase A/B's shared entry point, called from the very end of Hook_EndScene

@@ -87,6 +87,15 @@ extern "C" bool IsMenuActiveX64_Exported(); // analog_input_hooks_x64.cpp -- sam
     // menu/loading screen.
 extern "C" bool TryGetInLevelFlagX64(int* outValue); // analog_input_hooks_x64.cpp
 extern "C" bool TryGetClcStateX64(int* outValue); // analog_input_hooks_x64.cpp
+extern bool IsStreamlineCameraStableX64(); // streamline_camera_x64.cpp, 2026-09-27 -- real
+    // post-reset stabilization-window gate (kStreamlineStabilizationTicksX64 real tracked
+    // frames since the last teleport/first-frame reset). Added after live evidence the
+    // evaluate gameplay-gate above can open on a frame that is still mid-camera-transition
+    // (map-dependent: Dome hung faster, mid-transition; Underground reached first-person
+    // first) -- the single-frame teleport-reset flag alone doesn't cover that race.
+extern bool SetIdentityStreamlineConstantsForWarmupX64(); // streamline_camera_x64.cpp,
+    // 2026-09-27 -- real, deliberately degenerate Constants for the main-menu warm-up
+    // below (see its own comment for why real camera Constants aren't available there).
 
 namespace {
 
@@ -721,6 +730,9 @@ void RunDlssEvaluateAndCompositeX64(void* device)
     if (!TryGetInLevelFlagX64(&inLevel) || inLevel <= 0) return;
     int clcState = 0;
     if (!TryGetClcStateX64(&clcState) || clcState == 0) return;
+    if (!IsStreamlineCameraStableX64()) return; // real stabilization-window gate --
+        // see this file's own extern declaration comment above for the exact race
+        // this closes (mid-transition evaluate attempts on a just-reset camera history).
 
     g_dlssCompositeRanThisFrameX64 = true;
 
@@ -790,4 +802,79 @@ void RunDlssEvaluateAndCompositeX64(void* device)
 void ResetDlssCompositeFrameGuardX64()
 {
     g_dlssCompositeRanThisFrameX64 = false;
+}
+
+// 2026-09-27: real, one-shot main-menu DLSS warm-up -- direct user-requested
+// experiment ("Option #1": force the first real evaluate to fire at the main
+// menu, before any gameplay gate applies), given live evidence the hang is
+// tied to the very FIRST real evaluate call ever made, and that the crash
+// timing is genuinely map-dependent (Dome hung mid-transition, faster than
+// before; Underground reached first-person first) -- consistent with a cold
+// GPU-side first-time cost (NGX shader/kernel compilation being the leading
+// hypothesis) colliding with whatever timing pressure a specific map's own
+// transition puts on the same frame. Moving that one-time cost to an idle
+// main-menu screen, with nothing else contending for the GPU, is a genuinely
+// different real-world condition than any prior attempt tested under --
+// this is exploratory, not a confirmed fix, and is honestly logged as such.
+//
+// Deliberately narrower than RunDlssEvaluateAndCompositeX64 above:
+//   - Never composites anything to screen (there's no real 3D frame at the
+//     main menu to meaningfully enhance) -- calls EvaluateStreamlineDlssX64()
+//     directly and discards the result either way.
+//   - Uses SetIdentityStreamlineConstantsForWarmupX64() (streamline_camera_x64.cpp)
+//     instead of the real per-frame camera path, since real camera Constants
+//     require Hook_ProjectionMatrixBuild to have fired at least once, which
+//     never happens at a 2D menu screen with no active 3D camera.
+//   - Fires at most once per process lifetime, regardless of outcome -- a
+//     hang here is exactly as costly to the player as a hang during real
+//     gameplay, so this must never retry.
+//   - Reuses EvaluateStreamlineDlssX64()'s own existing real safety net
+//     unchanged: ScopedDxvkSubmissionLockX64, the 2s fence timeout, and the
+//     g_dlssDeviceLostX64 latch this file's own Round 13/14 fixes already
+//     added -- if THIS call is what hangs, it hangs under the exact same
+//     bounded, already-proven-safest-available conditions as the real
+//     in-gameplay path, not a weaker ad hoc one.
+//
+// Called from TriggerMotionBlurFromEngineHook (overlay_hud.cpp) -- the same
+// real per-viewport boundary the gameplay composite path uses, which also
+// fires while the main menu is drawing its own 2D UI (confirmed reachable:
+// this boundary is a generic per-viewport HUD/2D dispatch point, not gated
+// to in-level content).
+void RunDlssMainMenuWarmupOnceX64(void* device)
+{
+    static bool s_warmupAttempted = false;
+    if (s_warmupAttempted) return;
+    if (!IsStreamlineInitializedX64()) return;
+    if (!device) return;
+    if (!IsMenuActiveX64_Exported()) return; // only ever at the main menu -- mutually
+        // exclusive with the real gameplay path (which requires inLevel > 0).
+
+    s_warmupAttempted = true; // one-shot regardless of outcome -- see this function's
+        // own header comment for why a hang here must never be retried.
+
+    LogFromController("[dlss-menu-warmup] attempting one-shot main-menu DLSS evaluate "
+        "warm-up (Option #1 experiment) -- forcing any real first-time GPU-side cost "
+        "(NGX kernel/shader compilation) to happen here instead of during a real "
+        "gameplay map transition.");
+
+    // Self-owned output/motion-vectors resources -- safe to create/tag regardless of
+    // whether any real 3D scene is currently rendering (see streamline_resources_x64.cpp's
+    // own TagStreamlineOutputColorX64/TagStreamlineMotionVectorsX64 -- this project
+    // creates and owns both textures itself, sized off the real display resolution).
+    TagStreamlineOutputColorX64();
+    TagStreamlineMotionVectorsX64();
+
+    if (!SetIdentityStreamlineConstantsForWarmupX64()) {
+        LogFromController("[dlss-menu-warmup] slSetConstants (identity/warm-up) FAILED -- "
+            "aborting this one-shot attempt, real gameplay evaluate path is unaffected.");
+        return;
+    }
+
+    bool evaluated = EvaluateStreamlineDlssX64();
+    char buf[256];
+    sprintf_s(buf, "[dlss-menu-warmup] one-shot main-menu evaluate attempt finished, "
+        "evaluated=%d (see prior EvaluateStreamlineDlssX64 log lines for the real detail -- "
+        "this result is NEVER composited to screen). Real gameplay evaluate path is unaffected "
+        "either way.", evaluated ? 1 : 0);
+    LogFromController(buf);
 }
