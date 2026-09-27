@@ -61,6 +61,7 @@ extern "C" bool IsStreamlineInitializedX64(); // streamline_integration_x64.cpp,
     // shipped.
 extern VkInstance GetDxvkVkInstanceX64(); // streamline_integration_x64.cpp
 extern VkDevice GetDxvkVkDeviceX64();     // streamline_integration_x64.cpp
+extern "C" bool TryGetEngineRenderTargetSelectX64(int* outId); // analog_input_hooks_x64.cpp, 2026-09-27 (ROUND 22)
 extern bool StreamlineSetTagForFrameX64(const sl::ResourceTag* tags, uint32_t numTags); // streamline_integration_x64.cpp
 extern bool GetDlssEffectiveOutputResolutionX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_evaluate_x64.cpp,
     // 2026-09-27 -- see that file's own g_dlssEffectiveModeX64 comment. The real DLSS
@@ -445,10 +446,52 @@ void TagDepthResourceForFrame(void* depthSurface)
 // real, low-res-relative-to-output color buffer DLSS reads and upscales
 // from). Same interop chain as depth, COLOR aspect instead of DEPTH,
 // SetRenderTarget(0, ...) instead of SetDepthStencilSurface.
+// 2026-09-27 (ROUND 22): engine render targets that can hold the finished
+// scene colour. IDs from the binary's own R_RENDERTARGET_* name table
+// (renderer_end_to_end.md §8.3). Everything else -- SAVED_SCREEN 0, FLOAT_Z 5
+// (R32F depth), PINGPONG_0/1 6/7 and POST_EFFECT_0/1 8/9 (glow/bloom/blur
+// intermediates), shadow maps 10/11, SSAO 12-14 -- is never a valid DLSS
+// scene-colour input.
+bool IsEngineSceneColorTargetIdX64(int id)
+{
+    return id == 1 /* FRAME_BUFFER */ || id == 2 /* SCENE */ ||
+        id == 3 /* RESOLVED_POST_SUN */ || id == 4 /* RESOLVED_SCENE */;
+}
+
 void TagColorResourceForFrame(void* renderTarget)
 {
     ++g_resolveColorAttemptCount;
     bool heartbeat = g_resolveColorAttemptCount <= 5 || (g_resolveColorAttemptCount % 5000) == 0;
+
+    // REAL FIX, 2026-09-27 (ROUND 22) -- the above-100% black viewport. The
+    // size filter below used to be the ONLY filter, and the LAST size-matching
+    // SetRenderTarget(0) of the frame won. The engine creates FLOAT_Z (5),
+    // PINGPONG_0/1 (6/7) and POST_EFFECT_0/1 (8/9) at the same requested scene
+    // resolution as SCENE (FUN_1401d44f0, from 0x141888670 -- exactly what
+    // InternalRenderScalePercent rewrites), and post-FX binds the ping-pong/
+    // post-effect targets AFTER the scene for its glow/bloom/film-blur passes.
+    // So whenever those passes ran, DLSS was fed a mostly-black blur/bloom
+    // intermediate as its "scene colour", DLAA processed it faithfully, and the
+    // composite painted it over the frame. At exactly 100% the native
+    // FRAME_BUFFER (1) also matches the size and post-FX re-binds it after
+    // every pass, so it always won there -- which is why 100% looked fine.
+    // Now the engine's own target ID (published by Hook_RenderViewSelectDiag
+    // around FUN_1401dfd80, the engine's only SetRenderTarget caller) decides:
+    // only scene-colour targets are accepted, and binds from outside the engine
+    // (this proxy's own passes) are ignored. Falls back to the legacy
+    // size-only rule if that hook isn't live this session.
+    int engineRtId = -1;
+    if (TryGetEngineRenderTargetSelectX64(&engineRtId) && !IsEngineSceneColorTargetIdX64(engineRtId)) {
+        static long long s_idRejectCount = 0;
+        ++s_idRejectCount;
+        if (s_idRejectCount <= 10 || (s_idRejectCount % 5000) == 0) {
+            char buf[200];
+            sprintf_s(buf, "[x64-streamline-color] engine target id %d is not a scene-colour target -- "
+                "not tagged as DLSS input (reject #%lld).", engineRtId, s_idRejectCount);
+            LogFromController(buf);
+        }
+        return;
+    }
 
     // REAL, LIVE, SEVERE BUG FIXED, 2026-09-24: this function used to call
     // QueryInterface+GetVulkanImageInfo UNCONDITIONALLY, before the
@@ -528,17 +571,29 @@ void TagColorResourceForFrame(void* renderTarget)
         info.extent.width == expectedWidth && info.extent.height == expectedHeight;
 
     if (heartbeat) {
-        char buf[400];
+        char buf[512]; // widened for engineRtId, 2026-09-27 (ROUND 22) -- worst case ~375
         sprintf_s(buf, "[x64-streamline-color] attempt=%lld image=0x%llx layout=%d format=%d "
-            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u samples=%d usage=0x%X expected=%ux%u match=%d",
+            "extent=%ux%ux%u mipLevels=%u arrayLayers=%u samples=%d usage=0x%X expected=%ux%u match=%d "
+            "engineRtId=%d",
             g_resolveColorAttemptCount, reinterpret_cast<unsigned long long>(image), static_cast<int>(layout),
             static_cast<int>(info.format), info.extent.width, info.extent.height, info.extent.depth,
             info.mipLevels, info.arrayLayers, static_cast<int>(info.samples), info.usage,
-            expectedWidth, expectedHeight, resolutionMatches ? 1 : 0);
+            expectedWidth, expectedHeight, resolutionMatches ? 1 : 0, engineRtId);
         LogFromController(buf);
     }
 
     if (!resolutionMatches) return; // a real, different render target this frame -- not the scene color
+    if (info.samples != VK_SAMPLE_COUNT_1_BIT) {
+        // 2026-09-27 (ROUND 22): DLSS cannot consume a multisampled image;
+        // the engine's MSAA $scene is resolved elsewhere. Never tag it.
+        if (heartbeat) {
+            char buf[180];
+            sprintf_s(buf, "[x64-streamline-color] engine target id %d is multisampled (samples=%d) -- "
+                "not a valid DLSS input, skipped.", engineRtId, static_cast<int>(info.samples));
+            LogFromController(buf);
+        }
+        return;
+    }
 
     g_frameSceneColorSurfaceX64 = renderTarget;
 
@@ -1089,6 +1144,22 @@ bool RetagStreamlineInputsAfterFlushX64()
 {
     if (!g_frameSceneDepthSurfaceX64 || !g_frameSceneColorSurfaceX64 ||
         !g_outputColorSurface || !g_motionVectorsSurface) {
+        // 2026-09-27 (ROUND 22): visible, rate-limited -- with the colour input
+        // now selected by engine target ID, "no scene colour recorded" is the
+        // expected outcome if the engine never binds an accepted scene-colour
+        // target at the internal resolution; that must show up in the log,
+        // not silently skip DLSS.
+        static long long s_missingCount = 0;
+        ++s_missingCount;
+        if (s_missingCount <= 10 || (s_missingCount % 1000) == 0) {
+            char buf[240];
+            sprintf_s(buf, "[x64-streamline-evaluate] Skipping evaluate: missing this frame's%s%s%s%s "
+                "(count=%lld).", g_frameSceneDepthSurfaceX64 ? "" : " scene-depth",
+                g_frameSceneColorSurfaceX64 ? "" : " scene-colour",
+                g_outputColorSurface ? "" : " output", g_motionVectorsSurface ? "" : " motion-vectors",
+                s_missingCount);
+            LogFromController(buf);
+        }
         return false;
     }
     if (!ResolveVulkanFunctionsIfNeeded()) return false;
