@@ -88,6 +88,8 @@
                           // PollCustomOptionsMenuX64's own comment below
 #include "rumble.h" // Rumble_Install()/Rumble_Tick() -- 2026-09-12 x64 port, see
                      // rumble.cpp's own "x64 PORT" block for the full RE trail
+#include "dvar_write_x64.h" // QueueDvar*WriteX64/InstallDvarWriteX64 -- 2026-09-27, the real x64
+                            // dvar write path (known_issues_x64.md issue #6)
 #include "game_exe_detect.h" // GetDetectedGameExecutable() -- 2026-09-27, MP menu-navigation
                      // port: InstallMenuNavigationHooksX64() needs to pick between the SP and
                      // MP anchor signature depending on which real exe loaded this DLL.
@@ -1402,59 +1404,18 @@ static void ScanHudElems(const char* tag)
     LogFromController(b);
 }
 
-// ---- x64 dvar write by name (2026-09-19) ------------------------------------------------
-// FUN_1402c5b30 = Cvar_SetInt(const char* name, int value): FindDvar, then sets int/enum
-// types directly or formats other types as a string ("1"/"0" for a bool). Replaces the
-// x86-only CbufAddText path for the F4 `ai_disableSpawn` debug toggle (real_settings.cpp's
-// x64 setters are stubs). Signature verified unique offline (PatternScan, 1 match).
-// The real setter (FUN_1402c5f30) silently returns for flagged dvars unless the CALLING thread
-// is the game's main thread (FUN_14024a250: GetCurrentThreadId() == DAT_142005820). The F4 poll
-// runs on the render/WndProc thread, so a direct write was a silent no-op (2026-09-21 trace).
-// SetDvarIntX64 now only QUEUES the write; Hook_MovementTick (game thread) applies it via
-// ApplyPendingDvarSetX64 and logs a read-back so success is verifiable.
-static char g_pendingDvarName[64] = "";
-static int g_pendingDvarValue = 0;
-static volatile LONG g_pendingDvarSet = 0;
-static void* g_cvarSetIntFnX64 = nullptr;
-
+// ---- x64 dvar write by name (2026-09-19, reworked 2026-09-27) --------------------------
+// F4 `ai_disableSpawn` debug toggle (analog_input_hooks.cpp). History: 2026-09-19 wrote the
+// dvar directly via Cvar_SetInt (FUN_1402c5b30); 2026-09-21 found Dvar_SetVariant
+// (FUN_1402c5f30) silently drops writes to flagged dvars from any thread except the game's
+// main thread, so the write was queued and applied from Hook_MovementTick. That single-slot
+// queue used hardcoded addresses for Dvar_FindVar and the main-thread-id global and never
+// drained in the pause menu. As of 2026-09-27 it forwards to the general x64 dvar write path
+// (dvar_write_x64.cpp): signature-resolved setters, a coalescing any-thread queue, drained on
+// the main thread at the top of every Com_Frame body (menus included), with a read-back log.
 extern "C" bool SetDvarIntX64(const char* name, int value)
 {
-    static bool s_tried = false;
-    if (!g_cvarSetIntFnX64 && !s_tried) {
-        s_tried = true;
-        SigScan::Result r = SigScan::FindPatternInMainModule(
-            "48 89 5C 24 08 48 89 74 24 10 57 48 81 EC 80 00 00 00 8B FA 48 8B F1 E8 ?? ?? ?? ?? "
-            "48 8B D8 48 85 C0 74 52 0F B6 48 0C 80 E9 05");
-        if (r.found) g_cvarSetIntFnX64 = reinterpret_cast<void*>(r.address);
-        LogFromController(r.found ? "[x64-dvarset] Cvar_SetInt resolved -- F4 AI-spawn toggle available"
-                                  : "[x64-dvarset] FATAL: Cvar_SetInt signature did not resolve -- F4 toggle unavailable");
-    }
-    if (!g_cvarSetIntFnX64 || !name) return false;
-    strncpy_s(g_pendingDvarName, name, _TRUNCATE);
-    g_pendingDvarValue = value;
-    InterlockedExchange(&g_pendingDvarSet, 1);
-    return true;
-}
-
-// Called at the top of Hook_MovementTick (game thread).
-static void ApplyPendingDvarSetX64()
-{
-    if (!InterlockedCompareExchange(&g_pendingDvarSet, 0, 1)) return;
-    using SetFn = void(__fastcall*)(const char*, int);
-    using FindFn = void*(*)(const char*);
-    const DWORD mainTid = *reinterpret_cast<volatile DWORD*>(0x142005820ULL);
-    bool ok = false;
-    int readBack = -1;
-    __try {
-        reinterpret_cast<SetFn>(g_cvarSetIntFnX64)(g_pendingDvarName, g_pendingDvarValue);
-        void* dv = reinterpret_cast<FindFn>(0x1402c3890ULL)(g_pendingDvarName);
-        if (dv) { readBack = *reinterpret_cast<unsigned char*>(reinterpret_cast<uintptr_t>(dv) + 0x10); ok = true; }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    char b[192];
-    sprintf_s(b, "[x64-dvarset] applied %.40s=%d on tid=%lu (mainTid=%lu) readBack=%d %s",
-              g_pendingDvarName, g_pendingDvarValue, GetCurrentThreadId(), mainTid, readBack,
-              (ok && readBack == g_pendingDvarValue) ? "OK" : "MISMATCH");
-    LogFromController(b);
+    return QueueDvarIntWriteX64(name, value);
 }
 
 // ---- Ready-up prompt detection (2026-09-19) -------------------------------------------
@@ -5015,6 +4976,20 @@ extern "C" const char* GetDvarStringX64_Exported(const char* name)
     return GetDvarStringX64(name);
 }
 
+// 2026-09-27: exported for dvar_write_x64.cpp (queued writes look their dvar up on the
+// main thread) and real_settings.cpp (the x64 GetDvarBool/Float/String read path).
+// Null when unresolved or when the name is not a registered dvar.
+extern "C" void* FindDvarX64_Exported(const char* name)
+{
+    if (!FindDvarX64Raw || !name) return nullptr;
+    return FindDvarX64Raw(name);
+}
+
+extern "C" bool IsFindDvarX64Resolved()
+{
+    return FindDvarX64Raw != nullptr;
+}
+
 // GetEffectiveFov-equivalent: FUN_140069e60(playerIndex) -> float. Standard x64
 // calling convention (playerIndex in ECX, confirmed via disassembly: `MOV EDI, ECX`
 // at function entry, no other register setup beforehand) -- returns in XMM0 as a
@@ -5152,7 +5127,6 @@ void __fastcall Hook_MovementTick(void* param1, unsigned int param2)
 {
     GameplayHookCtxScopeX64 gameplayCtx;
     g_lastGameplayTickMsX64 = GetTickCount();
-    ApplyPendingDvarSetX64();
 
     // Missile-guidance movement-tick liveness diagnostic (issue #30 follow-up) -- rate-limited, only while
     // g_missileGuidanceLinkedX64 is true. CORRECTED 2026-09-22 (direct user correction: "its ls to control a
@@ -10020,6 +9994,10 @@ void InstallAnalogInputHooksX64()
             LogFromController(buf);
         }
     }
+
+    // 2026-09-27: the real x64 dvar write path (dvar_write_x64.cpp) -- after
+    // Dvar_FindVar above, which it depends on.
+    InstallDvarWriteX64();
 
     {
         SigScan::Result r = SigScan::FindPatternInMainModule(kPmoveTickSignature);

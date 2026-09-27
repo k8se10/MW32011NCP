@@ -53,6 +53,14 @@ const char* GetDvarString(const char* name);
 // project) -- see issue #66/task #20 for the full apply/restart design. This file
 // does not know which dvars are latched; that classification belongs in the
 // settings table that calls these, not here.
+//
+// x64 (2026-09-27): the same three entry points forward to dvar_write_x64.cpp,
+// with the same DVAR_SOURCE_INTERNAL (live value, latch bypassed) semantics. The
+// write is applied on the engine's main thread at the top of the next Com_Frame
+// body (up to one frame later), through the setter that matches the dvar's REAL
+// type, so SetDvarFloat on an int dvar (r_texFilterAnisoMax) or SetDvarBool on an
+// int dvar lands correctly. An unregistered name is skipped and logged, not
+// created. Every write logs an "[x64-dvarwrite] name = value -> read-back ..." line.
 extern "C" void SetDvarBool(const char* name, int value);
 extern "C" void SetDvarString(const char* name, const char* value);
 extern "C" void SetDvarFloat(const char* name, float value);

@@ -160,6 +160,11 @@
     </ClCompile>
     <!-- x64-only, 2026-09-16, issue #99's third FPS-limiter attempt; see
          frame_pacing_x64.cpp's own header comment for attribution. -->
+    <!-- x64-only, 2026-09-27: the real x64 dvar write path (known_issues_x64.md
+         issue #6); see dvar_write_x64.cpp's own header comment. -->
+    <ClCompile Include="src\dvar_write_x64.cpp" Condition="'$(Platform)'=='x64'">
+      <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="src\frame_pacing_x64.cpp" Condition="'$(Platform)'=='x64'">
       <ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild>
     </ClCompile>
@@ -313,6 +318,7 @@
     <ClInclude Include="src\mw3ncp_plugin_api.h" />
     <ClInclude Include="src\overlay_hud.h" />
     <ClInclude Include="src\real_settings.h" />
+    <ClInclude Include="src\dvar_write_x64.h" />
     <ClInclude Include="src\vanilla_settings_table.h" />
     <ClInclude Include="src\vanilla_settings_sync.h" />
     <ClInclude Include="src\staged_settings.h" />

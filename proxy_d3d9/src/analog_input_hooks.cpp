@@ -7947,9 +7947,10 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
         // gated behind the same glyphPositionEditMode master switch as every
         // other debug-only feature in this block (default OFF).
         // x64 (2026-09-19): ported. CbufAddText is a raw x86-only address, so x64 writes the
-        // dvar directly via the confirmed x64 Cvar_SetInt (FUN_1402c5b30, resolved by
-        // signature in analog_input_hooks_x64.cpp) -- same dvar, same effect, no command
-        // buffer needed.
+        // dvar through SetDvarIntX64 -- since 2026-09-27 the general x64 dvar write path
+        // (dvar_write_x64.cpp): queued here, applied on the engine main thread at the top of
+        // the next Com_Frame body, with an "[x64-dvarwrite] ai_disableSpawn = ..." read-back
+        // line in the log. Same dvar, same effect, no command buffer needed.
         static bool s_lastF4Held = false;
         bool f4Held = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
         bool f4Edge = f4Held && !s_lastF4Held;
@@ -7959,7 +7960,7 @@ extern "C" void __cdecl ResetMenuListItemOrdinalForFrame()
 #if defined(_M_X64) || defined(_WIN64)
             const bool ok = SetDvarIntX64("ai_disableSpawn", g_aiSpawnDisabled ? 1 : 0);
             if (!ok) g_aiSpawnDisabled = !g_aiSpawnDisabled; // write failed -- keep readout truthful
-            LogFromController(!ok ? "[ai-spawn-toggle] FAILED to set ai_disableSpawn (x64 Cvar_SetInt unavailable)"
+            LogFromController(!ok ? "[ai-spawn-toggle] FAILED to queue ai_disableSpawn (x64 dvar write path unavailable -- see [x64-dvarwrite] lines)"
                                   : (g_aiSpawnDisabled ? "[ai-spawn-toggle] AI spawn disabled: ai_disableSpawn 1"
                                                        : "[ai-spawn-toggle] AI spawn restored: ai_disableSpawn 0"));
 #else

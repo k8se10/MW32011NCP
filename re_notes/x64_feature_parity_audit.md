@@ -221,6 +221,15 @@ convention internals all need real x64 equivalents found and resolved,
 mirroring the same signature-scanning work already done for
 `Dvar_FindVar`/`GetEffectiveFov` in row #3).
 
+**UPDATE 2026-09-27 (row #64, dvar half; rows #46–48):** the real x64 dvar write path is implemented.
+- `dvar_write_x64.cpp` resolves the engine setters by signature and applies writes on the main thread via a
+  Com_Frame-body drain hook, dispatching on the dvar's real type.
+- The x64 `GetDvarBool`/`Float`/`String` now read real values.
+- It's build-ready but not live-tested, so the verdicts stay unchanged until it is.
+- Still missing for row #64: the keybind functions (`GetKeybind`/`SetKeybind`/`KeyNameToKeynum`/
+  `KeynumToDisplayName`) and `GetLocalizedString`.
+- See `re_notes/x64_migration/dvar_write_path_x64.md` and `known_issues_x64.md` issue #6.
+
 ## Full table
 
 Legend: **PRESENT** = real, wired code found, reachable from the live x64 input
