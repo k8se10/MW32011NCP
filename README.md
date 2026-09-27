@@ -14,20 +14,22 @@
 
 ## Current release
 
-> [!TIP]
-> **🚀 `v0.0.3-x64` is out now — the biggest release in the project's history.**
->
-> - 🌋 **Native Vulkan rendering**, on by default in Campaign/Survival
-> - 🟩 **NVIDIA DLSS/DLAA** for RTX GPUs (opt-in)
-> - ⚡ **Major performance fixes** — up to ~3x FPS at high render scale
-> - 🔊 **The "everything sounds like it's in a room" reverb fix**
-> - 🎮 **Controller menu navigation in Multiplayer**
+### 🚀 `v0.0.3-x64` — the biggest release in the project's history
 
-> [!NOTE]
-> ✅ **Survival** is the recommended way to use the mod (Gameplay Complete — every core control, including Predator
-> Missile guidance, is live-confirmed). 🟡 **Campaign** ships best-effort, and 🟡 **Multiplayer** has controller menu
-> navigation but no in-game controller movement/aiming yet (render scale and the performance fixes also run there).
-> 🛡️ **The netcode security fixes protect every mode**, Multiplayer included.
+![Release v0.0.3-x64](https://img.shields.io/badge/release-v0.0.3--x64-2ea44f)
+![LTS candidate](https://img.shields.io/badge/LTS-candidate-8250df)
+![Development break until 2026-10-04](https://img.shields.io/badge/development%20break-until%202026--10--04-orange)
+
+- 🌋 **Native Vulkan rendering**, on by default in Campaign/Survival
+- 🟩 **NVIDIA DLSS/DLAA** for RTX GPUs (opt-in)
+- ⚡ **Major performance fixes** — up to ~3x FPS at high render scale
+- 🔊 **The "everything sounds like it's in a room" reverb fix**
+- 🎮 **Controller menu navigation in Multiplayer**
+
+✅ **Survival** is the recommended way to use the mod (Gameplay Complete — every core control, including Predator
+Missile guidance, is live-confirmed). 🟡 **Campaign** ships best-effort, and 🟡 **Multiplayer** has controller menu
+navigation but no in-game controller movement/aiming yet (render scale and the performance fixes also run there).
+🛡️ **The netcode security fixes protect every mode**, Multiplayer included.
 
 > [!WARNING]
 > ⚠️ **Still early software** — expect hidden bugs and unfinished or unported features. Known gaps are listed below
