@@ -48,7 +48,28 @@ before a context compaction so nothing is lost. Branch:
 - Ghidra is not downloadable in the cloud container (GitHub releases are
   blocked by egress policy). angr covers decompilation.
 
-## Open threads, in the user's priority order
+## Update after the compaction (same day)
+
+Work continued autonomously per direct instruction ("keep going until all
+tasks have been completed ... write up in batches"). Everything below is
+committed on `claude/confident-mendel-hyoqkw`.
+
+| Commit | Content |
+|---|---|
+| `6df133be8` | Audio: dup-pair diagnostic (stacks, QPC, handles, DUP detection) in `Hook_PlaySoundAlias`. XAudio2 layer cleared of voice leaks (pick → stop/destroy → create). Per-frame loop re-issue identified as by design. Build not verified here (no Windows toolchain), clang MSVC-mode syntax check passed. **Parked by the user** (no live testing available): resume with one session and `grep DUP`. |
+| `95668b8dd`, `59ea90c64` | Renderer stage 2b: the 7 merge sources, the 64-bit draw-surf key, all 15 render-target IDs with real names, the code-material table, the post-FX chain, the frame submit/sync handshake |
+| `b1d4fa455`, `dd251f4f6` | Stage 3: the UI/menu pipeline end to end (init/load, context, state machine, paint, input, the 89 script commands, the 356-op expression language, RC emitters). Correction: `FUN_1401d2930` = `PROJECTION_SET(3D)` |
+| `b43d97a5a` | Stage 4: `rt_design_dxvk.md`, the ray-tracing design on the DXVK fork |
+| `dd85406aa` | Stage 5: `mp_port_plan.md` + `mp_twins_2026-09-27.txt` (18 HIGH SP→MP twins) |
+
+**All five renderer-reference stages are now complete.** Still waiting on
+the user:
+- the dev-only anti-anti-debug switch and the memory-limit hooks (§C below);
+- MP decisions (`mp_port_plan.md` §7: aim slowdown in MP, defaults);
+- go-ahead to start implementing any of: the RT milestone 0/1 fork patch,
+  the MP step 1 descriptor refactor, the memory-limit hooks.
+
+## Open threads, in the user's priority order (as of before the compaction)
 
 ### A. URGENT — audio "small room" echo (issue #10, reopened)
 Where things stand: the backend has no real reverb (wet = plain gain, fake
