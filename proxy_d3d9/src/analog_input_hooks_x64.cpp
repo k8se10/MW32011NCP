@@ -88,6 +88,9 @@
                           // PollCustomOptionsMenuX64's own comment below
 #include "rumble.h" // Rumble_Install()/Rumble_Tick() -- 2026-09-12 x64 port, see
                      // rumble.cpp's own "x64 PORT" block for the full RE trail
+#include "game_exe_detect.h" // GetDetectedGameExecutable() -- 2026-09-27, MP menu-navigation
+                     // port: InstallMenuNavigationHooksX64() needs to pick between the SP and
+                     // MP anchor signature depending on which real exe loaded this DLL.
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -3937,6 +3940,27 @@ constexpr const char* kUiContextAnchorSignature =
 // SigScan::ResolveRipRelative applies directly (no ResolveRipRelativeAt needed).
 constexpr ptrdiff_t kCtxLoadInsnOffset = 0x14;
 void* g_uiMenuContextX64 = nullptr;
+
+// 2026-09-27, MP port: iw5mp.exe's own real twin of the anchor above (`kGetTopmostActiveMenuSignature`
+// and `kMenuKeyEventSignature` already match byte-for-byte in both exes -- confirmed via
+// signature_resolution_sp_mp_2026-09-27.txt, 1 hit each in MP already, no new pattern needed for
+// those two -- but this anchor's own prologue differs by register allocation between the two
+// builds, e.g. `mov ebp,ecx` (8B E9) in SP vs `mov ebx,ecx` (8B D9) in MP, so its literal bytes
+// don't match). Verified this session via a real capstone disassembly of both functions
+// (SP 0x14029baa0 / MP 0x140309270): instruction-for-instruction identical shape at identical
+// offsets (only register choice differs), confirming this is the real, structurally faithful
+// twin, not a coincidental match. The UI-context-global LEA sits at the exact same +0x14 offset
+// in both (kCtxLoadInsnOffset is shared, not duplicated), and resolving it against the real
+// iw5mp.exe binary gives a real, sane-looking global (0x146b2df00, verified against MP's own
+// loaded image -- SP's own value at the same offset independently re-derives to 0x142605050,
+// the already-known-correct DAT_142605050, confirming the resolution method itself is sound).
+// This new pattern was verified to match EXACTLY ONCE in iw5mp.exe's own real .text section,
+// at the expected address, landing on a genuine function start per the PE's own .pdata unwind
+// table (the same safety check CLAUDE.md S5 requires for every signature this project ships).
+constexpr const char* kUiContextAnchorSignatureMP =
+    "48 89 5C 24 10 48 89 6C 24 18 56 48 83 EC 20 8B D9 41 8B F0 48 8D 0D "
+    "?? ?? ?? ?? 8B EA E8 ?? ?? ?? ?? 85 C0 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? "
+    "84 C0 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ??";
 
 // FUN_1402aaa80(ctx) -- the confirmed x64 GetTopmostActiveMenu() equivalent (see this
 // section's own header comment for the full confirmation trail). Signature via
@@ -9426,6 +9450,108 @@ void InstallPauseBlurStepCapX64()
     LogFromController(buf2);
 }
 
+// 2026-09-27, MP port (mp_port_plan.md step 4): resolves and activates the real
+// menu-focus/itemDef tracking and native D-pad+A/B menu navigation for WHICHEVER
+// real exe this DLL loaded into -- SP or MP, per GetDetectedGameExecutable(). This
+// is the extracted body of what used to be an inline block inside
+// InstallAnalogInputHooksX64() (SP-only, called unconditionally as part of that
+// giant function). Extracted so it can be called independently for MP too, without
+// installing any of that function's other, still-genuinely-SP-only hooks.
+//
+// Two of the three real signatures already match byte-for-byte in both exes
+// (kGetTopmostActiveMenuSignature, kMenuKeyEventSignature -- confirmed via
+// signature_resolution_sp_mp_2026-09-27.txt, 1 hit each in MP already, no new work
+// needed). Only kUiContextAnchorSignature differs (pure register-allocation
+// difference between the two compiles) -- kUiContextAnchorSignatureMP is its real,
+// disassembly-verified twin (see that constant's own header comment for the full
+// verification trail). kCtxLoadInsnOffset is shared between both patterns since
+// the UI-context-global LEA sits at the identical +0x14 offset in both.
+void InstallMenuNavigationHooksX64()
+{
+    const bool isMP = (GetDetectedGameExecutable() == GameExecutable::MP);
+    const char* anchorSig = isMP ? kUiContextAnchorSignatureMP : kUiContextAnchorSignature;
+
+    // Menu-focus/itemDef tracking (2026-09-12 port, SP; 2026-09-27, MP) -- resolves
+    // the real x64 UI context global via a RIP-relative LEA inside the anchor
+    // function's own confirmed prologue, and GetTopmostActiveMenu's real entry
+    // point for a direct call. Both independent of each other and of every other
+    // resolve in this function -- a failure here only disables the real
+    // Options-screen trigger and the itemDef-walk diagnostic, the temporary LB+RB
+    // chord (already resolved via g_menuActiveGateFlag) stays available either way.
+    // See kUiContextAnchorSignature/kUiContextAnchorSignatureMP's own header
+    // comments for the full confirmation trail behind every offset used here.
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(anchorSig);
+        if (!r.found) {
+            LogFromController("[x64-menufocus] FATAL: UI-context anchor signature did not resolve -- the real "
+                "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB chord "
+                "still available)");
+        } else {
+            g_uiMenuContextX64 = reinterpret_cast<void*>(
+                SigScan::ResolveRipRelative(r.address + kCtxLoadInsnOffset, 7));
+            if (g_uiMenuContextX64) {
+                char buf[160];
+                sprintf_s(buf, "[x64-menufocus] UI context resolved @ 0x%p.", g_uiMenuContextX64);
+                LogFromController(buf);
+            } else {
+                LogFromController("[x64-menufocus] FATAL: UI-context RIP-relative resolution failed -- the real "
+                    "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB "
+                    "chord still available)");
+            }
+        }
+    }
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kGetTopmostActiveMenuSignature);
+        if (!r.found) {
+            LogFromController("[x64-menufocus] FATAL: GetTopmostActiveMenu signature did not resolve -- the real "
+                "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB chord "
+                "still available)");
+        } else {
+            g_getTopmostActiveMenuX64 = reinterpret_cast<GetTopmostActiveMenuFnX64>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-menufocus] GetTopmostActiveMenu resolved @ 0x%llX -- active (direct call, no "
+                "hook installed).", static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64) {
+        LogFromController("[x64-menufocus] Real menu-focus/itemDef tracking active -- the real focus-based "
+            "Options-screen trigger and [x64-menufocus-diag]/[x64-optmenu-realtrigger] log lines are live.");
+    }
+
+    // Native D-pad+A/B menu navigation (2026-09-12 SP, 2026-09-27 MP) -- FUN_1402aac50/
+    // its MP twin, the real x64 ForwardKeyToMenu equivalent (see kMenuKeyEventSignature's
+    // own header comment for the full confirmation trail). Independent of the
+    // menu-focus resolve above (a failure here only disables native menu-item
+    // navigation/B-back -- the Options-screen focus-based trigger and LB+RB chord
+    // above are unaffected either way, and vice versa).
+    {
+        SigScan::Result r = SigScan::FindPatternInMainModule(kMenuKeyEventSignature);
+        if (!r.found) {
+            LogFromController("[x64-menunav] FATAL: ForwardKeyToMenu signature did not resolve -- "
+                "native D-pad+A/B menu navigation and B's ESC-forward will not work this session (keyboard/mouse "
+                "still required for all menu interaction)");
+        } else {
+            g_menuKeyEventX64 = reinterpret_cast<MenuKeyEventFnX64>(r.address);
+            char buf[160];
+            sprintf_s(buf, "[x64-menunav] ForwardKeyToMenu resolved @ 0x%llX -- active (direct call, no hook "
+                "installed).", static_cast<unsigned long long>(r.address));
+            LogFromController(buf);
+        }
+    }
+    if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64 && g_menuKeyEventX64) {
+        char buf[220];
+        sprintf_s(buf, "[x64-menunav] Native D-pad+A/B menu navigation and B's ESC-forward are active (%s) -- "
+            "main menu, pause menu, options drill-down, and buy-station/armory lists are now "
+            "controller-navigable.", isMP ? "iw5mp.exe" : "iw5sp.exe");
+        LogFromController(buf);
+    } else {
+        LogFromController("[x64-menunav] Native menu navigation NOT fully active this session (see FATAL lines "
+            "above for which real target failed to resolve) -- keyboard/mouse will still be needed for some or "
+            "all menu interaction.");
+    }
+}
+
 // Called from dllmain.cpp under #ifdef _M_X64, mirroring InstallAnalogInputHooks()'s
 // own call site for the x86 build. Deliberately named distinctly (not an overload)
 // so the call site itself makes the platform split visible, not just the #ifdef.
@@ -11019,82 +11145,11 @@ void InstallAnalogInputHooksX64()
         }
     }
 
-    // Menu-focus/itemDef tracking (2026-09-12 port) -- resolves the real x64 UI
-    // context global (DAT_142605050) via a RIP-relative LEA inside FUN_14029baa0's
-    // own confirmed prologue, and GetTopmostActiveMenu's real entry point
-    // (FUN_1402aaa80) for a direct call. Both independent of each other and of
-    // every other resolve in this function -- a failure here only disables the
-    // real Options-screen trigger and the itemDef-walk diagnostic, the temporary
-    // LB+RB chord (already resolved above via g_menuActiveGateFlag) stays available
-    // either way. See this file's own "Menu-focus / itemDef-array tracking" section
-    // header comment for the full confirmation trail behind every offset used here.
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kUiContextAnchorSignature);
-        if (!r.found) {
-            LogFromController("[x64-menufocus] FATAL: UI-context anchor signature did not resolve -- the real "
-                "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB chord "
-                "still available)");
-        } else {
-            g_uiMenuContextX64 = reinterpret_cast<void*>(
-                SigScan::ResolveRipRelative(r.address + kCtxLoadInsnOffset, 7));
-            if (g_uiMenuContextX64) {
-                char buf[160];
-                sprintf_s(buf, "[x64-menufocus] UI context resolved @ 0x%p.", g_uiMenuContextX64);
-                LogFromController(buf);
-            } else {
-                LogFromController("[x64-menufocus] FATAL: UI-context RIP-relative resolution failed -- the real "
-                    "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB "
-                    "chord still available)");
-            }
-        }
-    }
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kGetTopmostActiveMenuSignature);
-        if (!r.found) {
-            LogFromController("[x64-menufocus] FATAL: GetTopmostActiveMenu signature did not resolve -- the real "
-                "Options-screen open trigger and menu-focus diagnostic will not work this session (LB+RB chord "
-                "still available)");
-        } else {
-            g_getTopmostActiveMenuX64 = reinterpret_cast<GetTopmostActiveMenuFnX64>(r.address);
-            char buf[160];
-            sprintf_s(buf, "[x64-menufocus] GetTopmostActiveMenu resolved @ 0x%llX -- active (direct call, no "
-                "hook installed).", static_cast<unsigned long long>(r.address));
-            LogFromController(buf);
-        }
-    }
-    if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64) {
-        LogFromController("[x64-menufocus] Real menu-focus/itemDef tracking active -- the real focus-based "
-            "Options-screen trigger and [x64-menufocus-diag]/[x64-optmenu-realtrigger] log lines are live.");
-    }
-
-    // Native D-pad+A/B menu navigation (2026-09-12) -- FUN_1402aac50, the real x64
-    // ForwardKeyToMenu equivalent (see kMenuKeyEventSignature's own header comment
-    // for the full confirmation trail). Independent of the menu-focus resolve above
-    // (a failure here only disables native menu-item navigation/B-back -- the
-    // Options-screen focus-based trigger and LB+RB chord above are unaffected either
-    // way, and vice versa).
-    {
-        SigScan::Result r = SigScan::FindPatternInMainModule(kMenuKeyEventSignature);
-        if (!r.found) {
-            LogFromController("[x64-menunav] FATAL: ForwardKeyToMenu (FUN_1402aac50) signature did not resolve -- "
-                "native D-pad+A/B menu navigation and B's ESC-forward will not work this session (keyboard/mouse "
-                "still required for all menu interaction)");
-        } else {
-            g_menuKeyEventX64 = reinterpret_cast<MenuKeyEventFnX64>(r.address);
-            char buf[160];
-            sprintf_s(buf, "[x64-menunav] ForwardKeyToMenu resolved @ 0x%llX -- active (direct call, no hook "
-                "installed).", static_cast<unsigned long long>(r.address));
-            LogFromController(buf);
-        }
-    }
-    if (g_uiMenuContextX64 && g_getTopmostActiveMenuX64 && g_menuKeyEventX64) {
-        LogFromController("[x64-menunav] Native D-pad+A/B menu navigation and B's ESC-forward are active -- main "
-            "menu, pause menu, options drill-down, and buy-station/armory lists are now controller-navigable.");
-    } else {
-        LogFromController("[x64-menunav] Native menu navigation NOT fully active this session (see FATAL lines "
-            "above for which real target failed to resolve) -- keyboard/mouse will still be needed for some or "
-            "all menu interaction.");
-    }
+    // Menu-focus/itemDef tracking + native D-pad+A/B menu navigation -- extracted
+    // 2026-09-27 into its own standalone, exe-aware function (see
+    // InstallMenuNavigationHooksX64's own header comment) so it can be called for
+    // MP too, independent of every other SP-only hook this giant function installs.
+    InstallMenuNavigationHooksX64();
 
     // Vibration/rumble (2026-09-12 x64 port) -- see rumble.cpp's own "x64 PORT" block
     // for the full RE trail (fire-effects hook + entity-array resolve for the damage

@@ -35,6 +35,10 @@ void InstallRenderScaleHookX64(); // defined in analog_input_hooks_x64.cpp -- 20
     // BOTH SP and MP (see that function's own header comment for why this one hook is
     // safe to port to MP while the rest of the SP-only gameplay/menu-nav/visual-suite
     // hooks aren't yet).
+void InstallMenuNavigationHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-27,
+    // MP controller-pipeline port (mp_port_plan.md step 4): the first real MP gameplay
+    // hook. Exe-aware internally (GetDetectedGameExecutable()) -- picks the SP or MP
+    // anchor signature itself, so this same call site works for both.
 #endif
 extern "C" void HookD3D9CreateDevice(void* realD3D9); // defined in d3d9_hook.cpp
 #if defined(_M_X64) || defined(_WIN64)
@@ -854,10 +858,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif
         } else if (detectedExe == GameExecutable::MP) {
-            Log("proxy_d3d9: iw5mp.exe detected — gameplay hooks NOT installed. "
-                "Multiplayer has no verified hook signatures yet (CLAUDE.md's MP scope "
-                "decision: static RE first, opt-in live work once it starts). "
+            Log("proxy_d3d9: iw5mp.exe detected — most gameplay hooks NOT installed yet "
+                "(MP controller-pipeline port in progress, mp_port_plan.md). "
                 "XInput polling and other exe-agnostic features still run normally.");
+#if defined(_M_X64) || defined(_WIN64)
+            // 2026-09-27, MP controller-pipeline port, step 4 (mp_port_plan.md) -- the
+            // first real MP gameplay hook. Both real signatures it depends on
+            // (GetTopmostActiveMenu, ForwardKeyToMenu) already match byte-for-byte in
+            // iw5mp.exe with zero new work; only the UI-context anchor needed its own
+            // disassembly-verified MP signature (see kUiContextAnchorSignatureMP's own
+            // header comment, analog_input_hooks_x64.cpp). Exe-aware internally.
+            InstallMenuNavigationHooksX64();
+#endif
 #if defined(_M_X64) || defined(_WIN64)
             // 2026-09-23, direct instruction ("time to make the graphics enhancements
             // available on mp so we have a few feats for this release") -- the first
