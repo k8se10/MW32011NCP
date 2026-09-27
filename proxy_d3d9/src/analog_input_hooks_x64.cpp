@@ -4536,7 +4536,25 @@ void SendSyntheticF1X64()
 
 extern "C" void InjectControllerMenuNavX64()
 {
-    bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+    // 2026-09-27, MP port: g_menuActiveGateFlag is only ever resolved via
+    // kPauseToggleSignature (SP-only -- confirmed no MP twin exists at all,
+    // "MP has no SP-style pause", mp_twins_2026-09-27.txt), so it's always
+    // nullptr under MP, which made this function silently always early-return
+    // there -- the real cause of a live report that MP's A-glyph highlight
+    // showed but D-pad up/down/left/right never navigated. Rather than chase
+    // an entirely new MP vehicle for that specific bitflag (a bigger, separate
+    // problem also affecting IsMenuActiveX64_Exported()/TryGetClcStateX64(),
+    // deliberately not touched here), MP uses the already-MP-verified
+    // GetTopmostActiveMenuX64() (kGetTopmostActiveMenuSignature +
+    // kUiContextAnchorSignatureMP, both confirmed resolving under MP) as its
+    // own real "is a menu currently active" signal instead -- semantically the
+    // same question ("is the topmost menu non-null"), just answered a
+    // different, already-working way. SP's own check and behavior are
+    // completely unchanged.
+    const bool isMP = (GetDetectedGameExecutable() == GameExecutable::MP);
+    bool menuActiveNow = isMP
+        ? (GetTopmostActiveMenuX64() != nullptr)
+        : (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0));
     if (!menuActiveNow) {
         // Not stale-tracking across a menu close -- next press should always be seen
         // as a fresh rising edge once a menu is open again. Matches x86's own
@@ -4667,7 +4685,13 @@ extern "C" void InjectControllerMenuBackX64()
     if (!Controller_GetRawButtonsAndTriggers(buttons, leftTrigger, rightTrigger)) return;
 
     bool held = IsPhysicalHeld_Exported(PhysicalInput::B, buttons, leftTrigger, rightTrigger);
-    bool menuActiveNow = g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0);
+    // 2026-09-27, MP port: same real gap as InjectControllerMenuNavX64 -- see that
+    // function's own header comment for the full explanation. SP unchanged; MP falls
+    // back to GetTopmostActiveMenuX64() != nullptr since g_menuActiveGateFlag never
+    // resolves there (no SP-style pause to derive it from).
+    bool menuActiveNow = (GetDetectedGameExecutable() == GameExecutable::MP)
+        ? (GetTopmostActiveMenuX64() != nullptr)
+        : (g_menuActiveGateFlag && ((*g_menuActiveGateFlag & 0x10u) != 0));
 
     if (held && !g_menuBackHeldX64) {
         // Rising edge of B itself: a fresh physical press is starting.

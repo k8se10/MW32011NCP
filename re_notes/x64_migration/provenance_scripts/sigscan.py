@@ -4,7 +4,7 @@ import re, sys, glob, pefile, bisect
 src = {}
 for f in glob.glob('/home/user/MW32011NCP/proxy_d3d9/src/*.cpp'):
     t = open(f, encoding='utf-8', errors='replace').read()
-    for m in re.finditer(r'(k[A-Za-z0-9_]*Signature[A-Za-z0-9_]*)\s*(?:\[\])?\s*=\s*((?:\s*"[0-9A-Fa-f? ]+"\s*)+);', t):
+    for m in re.finditer(r'(k[A-Za-z0-9_]*Signature[A-Za-z0-9_]*)\s*(?:\[\])?\s*=\s*("[0-9A-Fa-f? ]+"(?:\s*"[0-9A-Fa-f? ]+")*)\s*;', t):
         sig = ''.join(re.findall(r'"([^"]*)"', m.group(2))).split()
         src[m.group(1)] = sig
 def scan(path):
