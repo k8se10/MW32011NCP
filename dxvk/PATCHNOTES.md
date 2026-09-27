@@ -54,10 +54,12 @@ it is disabled by default and does not enable tessellation.
    `iw5sp.exe` PE identity and then a unique render-target dispatcher
    signature before using vendored MinHook to scope the engine's target ID
    around its original call. DXVK associates that ID with its RT0 state and
-   can emit a rate-limited scene-pass diagnostic. This is an IW5-specific
-   research prerequisite, not tessellation: no TCS/TES stages are injected,
-   and the hook has not been live-tested. See `re_notes/known_issues.md`
-   issue #3.
+   can emit a diagnostic for the first five and then every 2,000th indexed
+   draw in scene target 2, including VS/PS cache names, declaration blend
+   flags, and used vertex-buffer size/usage/stride; it does not dump buffer
+   contents or change draw state. This is an IW5-specific research
+   prerequisite, not tessellation: no TCS/TES stages are injected, and the
+   hook has not been live-tested. See `re_notes/known_issues.md` issue #3.
 
 ### Groundwork
 1. **Issue #1 resolved as not a DXVK bug.** A motion-blur post-process pass

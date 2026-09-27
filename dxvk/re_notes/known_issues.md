@@ -447,9 +447,19 @@ Offline synthetic tests accept the supported PE tuple and reject malformed,
 truncated and non-SP identity inputs; the signature scanner tests unique,
 missing, ambiguous, invalid-pattern and invalid-range results. The actual
 SP binary was previously scanned in place; the current checkout does not
-contain it for a repeat run. `DrawIndexedPrimitive` now reads the associated
-ID and emits a rate-limited debug sample for ID 2, whose renderer reference
+contain it for a repeat run. `DrawIndexedPrimitive` reads the associated ID
+and emits a rate-limited debug sample for ID 2, whose renderer reference
 meaning is `R_RENDERTARGET_SCENE`; that code has not run in the game here.
+The sample records translated VS/PS debug names, vertex declaration element
+count and blend-weight/index flags, and each used stream's buffer size,
+usage flags, and stride. These fields are intended to support static-vs-
+skinned draw investigation; they are diagnostic evidence, not a proven
+static-object classifier. Sampling is limited to the first five target-2
+indexed draws and then every 2,000th such draw. The debug names are shader
+cache identifiers, not shader contents; the diagnostic does not dump vertex
+or index data, alter draw state, or select tessellation stages. It runs only
+when the experimental bridge option is enabled and the SP-gated ID handoff
+is active.
 The stored pass ID is not yet used to classify or alter draws or select a
 tessellation pipeline; it is only pass-state plus optional diagnostics. The
 module is pinned for the process lifetime after successful hook activation so
@@ -545,12 +555,24 @@ check. The only file under `runtime_asset_capture` was a scrollbar texture;
 there is no captured geometry or draw/shader evidence to classify a static
 prop from offline.
 
-No game launch, installation change, or DLL deployment was performed. The
-authoritative `CLAUDE.md` containing the cited §2 interaction rules was not
-available in this worktree or staged session files, so a live launch and
-instrumented draw capture were deferred rather than assuming permission.
-Consequently there is no safe evidence yet to select an RT2 static-prop draw
-or validate a throwaway flat-split TCS/TES path against the game's original
-vertex outputs. The concrete blocker is the missing interaction policy for
-the available local runtime, not missing game files; the flat-split proof
-remains an unimplemented, game-dependent milestone.
+The available IW5 OpenAssetTools documentation says `XModel` can be dumped
+to common model formats, but `XModelSurfs`, `MaterialTechniqueSet`,
+`MaterialPixelShader`, `MaterialVertexShader`, and
+`MaterialVertexDeclaration` are unsupported for IW5. No local
+`tools/iw5oat` executable was present to inspect its supported dump path.
+Thus the installed FF/IWD packages alone provide no verified way to map a
+static model to its runtime D3D9 draw, translated shader pair, declaration,
+or buffer usage. The shader and vertex-declaration assets that would supply
+the matching layout are specifically among the unsupported types; XModel
+dump support by itself cannot establish the D3D9 runtime binding. No package
+was extracted or copied into the DXVK tree, and no MW3/NCP asset code or
+dependency was added to DXVK.
+
+No game launch, installation change, or DLL deployment was performed.
+The supplied CLAUDE §§2–4 rules require asking before process injection;
+the live-capture request was issued, but the user was unavailable and no
+approval was received. Therefore RT2 static-prop identification and
+validation against the original VS/PS remain blocked on that approval.
+The bridge commit and standalone native Vulkan pipeline proof do not claim a
+D3D9 tessellation implementation; no TCS/TES stage is wired into the D3D9
+frontend.

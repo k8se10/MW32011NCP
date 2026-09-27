@@ -3108,10 +3108,40 @@ namespace dxvk {
     if (m_d3d9Options.iw5RenderPassBridge && GetEngineRenderTargetId() == 2) {
       static std::atomic<uint64_t> scenePassDrawCount = 0;
       const uint64_t count = scenePassDrawCount.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (count <= 5 || count % 2000 == 0)
+      if (count <= 5 || count % 2000 == 0) {
+        std::string vertexBufferInfo;
+        const uint32_t streamMask = m_state.vertexDecl->GetStreamMask();
+        for (uint32_t stream = 0; stream < caps::MaxStreams; stream++) {
+          if (!(streamMask & (1u << stream)))
+            continue;
+
+          auto* buffer = GetCommonBuffer(m_state.vertexBuffers[stream].vertexBuffer);
+          if (buffer == nullptr) {
+            vertexBufferInfo += str::format(" stream", stream, "=unbound");
+            continue;
+          }
+
+          const auto* desc = buffer->Desc();
+          vertexBufferInfo += str::format(
+            " stream", stream,
+            "={size:", desc->Size,
+            ",usage:", desc->Usage,
+            ",stride:", m_state.vertexBuffers[stream].stride,
+            "}");
+        }
+
+        auto* vertexShader = GetCommonShader(m_state.vertexShader);
+        auto* pixelShader = GetCommonShader(m_state.pixelShader);
         Logger::debug(str::format(
           "IW5 render-pass bridge: indexed draw observed with engine target 2 (candidate scene pass), sample ",
-          count));
+          count,
+          ", VS:", vertexShader ? vertexShader->GetName() : "fixed-function",
+          ", PS:", pixelShader ? pixelShader->GetName() : "fixed-function",
+          ", declElements:", m_state.vertexDecl->GetElements().size(),
+          ", blendWeight:", m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasBlendWeight),
+          ", blendIndices:", m_state.vertexDecl->TestFlag(D3D9VertexDeclFlag::HasBlendIndices),
+          ", VBs:", vertexBufferInfo));
+      }
     }
 #endif
 
