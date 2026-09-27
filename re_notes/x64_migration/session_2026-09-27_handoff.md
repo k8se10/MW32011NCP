@@ -58,7 +58,7 @@ committed on `claude/confident-mendel-hyoqkw`.
 |---|---|
 | `6df133be8` | Audio: dup-pair diagnostic (stacks, QPC, handles, DUP detection) in `Hook_PlaySoundAlias`. XAudio2 layer cleared of voice leaks (pick → stop/destroy → create). Per-frame loop re-issue identified as by design. Build not verified here (no Windows toolchain), clang MSVC-mode syntax check passed. **Parked by the user** (no live testing available): resume with one session and `grep DUP`. |
 | `95668b8dd`, `59ea90c64` | Renderer stage 2b: the 7 merge sources, the 64-bit draw-surf key, all 15 render-target IDs with real names, the code-material table, the post-FX chain, the frame submit/sync handshake |
-| `b1d4fa455`, `dd251f4f6` | Stage 3: the UI/menu pipeline end to end (init/load, context, state machine, paint, input, the 89 script commands, the 356-op expression language, RC emitters). Correction: `FUN_1401d2930` = `PROJECTION_SET(3D)` |
+| `b1d4fa455`, `dd251f4f6` | Stage 3: the UI/menu pipeline end to end (init/load, context, state machine, paint, input, the 89 script commands, the 356-op expression language, RC emitters). Correction: `FUN_1401d2930` = `PROJECTION_SET(2D)` (op 25 modes corrected in ROUND 24) |
 | `b43d97a5a` | Stage 4: `rt_design_dxvk.md`, the ray-tracing design on the DXVK fork |
 | `dd85406aa` | Stage 5: `mp_port_plan.md` + `mp_twins_2026-09-27.txt` (18 HIGH SP→MP twins) |
 
@@ -107,7 +107,7 @@ committed on `claude/confident-mendel-hyoqkw`.
   event interpreter (89 commands).
 - The expression language: 356 ops, evaluator `FUN_14028c670`, executor
   `FUN_14028f3c0`.
-- Correction: `FUN_1401d2930` only emits `PROJECTION_SET(3D)`; it isn't a
+- Correction: `FUN_1401d2930` only emits `PROJECTION_SET(2D)` (mode 0 = 2D, corrected in ROUND 24); it isn't a
   generic allocator.
 
 **Renderer stage 4: ray tracing** (`rt_design_dxvk.md`, §10)
@@ -161,6 +161,13 @@ and the engine's resolved copies (ids 3/4) are StretchRect destinations that
 are never bound, so DLSS had no input. The proxy now resolves the MSAA scene
 into its own single-sampled texture before evaluate, and records only
 single-sampled depth. Needs a Windows build and a test at 200%.
+
+**Update (ROUND 24):** ROUND 23 was live-confirmed (DLAA visible at 200%).
+The new ghosting came from synthesized DLSS camera constants: `cg_fov` used as
+the true horizontal FOV, guessed near/far, read in the engine's 2D projection
+setter. The constants are now built once per frame from the scene view's real
+`GfxViewParms` (`*(state+0x1790)`), with the legacy builder as fallback. Needs a
+Windows build and a pan test at 200%.
 
 ### Decisions needed from the user (all open, with recommendations)
 
@@ -228,7 +235,7 @@ not captured yet. **Next:**
     declaration and streams for every draw;
   - code constants already hold view/proj/viewProj/invViewProj/world
     matrices, and `$floatz` linear depth and resolved-scene samplers exist;
-  - the projection jitter point is `FUN_1401e13e0`;
+  - the real view/projection are in the current `GfxViewParms` at `*(state+0x1790)` (`FUN_1401e13e0` is the 2D ortho setter, not a 3D jitter point; ROUND 24);
   - DXVK builds the Vulkan device, so ray-query / ray-tracing-pipeline
     extensions can be enabled there.
 

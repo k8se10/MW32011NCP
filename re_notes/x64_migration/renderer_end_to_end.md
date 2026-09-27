@@ -157,7 +157,7 @@ window list, then `Release`s the device (`0x1418886d0`) and `IDirect3D9`
   as its only caller is its own `.pdata` unwind entry. The real caller is this
   direct call.
 - `FUN_1401d83a0` computes per-view rectangles from the resolution globals,
-  queues a `PROJECTION_SET(3D)` through **`FUN_1401d2930`** (command list
+  queues a `PROJECTION_SET(2D)` through **`FUN_1401d2930`** (command list
   `0x141896b98`; the per-op emitters are listed in §9.5), and runs **`FUN_1401d7480`** (per-player view setup: shadow
   tier select `FUN_1401d8f70`, fog/DOF/vignette marshalling `FUN_1401d9a10`,
   stage markers 1–6, HUD tick `FUN_140039f40`).
@@ -262,7 +262,7 @@ Most handlers first flush the pending 2D tess batch (`FUN_140196280`).
 | 22 | `FUN_140187bc0` | `DRAW_LINES` 🟡 | 2D/3D → `FUN_140187250`/`FUN_140187530` |
 | 23 | `FUN_140189270` | `DRAW_TRIANGLES` | material + indexed verts → `FUN_140189310` |
 | 24 | `FUN_14018aa10` | set code constant (vec4 by index) | writes `cmdBufState+0xE00+idx*16`, bumps version `+0x163C+idx*2` |
-| 25 | `FUN_14018a1a0` | `PROJECTION_SET` | 0 → 3D projection `FUN_1401e13e0` (the DLSS jitter hook target), 1 → 2D ortho `FUN_1401e1640` |
+| 25 | `FUN_14018a1a0` | `PROJECTION_SET` | 0 → **2D** screen ortho `FUN_1401e13e0` (identity view + ortho with half-texel offset into `state+0x1490/0x14D0/0x1510`; the proxy's `kProjectionMatrixBuildSignature` hook target), 1 → **3D** `FUN_1401e1640` (copies `0x150` bytes of the current `GfxViewParms` from `*(state+0x1790)` into `state+0x1490`: view, projection, viewProj, invViewProj, origin/axes). **Correction 2026-09-27 (ROUND 24):** the modes were swapped in the first version of this table. |
 
 The UI/HUD layer (stage 3) is therefore just a producer of ops 1–24. The
 "opcode 13 per-pixel copy" found during issue #4 is `STRETCH_RAW`.
@@ -800,10 +800,10 @@ size`. Emitters found (header constant → op):
 | leaf at `0x1401d1b41` | `0x00040008` | 8 reset clip/state |
 | leaf at `0x1401d1a48` | `0x001C0013` | 19 `BLEND_SAVED_SCREEN_BLURRED` |
 | leaf at `0x1401d1ac1` | `0x00200014` | 20 `BLEND_SAVED_SCREEN_FLASHED` |
-| `FUN_1401d2930` | `0x00080019` (qword, mode 0) | 25 `PROJECTION_SET` → 3D |
+| `FUN_1401d2930` | `0x00080019` (qword, mode 0) | 25 `PROJECTION_SET` → 2D |
 
 **Correction to §0/§2.1:** `FUN_1401d2930` is not a generic "R_AddCmd"
-allocator. It appends exactly one `PROJECTION_SET(3D)` command. The
+allocator. It appends exactly one `PROJECTION_SET(2D)` command (mode 0 = 2D; corrected 2026-09-27, see §3). The
 per-op emitters above each inline their own reservation.
 
 ### 9.6 Input path

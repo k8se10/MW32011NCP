@@ -82,6 +82,8 @@ extern void TagStreamlineOutputColorX64(); // streamline_resources_x64.cpp -- mu
 extern void TagStreamlineMotionVectorsX64(); // streamline_resources_x64.cpp, same reason.
 extern bool GetDlssOutputTextureSizeX64(uint32_t& outWidth, uint32_t& outHeight); // streamline_resources_x64.cpp, 2026-09-27
 extern bool ResolveMsaaSceneColorForDlssX64(void* device); // streamline_resources_x64.cpp, 2026-09-27 (ROUND 23)
+extern void UpdateStreamlineCameraFromEngineViewX64(void* engineState); // streamline_camera_x64.cpp, 2026-09-27 (ROUND 24)
+extern "C" void* GetEngineMainCmdBufStateX64(); // analog_input_hooks_x64.cpp, 2026-09-27 (ROUND 24)
 extern void GetDlssTaggedImagesX64(DlssTaggedImageX64& inputColor, DlssTaggedImageX64& outputColor); // streamline_resources_x64.cpp, 2026-09-27
 extern VkPhysicalDevice GetDxvkVkPhysicalDeviceX64(); // streamline_integration_x64.cpp, 2026-09-27
 extern void* GetDlssOutputSurfaceX64(); // streamline_resources_x64.cpp, 2026-09-27 -- the
@@ -1194,6 +1196,10 @@ void RunDlssEvaluateAndCompositeX64(void* device)
     if (!TryGetInLevelFlagX64(&inLevel) || inLevel <= 0) return;
     int clcState = 0;
     if (!TryGetClcStateX64(&clcState) || clcState == 0) return;
+    // 2026-09-27 (ROUND 24): this frame's camera constants, from the engine's
+    // real view/projection (post-FX has just bound this view's GfxViewParms).
+    // Must run before the stabilization gate, which counts these updates.
+    UpdateStreamlineCameraFromEngineViewX64(GetEngineMainCmdBufStateX64());
     if (!IsStreamlineCameraStableX64()) return; // real stabilization-window gate --
         // see this file's own extern declaration comment above for the exact race
         // this closes (mid-transition evaluate attempts on a just-reset camera history).
@@ -1330,6 +1336,9 @@ void RunDlssMainMenuWarmupOnceX64(void* device)
     if (!IsMenuActiveX64_Exported()) return; // only ever while some menu is active --
         // mutually exclusive with the real gameplay path (which requires inLevel > 0
         // and refuses to run while a menu is active).
+    // 2026-09-27 (ROUND 24): constants are no longer set every frame from the
+    // projection hook, so set this frame's here (no-op if already set this frame).
+    UpdateStreamlineCameraFromEngineViewX64(GetEngineMainCmdBufStateX64());
     if (!HasStreamlineCameraDataX64()) return; // real per-frame Constants haven't been
         // set yet this session (no camera has rendered at all) -- wait for a menu state
         // that has one (e.g. the pause menu over an already-loaded level), rather than

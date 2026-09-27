@@ -94,8 +94,6 @@
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
-void UpdateStreamlineCameraMatricesX64(const float pos[3], const float fwd[3],
-    const float right[3], const float up[3]); // streamline_camera_x64.cpp, 2026-09-24
 // analog_input_hooks.cpp's own generic "is this logical action's physical button
 // currently held" helper (no raw addresses, no __asm -- compiles for both
 // platforms already, see that file's own top-of-file comment). Reused here rather
@@ -2085,6 +2083,18 @@ void __fastcall Hook_PmoveTick(void* param1)
 // before call-through would show whatever was last written, not this
 // call's own result) -- confirms the signature resolved to the right
 // function and the real matrix matches the RE trail's predicted layout.
+// 2026-09-27 (ROUND 24): the engine's main GfxCmdBufState (0x1415e7c70 in the
+// current SP build) as passed to the projection setter by the backend's op-25
+// handler. Read by the DLSS camera path for the current view's GfxViewParms
+// pointer at +0x1790 (written by FUN_1401e0880, which post-FX calls with the
+// view right before the DLSS boundary). Backend thread only.
+void* g_engineMainCmdBufStateX64 = nullptr;
+
+extern "C" void* GetEngineMainCmdBufStateX64()
+{
+    return g_engineMainCmdBufStateX64;
+}
+
 void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
 {
     g_realProjectionMatrixBuild(renderState);
@@ -2151,13 +2161,17 @@ void __fastcall Hook_ProjectionMatrixBuild(void* renderState)
     // in this game), and let the ~13 identical-data calls through --
     // harmless, since calcCameraToPrevCamera on identical data just produces
     // an identity-ish transform each time, not corruption.
-    const float* camPos = reinterpret_cast<const float*>(base + 0x1590);
-    if (camPos[0] != 0.0f || camPos[1] != 0.0f || camPos[2] != 0.0f) {
-        const float* camFwd = reinterpret_cast<const float*>(base + 0x159c);
-        const float* camRight = reinterpret_cast<const float*>(base + 0x15a8);
-        const float* camUp = reinterpret_cast<const float*>(base + 0x15b4);
-        UpdateStreamlineCameraMatricesX64(camPos, camFwd, camRight, camUp);
-    }
+    // 2026-09-27 (ROUND 24, DLSS ghosting): this function is the engine's 2D
+    // projection setter (op 25 mode 0 -> FUN_1401e13e0; it overwrites
+    // state+0x1490..0x154F with an identity view + screen ortho), so it can't
+    // supply the real 3D matrices. The Streamline camera constants are now
+    // built once per frame at the DLSS evaluate boundary from the scene view's
+    // real GfxViewParms (UpdateStreamlineCameraFromEngineViewX64,
+    // streamline_camera_x64.cpp); this hook only records the engine's main
+    // GfxCmdBufState pointer for that. Calling the old per-frame builder here as
+    // well would set a second, different set of constants in the same frame
+    // (Streamline rejects that -- eErrorDuplicatedConstants, ROUND 7).
+    g_engineMainCmdBufStateX64 = renderState;
 
     if (g_projectionMatrixBuildFireCount <= 5 || (g_projectionMatrixBuildFireCount % 5000) == 0) {
         const float* row0 = reinterpret_cast<const float*>(base + 0x14d0);
