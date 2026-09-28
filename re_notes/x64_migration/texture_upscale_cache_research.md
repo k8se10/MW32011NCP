@@ -1194,3 +1194,34 @@ reports data — specifically the file size — that downstream code
 validates against the substituted content. A full substitution needs
 every real data source the target function consults to agree with each
 other, not just the raw byte stream.
+
+## LIVE-CONFIRMED: full end-to-end substitution mechanism works
+
+Real, visual, screenshot-confirmed success: the main menu background
+rendered as the exact magenta/black checkerboard test pattern, live, in
+the actual game -- no crash, no error dialog, genuine substitution of
+real engine content. This confirms every piece of the mechanism works
+together correctly:
+
+1. `Hook_ImageFileLoadX64` intercepts `FUN_1401bae80`, checks the real
+   cache, arms the substitution state on a hit.
+2. The synthetic `FakeSubstitutionReadCallback` reports our buffer's real
+   size in place of the real file's, satisfying the engine's own
+   corruption check.
+3. `Hook_ReadBytesSubstitutionX64` (`FUN_1402b5ec0`) serves real bytes
+   from the cached buffer in place of the real handle-based read.
+4. The real, unmodified engine decode/mip-dispatch/upload logic in
+   `FUN_1401bae80` and downstream correctly parses and renders the
+   substituted content -- proving the `.iwi` encoder's header layout
+   (magic, flags, width/height/depth, `fileSizeForPicmip`) is fully
+   correct, not just internally self-consistent.
+
+**This is the real, confirmed foundation for the entire texture-upscale-
+cache feature.** Everything from here is building the actual upscale
+pipeline (ncnn inference, real DXT decode/encode) on top of a mechanism
+now proven to work, not still an open question. Two real bugs were found
+and fixed via this exact live-test loop (the `fileSizeForPicmip` index
+mapping, the callback size mismatch) -- both genuinely required a live
+test to surface; neither was visible from static analysis or the
+standalone unit tests alone, a real example of why this project's own
+"verify live" standard matters even after code looks correct on paper.
