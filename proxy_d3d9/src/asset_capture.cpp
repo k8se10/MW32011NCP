@@ -356,7 +356,36 @@ int g_stormTopCount = 0;
 int g_stormWindowCallCount = 0;
 DWORD g_stormWindowStartMs = 0;
 DWORD g_stormLastDumpMs = 0;
+
+// ---- Unconditional first-N-calls caller trace (2026-09-28) --------------------
+// Built for the texture-upscale-cache feature's Phase 2 gap
+// (re_notes/x64_migration/texture_upscale_cache_research.md): the storm diag
+// above only fires on a real burst (200+ calls in a 200ms window), which
+// steady/ordinary level loading may never trigger -- this instead captures a
+// real call stack for the first kFirstNMax CreateTexture calls UNCONDITIONALLY,
+// regardless of burst or FindOrLoadAsset-correlation state, specifically to
+// trace real level-content texture creation back to its real caller ("trace the
+// real callers by tracing back from the already-established backbuffer" --
+// CreateTexture is the same real, already-hooked device call the storm diag and
+// asset_capture's own material capture both already use). Same safety shape as
+// the storm diag: fast, fixed-size, in-memory-only capture inside the hot path;
+// all I/O deferred to a separate, rate-limited dump call.
+constexpr int kFirstNMax = 40;
+StormEntry g_firstNCalls[kFirstNMax];
+int g_firstNCount = 0;
+bool g_firstNDumped = false;
 } // namespace
+
+void AssetCapture_RecordCreateTextureFirstNCaller(unsigned width, unsigned height, unsigned format)
+{
+    if (g_firstNCount >= kFirstNMax) return; // done, nothing more to capture
+    StormEntry& e = g_firstNCalls[g_firstNCount++];
+    // FramesToSkip=2: same reasoning as AssetCapture_RecordCreateTextureForStormDiag
+    // above -- skips CaptureStackBackTrace's own frame and this function's own frame.
+    e.frameCount = static_cast<int>(CaptureStackBackTrace(2, kStormMaxFrames, e.frames, nullptr));
+    e.width = width; e.height = height; e.format = format;
+    e.area = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+}
 
 void AssetCapture_RecordCreateTextureForStormDiag(unsigned width, unsigned height, unsigned format)
 {
@@ -445,6 +474,53 @@ void AssetCapture_DumpCreateTextureStormIfDue()
     g_stormTopCount = 0;
 }
 
+void AssetCapture_DumpFirstNCreateTextureCallersIfDue()
+{
+    if (g_firstNDumped) return; // one-shot -- this is a startup/early-session
+        // trace, not a recurring diagnostic; never re-arms.
+    if (g_firstNCount < kFirstNMax) return; // wait until the buffer is actually
+        // full (or the session ends without filling it -- acceptable, this is
+        // best-effort dev data, not a guaranteed-complete capture)
+    g_firstNDumped = true;
+
+    static void* s_gameModuleBase = nullptr;
+    static size_t s_gameModuleSize = 0;
+    if (!s_gameModuleBase) {
+        HMODULE exeMod = GetModuleHandleA(nullptr);
+        if (exeMod) {
+            s_gameModuleBase = exeMod;
+            auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(exeMod);
+            auto nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(
+                reinterpret_cast<uintptr_t>(exeMod) + dos->e_lfanew);
+            s_gameModuleSize = nt->OptionalHeader.SizeOfImage;
+        }
+    }
+
+    char buf[220];
+    sprintf_s(buf, "[createtexture-firstn-diag] first %d real CreateTexture calls this session, "
+        "unconditional (not storm-gated) real call stacks:", kFirstNMax);
+    LogFromController(buf);
+    auto baseAddr = reinterpret_cast<uintptr_t>(s_gameModuleBase);
+    for (int i = 0; i < g_firstNCount; ++i) {
+        const StormEntry& e = g_firstNCalls[i];
+        sprintf_s(buf, "[createtexture-firstn-diag]   call #%d: size=%ux%u (area=%llu) fmt=0x%08lX frames=%d",
+                   i, e.width, e.height, static_cast<unsigned long long>(e.area),
+                   static_cast<unsigned long>(e.format), e.frameCount);
+        LogFromController(buf);
+        for (int f = 0; f < e.frameCount; ++f) {
+            auto frameAddr = reinterpret_cast<uintptr_t>(e.frames[f]);
+            bool inGame = s_gameModuleBase && frameAddr >= baseAddr && frameAddr < baseAddr + s_gameModuleSize;
+            if (inGame) {
+                sprintf_s(buf, "[createtexture-firstn-diag]     frame[%d]=%p GAME module-relative=0x%llX",
+                           f, e.frames[f], static_cast<unsigned long long>(frameAddr - baseAddr));
+            } else {
+                sprintf_s(buf, "[createtexture-firstn-diag]     frame[%d]=%p MOD/OTHER", f, e.frames[f]);
+            }
+            LogFromController(buf);
+        }
+    }
+}
+
 namespace {
 
 HRESULT WINAPI Hook_CreateTexture(void* This, UINT Width, UINT Height, UINT Levels,
@@ -483,6 +559,10 @@ HRESULT WINAPI Hook_CreateTexture(void* This, UINT Width, UINT Height, UINT Leve
     // AssetCapture_RecordCreateTextureForStormDiag for why this replaced a
     // synchronous-logging version that very likely caused a real crash.
     AssetCapture_RecordCreateTextureForStormDiag(Width, Height, Format);
+    // 2026-09-28: unconditional first-N-calls caller trace, see this file's own
+    // header comment above g_firstNCalls -- fast, in-memory-only, same safety
+    // shape as the storm-diag call above.
+    AssetCapture_RecordCreateTextureFirstNCaller(Width, Height, Format);
 
     // Timer below starts AFTER the real call above, deliberately: that call's own
     // duration is now accounted separately (above), not overhead THIS project's

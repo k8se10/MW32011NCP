@@ -66,3 +66,19 @@ void AssetCapture_RecordCreateTextureForStormDiag(unsigned width, unsigned heigh
 // Call from a low-frequency point (e.g. once per Hook_EndScene). Internally
 // rate-limited to roughly once every 2 seconds; a safe no-op otherwise.
 void AssetCapture_DumpCreateTextureStormIfDue();
+
+// ---- Unconditional first-N-calls caller trace (2026-09-28) ----------------------
+// Texture-upscale-cache Phase 2 groundwork (re_notes/x64_migration/
+// texture_upscale_cache_research.md): "trace the real callers by tracing back
+// from the already-established backbuffer" -- captures a real call stack for
+// the first 40 real CreateTexture calls this session UNCONDITIONALLY (not
+// storm-gated, not FindOrLoadAsset-correlation-gated), to find the real caller
+// for level-content textures that don't go through FindOrLoadAsset at all.
+// Same call-site/safety convention as the storm diag above: record from inside
+// Hook_CreateTexture (fast, in-memory), dump from a low-frequency point (e.g.
+// once per Hook_EndScene, alongside AssetCapture_DumpCreateTextureStormIfDue).
+void AssetCapture_RecordCreateTextureFirstNCaller(unsigned width, unsigned height, unsigned format);
+// One-shot: logs once the first-40 buffer fills, then never re-arms. Safe to
+// call every frame alongside AssetCapture_DumpCreateTextureStormIfDue -- a fast
+// no-op once it's already dumped or the buffer isn't full yet.
+void AssetCapture_DumpFirstNCreateTextureCallersIfDue();

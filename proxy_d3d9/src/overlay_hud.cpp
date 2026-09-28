@@ -8063,6 +8063,10 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // logged synchronously inside the CreateTexture hot path and very likely
     // caused a real crash).
     AssetCapture_DumpCreateTextureStormIfDue();
+    // Unconditional first-N-calls caller trace (2026-09-28), texture-upscale-cache
+    // Phase 2 groundwork -- see asset_capture.h's own header comment. One-shot,
+    // fast no-op once dumped or before the buffer fills.
+    AssetCapture_DumpFirstNCreateTextureCallersIfDue();
 
     // Real driver-reported VRAM diagnostic (2026-09-23) -- SP damage/pause/level-transition
     // stutter investigation, direct user question: the resource-diag thread in dllmain.cpp
