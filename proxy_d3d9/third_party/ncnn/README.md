@@ -1,9 +1,8 @@
-# ncnn (vendored)
+# ncnn (vendored, built from source with the static CRT)
 
-Real, official, prebuilt [Tencent/ncnn](https://github.com/Tencent/ncnn)
-Windows VS2022 x64 static SDK, Vulkan-enabled — a high-performance neural
-network inference framework with a native Vulkan compute backend, no
-CUDA/DirectML/ONNX Runtime dependency.
+Real [Tencent/ncnn](https://github.com/Tencent/ncnn) — a high-performance
+neural network inference framework with a native Vulkan compute backend,
+no CUDA/DirectML/ONNX Runtime dependency.
 
 **Why this is here**: groundwork for the runtime AI texture-upscale-cache
 feature (`re_notes/x64_migration/texture_upscale_cache_research.md`) —
@@ -13,8 +12,22 @@ every other real, precedented third-party dependency (MinHook, the
 `MW32011DXVK` fork, NVIDIA Streamline's headers) rather than reinventing
 GPU inference from scratch.
 
-**Version**: `20260526` (ncnn's own release tag). Pinned, not "latest" —
-see `fetch_ncnn.bat`'s own header comment to update.
+**Version**: `20260526` (ncnn's own release tag), pinned. Bump `NCNN_TAG`
+in `build_ncnn.bat` to update.
+
+**Built from source, not the official prebuilt SDK — direct decision,
+2026-09-28.** The official prebuilt Windows SDK zip uses the DYNAMIC CRT
+(`/MD`), which mismatches this project's own `proxy_d3d9.vcxproj`
+(`/MT`, `RuntimeLibrary=MultiThreaded`) and fails to link with a real
+`LNK2038` runtime-library-mismatch error — confirmed the hard way while
+scoping this feature. Rather than switch the mod itself to `/MD` (a real,
+new, player-visible MSVC-redistributable dependency `d3d9.dll` doesn't
+have today) or ship ncnn as a separate DLL, the chosen fix is building
+ncnn from its own real source with its own real `NCNN_BUILD_WITH_STATIC_CRT`
+CMake option — keeps `d3d9.dll` fully self-contained. Run
+`build_ncnn.bat` to (re)produce the libs; see that script's own header
+comment for the full rationale and a real, hit-and-fixed Windows
+path-length gotcha (build in a short path, not deep in a temp directory).
 
 **License**: ncnn itself is BSD-3-Clause. The bundled Vulkan-shader-compile
 support libraries (`glslang.lib`, `glslang-default-resource-limits.lib`,
@@ -27,15 +40,37 @@ public release attribution pass, same standing diligence this project
 already applies to every other vendored dependency (see the main
 `CLAUDE.md` §6 licensing section).
 
-## What's committed vs. fetched
+**Vulkan linking note**: ncnn implements its own in-house Vulkan function
+loader rather than statically linking `vulkan-1.lib` at build time — it
+loads the real system Vulkan loader dynamically at runtime instead, the
+same general approach DXVK's own Vulkan loader uses. `vulkan-1.lib`
+still needs to be present at LINK time for any consumer of ncnn (the
+standalone smoke test that verified this build links it explicitly), but
+ncnn's own build doesn't produce or embed a static dependency on it.
 
-- `include/ncnn/` — real ncnn headers, small (~900KB), **committed**.
-- `lib/`, `bin/` — real prebuilt static libraries (~46MB combined for x64),
-  **gitignored, never committed** (size, matching this project's own
-  hard-learned lesson about large binaries this session — see
-  `.gitignore`'s own comment for the specific incidents that taught it).
-  Run `fetch_ncnn.bat` to populate these locally before building anything
-  that links against ncnn.
+**Live-verified, 2026-09-28**: a standalone smoke test (not wired into the
+mod — deliberately kept separate per this project's own "prototype
+standalone before wiring in" convention) confirmed this exact `/MT` build
+correctly detects real GPUs via Vulkan on the dev machine (an NVIDIA RTX
+2080 Ti and an AMD Radeon integrated GPU, both enumerated with correct
+capability flags) and successfully acquires a working `VulkanDevice`
+handle — not just "did it link," genuine functional confirmation.
+
+## What's committed vs. built locally
+
+- `include/ncnn/` — real ncnn headers (~900KB), **committed**. Four of
+  these (`layer_shader_type_enum.h`, `layer_type_enum.h`,
+  `ncnn_export.h`, `platform.h`) are CMake-generated and embed real
+  build-specific info (e.g. a version string) — `build_ncnn.bat`
+  re-copies these from each fresh build so they stay consistent with
+  whatever `lib/` currently contains.
+- `lib/` — real static libraries (~80MB combined for x64, static-CRT
+  build), **gitignored, never committed** (pure size concern — both
+  ncnn's own BSD-3-Clause and the bundled glslang/SPIRV licenses are
+  permissive; matches this project's own hard-learned lesson this
+  session about committing large binaries). Run `build_ncnn.bat` to
+  produce these locally before building anything that links against
+  ncnn.
 
 ## Model weights
 
