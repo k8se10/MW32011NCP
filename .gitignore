@@ -59,6 +59,19 @@ d3d9.dll
 proxy_d3d9/third_party/streamline/bin/
 proxy_d3d9/third_party/streamline/lib/
 
+# 2026-09-28: real, prebuilt Tencent/ncnn Vulkan-inference static libs
+# (texture-upscale-cache feature groundwork, re_notes/x64_migration/
+# texture_upscale_cache_research.md). Real, permissive licenses (ncnn itself
+# BSD-3-Clause; the bundled glslang/SPIRV Vulkan-shader-compile libs are
+# Khronos Group's own, also permissive) -- gitignored anyway, purely for
+# SIZE (ncnn.lib alone is ~35MB, ~46MB total for x64) given this project's
+# own repeated hard-learned lesson this session about committing large
+# binaries (the leaked-game-binary and releases/ghidra-project incidents
+# above). Headers ARE committed (proxy_d3d9/third_party/ncnn/include/, small).
+# Run proxy_d3d9/third_party/ncnn/fetch_ncnn.bat to (re)populate lib/bin.
+proxy_d3d9/third_party/ncnn/lib/
+proxy_d3d9/third_party/ncnn/bin/
+
 # Never commit a copy of any Microsoft system DLL, even accidentally staged for testing.
 d3d9_orig.dll
 
