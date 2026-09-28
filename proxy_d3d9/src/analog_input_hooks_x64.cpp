@@ -12281,13 +12281,19 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     uint8_t* cacheBuffer = nullptr;
     uint32_t cacheSize = 0;
 
-    // Custom bundled asset override check (2026-09-28) -- takes priority
-    // over the upscale cache for the one specific name it targets (currently
-    // just "background_image", the real main menu background). A genuinely
-    // separate feature sharing the same substitution mechanism -- see
-    // TextureUpscaleCache::TryLoadCustomAsset's own header comment for why
-    // this is a distinct code path, not folded into the upscale cache.
-    if (name && g_modConfig.customMainMenuBackground && _stricmp(name, "background_image") == 0) {
+    // Custom asset override check (2026-09-28, generalized same day) --
+    // takes priority over the upscale cache, checked for EVERY real image
+    // name, not just "background_image" specifically. Real, direct
+    // implication recognized mid-session: this is genuine, general,
+    // zero-code-change community texture-pack support -- anyone can drop a
+    // correctly-named real .iwi file into custom_assets\ for ANY asset
+    // (menu art, HUD icons, anything this pipeline can load) and it
+    // substitutes automatically, the same real mechanism the bundled
+    // default main-menu-background asset already uses. A genuinely
+    // separate feature from the upscale cache sharing only the same proven
+    // substitution mechanism -- see TextureUpscaleCache::TryLoadCustomAsset's
+    // own header comment.
+    if (name && g_modConfig.customAssetOverridesEnabled) {
         cacheBuffer = TextureUpscaleCache::TryLoadCustomAsset(name, &cacheSize);
     }
 
