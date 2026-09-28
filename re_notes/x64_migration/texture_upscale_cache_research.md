@@ -1225,3 +1225,45 @@ mapping, the callback size mismatch) -- both genuinely required a live
 test to surface; neither was visible from static analysis or the
 standalone unit tests alone, a real example of why this project's own
 "verify live" standard matters even after code looks correct on paper.
+
+## STRATEGIC IMPLICATION, confirmed live 2026-09-28: this is a general native asset-substitution mechanism, not just a texture-upscale feature
+
+Direct observation, immediately following the live-confirmed checkerboard
+test: **this mechanism generalizes to ANY named `GfxImage` the game loads
+through `FUN_1401bae80`, not just upscale-cache entries.** Nothing about
+the substitution hooks is upscale-specific — `Hook_ImageFileLoadX64`/
+`Hook_ReadBytesSubstitutionX64`/`FakeSubstitutionReadCallback` intercept
+and replace by real image NAME, unconditionally. Controller-glyph icons,
+menu corner hints, and every other real, named UI texture this project's
+`FindOrLoadAsset`/`FUN_1401bae80` diagnostics have already captured live
+almost certainly load through this exact same pipeline (the earlier
+full-session diagnostic already captured real UI asset names like
+`scrollbar_arrow_up`, `checkbox_current`, `navbar_selection_bar_flipped`).
+
+**Real implication: this project's entire overlay-based glyph-icon system
+— years of accumulated complexity (the F2/F3 position editor, per-hint-
+type manual calibration, `IsGameplayHintFont` font-name detection that
+was never portable to x64, the QTE/buy-station glyph-coverage gap that's
+stayed open since 2026-08-25 issue #78/#89 specifically because font-name
+detection doesn't generalize) — could potentially be replaced by DIRECT
+NATIVE TEXTURE SUBSTITUTION instead.** If controller-glyph art is
+substituted at the asset-load level (swap the real `button_a_xbox`-style
+`.iwi` file for our own glyph art, keyed by its own real name, exactly
+like the texture-upscale-cache entries), the native UI system draws it at
+its own real native position, own real native size, automatically — no
+overlay draw call, no position tracking, no per-screen calibration, no
+font-name detection needed at all, since we're not drawing OVER anything,
+we're replacing what the engine itself already draws. This would
+plausibly close the QTE/buy-station gap specifically, since that gap's
+entire blocker was "no reliable signal to detect these are gameplay-hint
+text draws" — a non-issue if you substitute the actual bound icon asset
+instead of intercepting a text-draw call at all.
+
+**Not yet attempted, not yet confirmed for glyphs specifically** — this
+is a real, exciting, immediately-actionable implication, not yet verified
+work. Real next step, whenever picked up: confirm a real controller-glyph
+icon asset name (via the same `FUN_1401bae80` diagnostic already built,
+watching for a hit while a controller-glyph-bearing UI screen is open),
+then test substituting it the same way `background_image` was just
+tested. A genuinely separate feature from texture upscaling, sharing 100%
+of the same, now-proven mechanism.
