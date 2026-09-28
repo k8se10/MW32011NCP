@@ -12233,6 +12233,29 @@ struct ActiveTextureSubstitution
 };
 thread_local ActiveTextureSubstitution g_activeTextureSubstitutionX64;
 
+// Real bug found and fixed live, 2026-09-28: the first live test hit the
+// engine's own real "Image file corrupt." error even after the encoder's
+// own fileSizeForPicmip bug was fixed -- root cause was a design gap, not
+// the encoder. `param_2` (the real read-callback FUNCTION POINTER) was
+// still being passed through to the real FUN_1401bae80 unmodified on a
+// cache hit; that real callback reports the REAL original file's own real
+// size (`lVar3` in the decompile), which FUN_1401bae80 later checks against
+// `fileSizeForPicmip[0]` -- a totally different, unrelated number from our
+// substituted buffer's own total size, so the corruption check was
+// mathematically guaranteed to fail regardless of how correct the encoder
+// itself was. Fix: on a cache hit, DON'T pass the real callback through at
+// all -- pass this synthetic one instead, matching the real callback's own
+// exact signature/calling convention, reporting OUR buffer's own real total
+// size instead of the original file's. The "handle" it writes is a dummy
+// sentinel -- Hook_ReadBytesSubstitutionX64 never actually inspects the
+// handle value while armed, it only checks the armed flag, so any nonzero
+// placeholder is safe here.
+long long __fastcall FakeSubstitutionReadCallback(long long pathIgnored, long long* outHandlePtr)
+{
+    if (outHandlePtr) *outHandlePtr = 1; // dummy sentinel, never dereferenced as a real handle
+    return static_cast<long long>(g_activeTextureSubstitutionX64.size);
+}
+
 long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
 {
     // Read the real name pointer at param_1+0x20 BEFORE calling through --
@@ -12281,7 +12304,13 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
         }
     }
 
-    long long result = g_realImageFileLoadX64(param_1, param_2);
+    // On a cache hit, pass OUR synthetic callback instead of the real one --
+    // see FakeSubstitutionReadCallback's own comment above for why this is
+    // required, not just the FUN_1402b5ec0 byte-serving hook alone.
+    void* effectiveCallback = g_activeTextureSubstitutionX64.armed
+        ? reinterpret_cast<void*>(&FakeSubstitutionReadCallback)
+        : param_2;
+    long long result = g_realImageFileLoadX64(param_1, effectiveCallback);
 
     if (g_activeTextureSubstitutionX64.armed) {
         g_activeTextureSubstitutionX64.armed = false;
