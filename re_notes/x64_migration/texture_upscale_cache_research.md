@@ -88,24 +88,29 @@ upscale step itself; not scoped further here.
 
 ## Real open design questions (none answered yet — this is scoping, not a plan)
 
-1. **Compressed-texture handling — confirmed a real, present case, not
-   speculative.** `dxvk/src/d3d9/d3d9_common_texture.cpp` (`D3D9CommonTexture`
-   creation path, ~line 177) explicitly validates `IsDXTFormat(pDesc->Format)`
-   against block-alignment before creating the image — DXT/BC-compressed
-   textures are a real path this fork already handles, not a hypothetical.
-   The raw bytes DXVK uploads for these are compressed blocks, not plain
-   RGBA — an ESRGAN-class model needs decoded pixels as input. Decode →
-   upscale → either re-encode (extra dependency, extra one-time cost) or
-   upload uncompressed (more VRAM per cached texture, simpler). Still needs
-   a real answer once the actual upload/staging function (not yet located —
-   `IsDXTFormat`'s own call site is in the creation-validation path, not the
-   upload path itself) is read in full.
-2. **Cache key.** A content hash of the source texture's raw uploaded
-   bytes (not the filename/asset name, which this mod's own hooking
-   convention doesn't reliably have visibility into at this exact layer)
-   plus a cache-format/model-version stamp, mirroring how `DxvkPipelineCache`-
-   style caches invalidate — needs its own real design, not reused wholesale
-   from DXVK's own shader-pipeline cache since the key material is different.
+1. **Compressed-texture handling — confirmed a real, present case, RESOLVED
+   at the design level (not yet implemented).** `dxvk/src/d3d9/d3d9_common_texture.cpp`
+   (`D3D9CommonTexture` creation path, ~line 177) explicitly validates
+   `IsDXTFormat(pDesc->Format)` against block-alignment before creating the
+   image — DXT/BC-compressed textures are a real path this fork already
+   handles. Confirmed via `D3D9DeviceEx::UpdateTextureFromBuffer` (below):
+   the bytes reaching this hook point for a DXT texture are still
+   compressed blocks, not decoded pixels — but since this feature now hooks
+   at the engine's own `GfxImage` layer (see "Blocker resolution" below),
+   BEFORE the D3D9 texture even exists, the real decision point moves
+   upstream too: decode the source block-compressed data once at that
+   layer, upscale, then re-encode or upload uncompressed when the
+   upscaled-size `CreateTexture` call is made. Still an open cost/quality
+   tradeoff (re-encode vs. more VRAM), but no longer entangled with the
+   DXVK-layer timing problem.
+2. **Cache key — RESOLVED.** The real `GfxImage` asset name (see "Blocker
+   resolution" below) is the cache key, not a content hash — stable, known
+   before any texture upload happens, free (already exists in the engine,
+   no new bookkeeping). Still needs a model-version/scale-factor stamp
+   alongside it so a future upscaler-model change or scale-factor change
+   invalidates old cache entries correctly, mirroring how
+   `DxvkPipelineCache`-style caches invalidate — that stamp's exact format
+   is real but small remaining design work, not a blocker.
 3. **First-use cost and hitching.** Running a real ESRGAN-class model
    inline on the frame that first needs a given texture will stall that
    frame significantly (this is explicitly NOT a per-frame-budget cost like
@@ -164,7 +169,44 @@ upscale substitution has to happen at the `D3D9CommonTexture`/upload layer
 archives players' own game installs already have integrity-checked — ruling
 out any design that assumed disk-level asset replacement as a shortcut.
 
-## Real upload path found (`D3D9DeviceEx::UpdateTextureFromBuffer`) — and a genuine architectural blocker it surfaces
+## Blocker resolution, 2026-09-28: hook the engine's own asset-load layer, not DXVK's D3D9 layer
+
+The chicken-and-egg problem above only exists because `D3D9CommonTexture`'s
+own `CreateTexture` call carries no identity — D3D9 itself has no named-
+resource concept, just width/height/format/usage, so DXVK genuinely cannot
+know which texture this is until content arrives. **The fix is to not rely
+on DXVK/D3D9 for identity at all**: IW5's own real asset type for this is
+`GfxImage` (confirmed as a real, already-understood IW5 asset type via this
+project's own `tools/iw5oat` fastfile work, `fastfile_format_research.md`)
+— a real, named engine asset (standard CoD-engine `GfxImage` struct: a
+stable `name` field, dimensions, and image data) that exists and is fully
+identified BEFORE the engine ever calls down into D3D9's `CreateTexture` to
+realize it as a GPU resource. **This is the same RE methodology this
+project already uses for everything else** (hook the real native engine
+function, not the D3D9/DXVK translation layer, whenever asset identity
+matters — the exact pattern behind every signature-scanned gameplay hook
+in this codebase) — applying it here instead of trying to solve identity
+inside DXVK resolves the blocker cleanly: **hook the native engine
+function that reads a loaded `GfxImage` and hands its pixel data down to
+be realized as a D3D9 texture** (not yet located — real next RE step, x64
+signature unknown). At that point the real, stable asset name is already
+known, so the cache lookup happens BEFORE `CreateTexture` is ever called:
+on a cache hit, the upscaled dimensions get passed into `CreateTexture`
+from the start (no DxvkImage resize/recreate needed at all — option (a)
+from the original three is no longer necessary); on a cache miss, the
+texture is created at its real original size as normal, and the upscale-
+and-cache step runs asynchronously against the uploaded content afterward
+(background-thread architecture per `CLAUDE.md` §1's own established
+convention) for next time. **This makes option (c) (a pre-upload,
+non-content-based cache key) the real answer, not a fallback** — the
+`GfxImage` name IS exactly that stable, pre-upload identifier, and it's
+free (already exists in the engine, no new bookkeeping invented). Real
+next step: locate this project's own equivalent of "where GfxImage pixel
+data becomes a D3D9 texture" in `iw5sp.exe` — likely near the existing
+signature-scanned render/asset-realization functions this project's other
+RE work has already touched, not yet searched for specifically.
+
+## Real upload path found (`D3D9DeviceEx::UpdateTextureFromBuffer`) — and a genuine architectural blocker it surfaces (historical: DXVK-layer-only framing, superseded by the resolution above)
 
 Read `dxvk/src/d3d9/d3d9_device.cpp`'s real upload chain in full:
 `FlushImage` → `UpdateTextureFromBuffer` (~line 5286) is the actual place
@@ -214,12 +256,44 @@ further design work here: determine which of (a)/(c) is actually
 buildable** — this changes the entire shape of the feature and needs to
 be resolved before the cache-key design in item 2 below is finalized.
 
-## Status
+## Status — scoping complete, no code written yet
 
-**Scoping only.** No code written. Real next steps, in order: (1) verify
-the Real-ESRGAN model weight license before vendoring anything, (2) read
-`d3d9_common_texture.cpp`'s real upload path in full to answer the
-compressed-texture question, (3) prototype the ncnn-vulkan integration
-completely standalone (a small test harness, not wired into the mod) to
-confirm it can run against this machine's real GPU via Vulkan before any
-DXVK-side hook is attempted, (4) only then design the actual hook + cache.
+**Locked design (2026-09-28):**
+- **Target**: source asset textures (`.iwd`/`.ff` `GfxImage` assets) only —
+  never the backbuffer/render targets (already handled by
+  `InternalRenderScalePercent`, a separate mechanism).
+- **Never modify `.iwd`/`.ff` on disk, ever** — runtime interception only,
+  same "read-only game install, only our own injected code writes
+  anything" policy as the rest of this project.
+- **Hook point: the native engine's `GfxImage`→D3D9-texture realization
+  function**, not DXVK/D3D9's own `CreateTexture`/`UpdateTextureFromBuffer`
+  — gives a real, stable, free cache key (the asset's own name) BEFORE any
+  texture is created, letting a cache hit's upscaled dimensions be passed
+  into `CreateTexture` from the start. No DxvkImage resize/recreate
+  machinery needed. **Not yet located in `iw5sp.exe`** — real next RE step.
+- **Cache key**: `GfxImage` name + a model-version/scale-factor stamp
+  (exact format still open, small remaining design work).
+- **Upscaler**: Real-ESRGAN-ncnn-vulkan (MIT/BSD, model weights BSD-3-Clause,
+  both verified), Vulkan-compute-native, no CUDA/ONNX dependency — vendor
+  as a nested subtree, same pattern as `MW32011DXVK`/MinHook/Streamline.
+  NVIDIA RTX Neural Texture Compression checked and ruled out as a
+  competing primary path (solves VRAM footprint, not detail addition) —
+  possible later complementary use for compressing the cache itself.
+- **Compressed (DXT/BC) source textures**: decode once at the `GfxImage`
+  hook layer before upscaling; re-encode vs. upload-uncompressed is a real
+  open cost/quality tradeoff, not a blocker.
+- **First-use cost**: background-thread upscale queue (serve original
+  texture until the cached upscale is ready, swap in on completion),
+  reusing this project's own established one-thread-per-job convention —
+  not yet designed in detail.
+- **Disk footprint / default state**: strictly opt-in, off by default,
+  same as every other pre-1.0 experimental feature — exact cache location
+  and any "which textures actually get touched" accounting still open.
+
+**Real next steps, in order**: (1) locate the native `GfxImage`-to-D3D9-
+texture realization function in `iw5sp.exe` (the actual hook point — this
+is the one piece every other design decision above depends on), (2)
+prototype ncnn-vulkan completely standalone (a small test harness, not
+wired into the mod) to confirm it runs against this machine's real GPU via
+Vulkan, (3) design the background-thread queue and cache file format, (4)
+only then write the actual hook + substitution code.
