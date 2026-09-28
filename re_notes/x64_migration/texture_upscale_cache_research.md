@@ -817,3 +817,58 @@ itself (already hooked, already confirmed to own `param_1` and see the
 real name before the zone-archive read happens), not a passive
 file-drop. This is now the settled design; no more time should be spent
 chasing the loose-file-override shortcut for this feature.
+
+## ncnn vendored; standalone Vulkan smoke test PASSED; a real CRT-linkage decision now needed before wiring into the mod
+
+**Vendored**: real, official, prebuilt `Tencent/ncnn` Windows VS2022 x64
+static SDK (tag `20260526`, Vulkan-enabled — confirmed via `command.h`/
+`gpu.h`/`vulkan_header_fix.h` plus bundled `glslang`/`SPIRV` shader-compile
+libs, not a CPU-only build). Headers committed
+(`proxy_d3d9/third_party/ncnn/include/`); the ~46MB static libs are
+gitignored and fetched via a new `fetch_ncnn.bat`, same size-driven
+(not license-driven — both ncnn's own BSD-3-Clause and glslang's own
+permissive terms are fine) treatment this project already gives large
+binaries after this session's own repeated lessons about committing them.
+
+**Standalone smoke test: PASSED, real GPU confirmed.** A small,
+deliberately-standalone test program (`ncnn::get_gpu_count()`/
+`get_gpu_info()`/`get_gpu_device()`, not wired into the mod) correctly
+detected BOTH real GPUs on this dev machine via Vulkan — an NVIDIA
+RTX 2080 Ti (`vendor_id=0x10de`, 8 compute queues, real fp16/int8/bf16 and
+cooperative-matrix capability flags) and an AMD Radeon integrated GPU
+(`vendor_id=0x1002`, 4 compute queues) — and successfully acquired a real
+`VulkanDevice` handle for GPU 0. This is genuine, live confirmation the
+vendored ncnn build works correctly with Vulkan on real, mixed hardware,
+not just a "did it link" check.
+
+**Real, unresolved architectural decision found in the process**: the
+vendored `ncnn.lib` is built with the DYNAMIC CRT (`/MD`) — confirmed the
+hard way, via a real `LNK2038: mismatch detected for 'RuntimeLibrary'`
+linker error against a default `/MT`-flagged test compile, fixed for the
+standalone test by adding `/MD`. **This project's own `proxy_d3d9.vcxproj`
+uses the STATIC CRT** (`RuntimeLibrary=MultiThreaded` for Release) — the
+same mismatch would block a direct `ncnn.lib` link into the main mod as-is.
+Three real options, none chosen yet:
+1. **Switch `proxy_d3d9.vcxproj` itself to the dynamic CRT** (`/MD`,
+   `MultiThreadedDLL`) — simplest, but a real, project-wide behavior
+   change: the shipped `d3d9.dll` would then depend on the MSVC
+   redistributable being present on a player's system, rather than being
+   fully self-contained the way it is today. Worth flagging as a real
+   trade-off, not a free choice.
+2. **Rebuild ncnn from source with `/MT`** to match the mod's existing
+   static-CRT convention exactly — more setup work (ncnn's own CMake
+   build, not just downloading a prebuilt zip), but keeps the mod's
+   current "one self-contained DLL, no external CRT dependency" property
+   intact.
+3. **Load ncnn as its own genuinely separate DLL**, communicating through
+   ncnn's own real C ABI (`c_api.h`, present in the vendored headers) —
+   matches this project's existing precedent for `MW32011DXVK`/NVIDIA
+   Streamline (separate shipped binaries, not statically linked into the
+   main `d3d9.dll`), sidesteps the CRT question entirely since each DLL
+   carries its own CRT, but means shipping an additional real binary
+   alongside the mod for the first time for a non-graphics-API component.
+
+**Not yet decided — real next step**: pick one of these three before
+writing any real integration code, since it changes both the build setup
+and (for option 1) a real, player-visible dependency change worth a
+direct decision rather than a quiet default.
