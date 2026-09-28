@@ -477,9 +477,16 @@ be resolved before the cache-key design in item 2 below is finalized.
 
 ## Status — scoping complete, hook point FOUND and CONFIRMED, no implementation code written yet
 
-**Locked design (2026-09-28, updated after the third RE round):**
-- **Target**: source asset textures (`.iwd`/`.ff` `GfxImage` assets) only —
-  never the backbuffer/render targets (already handled by
+**Locked design (2026-09-28, updated after the third RE round and the
+live-test scope split):**
+- **Target, phase 1 (confirmed viable, real next implementation
+  target): menu/UI `GfxImage` assets**, via the confirmed-live
+  `FindOrLoadAsset(assetType==0xa)` correlation. **Target, phase 2
+  (genuinely unresolved, separate RE target): real in-level gameplay
+  textures** (world diffuse/normal maps etc.), which most likely load
+  through a separate bulk zone-load path this `FindOrLoadAsset` hook does
+  not see — not blocking phase 1. Neither phase ever touches the
+  backbuffer/render targets (already handled by
   `InternalRenderScalePercent`, a separate mechanism).
 - **Never modify `.iwd`/`.ff` on disk, ever** — runtime interception only,
   same "read-only game install, only our own injected code writes
@@ -532,8 +539,27 @@ twin (`FUN_1400a5a20`) and the `assetType==0xa` correlation are both
 correct, live, not just statically inferred** — no crash, no garbage
 data, real names matching exactly the kind of asset the per-type
 dispatch's own embedded error string (`"Could not load default asset
-'%s'..."`) already predicted would exist for this type. **Real, honest
-gap**: only built-in defaults were captured this session — no real named
+'%s'..."`) already predicted would exist for this type. **Scope split,
+2026-09-28: the user confirmed this session was a real in-level play
+session, not startup/menu-only, and that only built-in defaults showing
+up (no real level content) is expected — `FindOrLoadAsset` is the right
+mechanism for MENU/UI texture upscaling specifically ("we will use for
+upscaling menus but still" [need real level content solved separately]).
+This resolves the "is this a gap or a real blocker" question from the
+first-draft framing below: it's neither — it's a real, correct scope
+boundary. `FindOrLoadAsset(assetType==0xa)` is confirmed viable for
+menu/UI images (matches x86's own precedent that menus/materials are
+looked up by name through this exact function, `re_notes/iw5sp.md`'s
+"Runtime material/texture capture" section) and ships as a real
+sub-feature on its own. Real, in-level GAMEPLAY texture content (world
+diffuse/normal maps etc.) most likely loads through a separate bulk
+zone-load path (a `DB_LinkXAssetEntry`-class function registering a
+level's own `GfxImage` entries directly from its `.ff`, without an
+interning "find or load by name" call) — genuinely unresolved, a
+separate, harder RE target for a future round, not blocking menu-texture
+upscaling from proceeding now.** Original first-draft note, kept for the
+record rather than deleted: only built-in defaults were captured this
+session — no real named
 level content (e.g. `images/some_prop_diffuse`) came through yet, most
 likely because this capture window was a short startup/menu-only session
 rather than a full gameplay session with a level loaded. **Next
