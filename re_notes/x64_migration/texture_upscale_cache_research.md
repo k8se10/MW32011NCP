@@ -145,6 +145,25 @@ between the two — recording this explicitly so a future session doesn't
 conflate "upscale the game's textures" with "upscale the render
 resolution," which this project already has a solved, shipped answer for.
 
+## Locked constraint, 2026-09-28: never modify `.iwd`/`.ff` archives, runtime interception only
+
+**Direct instruction: `.iwd` files are integrity-checked, so they must
+never be overwritten or pre-patched with upscaled textures on disk, even
+at runtime.** The only sanctioned approach is reading through this
+project's own interception mechanism (hooking the real upload path,
+substituting the cached upscale in memory as it reaches the GPU) — never
+touching the source archive itself. This is the same "the game install is
+read-only reference material, the only sanctioned write is our own proxy
+DLL" policy this project already applies to `main/`/`zone/`/the executables
+(`CLAUDE.md` §2, Key Principle 2) and the same reasoning already on record
+for never hex-patching the executables — extends cleanly to `.iwd`/`.ff`
+asset archives too, not a new category of restriction. **This locks in
+option (a)/(c) from the blocker below as the only real path forward**: the
+upscale substitution has to happen at the `D3D9CommonTexture`/upload layer
+(in-memory, per-session), never as a pre-processing pass that rewrites the
+archives players' own game installs already have integrity-checked — ruling
+out any design that assumed disk-level asset replacement as a shortcut.
+
 ## Real upload path found (`D3D9DeviceEx::UpdateTextureFromBuffer`) — and a genuine architectural blocker it surfaces
 
 Read `dxvk/src/d3d9/d3d9_device.cpp`'s real upload chain in full:
