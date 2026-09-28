@@ -1039,3 +1039,34 @@ disk (keyed by the real image name, storing a ready-to-substitute `.iwi`
 blob), (2) the actual ncnn-based upscale-and-encode pipeline that
 produces those cached blobs (background thread, first-use-miss handling),
 (3) the two hooks described above, wired together.
+
+## `.iwi` encoder implemented and verified byte-exact
+
+Found and reused a much better source than more binary RE: this
+project's own `tools/iw5oat` fork (OpenAssetTools) already has a complete,
+real, tested IWI-v8 writer (`IwiWriter8.cpp`/`IwiTypes.h`) — exactly the
+format version this game uses. Its `image::iwi8::IwiHeader` struct
+independently cross-validates this session's own disassembly-derived
+header layout byte-for-byte (`flags`(u32)/`format`/`unused`/
+`dimensions[3]`/`fileSizeForPicmip[4]`), and its real write logic
+resolved two details pure disassembly hadn't fully pinned down:
+`fileSizeForPicmip` entries are a CUMULATIVE running total (header size +
+all mips written so far), not each mip's own individual size, and mips
+are written smallest-first.
+
+Ported into a standalone, no-STL (`malloc`-based, matching
+`asset_capture.cpp`'s own established shipped-code convention) encoder:
+`proxy_d3d9/src/texture_upscale_iwi_writer.h`/`.cpp`,
+`TextureUpscaleIwi::EncodeIwi8()`. Verified via a standalone test program
+(not shipped) — every output byte checked against hand-computed expected
+values (magic/version, format, width/height/depth, all four cumulative
+`fileSizeForPicmip` entries, mip data ordering) and all matched exactly.
+Build-verified as part of the main `proxy_d3d9.vcxproj` (x64 Release, 0
+errors, `static_assert`s on the real 28-byte header size passed).
+
+**Not yet wired into anything** — this is the encoder only. Real
+remaining pieces: the ncnn-based upscale pipeline that decodes a real
+source `.iwi`'s mip data, runs it through Real-ESRGAN, and re-encodes DXT
+mips to feed this encoder; the cache file format/lookup on disk; and the
+two substitution hooks (`Hook_ImageFileLoadX64`'s real cache-check logic,
+the new hook on `FUN_1402b5ec0`) designed in the round above.
