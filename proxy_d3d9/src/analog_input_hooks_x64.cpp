@@ -12210,28 +12210,40 @@ ImageFileLoadFnX64 g_realImageFileLoadX64 = nullptr;
 
 long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
 {
-    static int s_loggedCount = 0;
-    if (s_loggedCount < 400) {
-        // Read the real name pointer at param_1+0x20 BEFORE calling through --
-        // param_1 is a struct this function itself mutates internally (per the
-        // decompile), so reading before the real call guarantees this reflects
-        // what was actually asked to load, not any post-call mutated state.
-        // SEH-guarded: this offset is a static-RE inference, not yet proven safe
-        // for every possible caller of this function, matching this project's own
-        // "SEH-guarded" convention for raw-offset struct reads (PLUGIN_API.md's
-        // ReadMemory).
-        const char* name = nullptr;
-        __try {
-            name = *reinterpret_cast<const char* const*>(param_1 + 0x20);
-        } __except (EXCEPTION_EXECUTE_HANDLER) {
-            name = nullptr;
-        }
-        ++s_loggedCount;
-        char buf[400];
-        sprintf_s(buf, "[x64-imagefileload-diag] FUN_1401bae80 name=\"%.300s\" (hit #%d/400)",
-            name ? name : "(null/unreadable)", s_loggedCount);
-        LogFromController(buf);
+    // Unbounded, 2026-09-28 (same treatment as Hook_FindOrLoadAssetX64's own
+    // image-diag hook, same day, same reasoning: "the logging it must be
+    // unbounded for dev data"). The first 400 hits all read back clean, sane,
+    // real names, but every one of them was UI/HUD/menu-adjacent
+    // (scrollbar_arrow_up, checkbox_current, flashbangicon, rain_drop, etc.) --
+    // the 400 cap most likely filled during early UI/HUD population before real
+    // world-geometry material textures came through, so this is unbounded to
+    // see the FULL session and confirm whether Phase 2 (gameplay world
+    // textures) content also flows through this same universal loader, not
+    // just Phase 1 (menu/UI) content. Image loads are asset-load-event
+    // frequency, not per-frame, so this doesn't carry the "unthrottled
+    // per-frame log write" risk issue #87 already fixed elsewhere in this
+    // codebase.
+    // Read the real name pointer at param_1+0x20 BEFORE calling through --
+    // param_1 is a struct this function itself mutates internally (per the
+    // decompile), so reading before the real call guarantees this reflects
+    // what was actually asked to load, not any post-call mutated state.
+    // SEH-guarded: this offset is a static-RE inference, not yet proven safe
+    // for every possible caller of this function, matching this project's own
+    // "SEH-guarded" convention for raw-offset struct reads (PLUGIN_API.md's
+    // ReadMemory).
+    const char* name = nullptr;
+    __try {
+        name = *reinterpret_cast<const char* const*>(param_1 + 0x20);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        name = nullptr;
     }
+    static int s_loggedCount = 0;
+    ++s_loggedCount;
+    char buf[400];
+    sprintf_s(buf, "[x64-imagefileload-diag] FUN_1401bae80 name=\"%.300s\" (hit #%d)",
+        name ? name : "(null/unreadable)", s_loggedCount);
+    LogFromController(buf);
+
     return g_realImageFileLoadX64(param_1, param_2);
 }
 
