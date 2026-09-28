@@ -97,7 +97,7 @@
       <PreprocessorDefinitions>WIN32;_WINDOWS;_USRDLL;PROXYD3D9_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>third_party\minhook\include;third_party\minhook\src;..\dxvk\include\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>third_party\minhook\include;third_party\minhook\src;..\dxvk\include\vulkan\include;third_party\ncnn\include\ncnn;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions Condition="'$(HaveEmbeddedNvidiaDxvkBinaries)'=='true'">MW3NCP_EMBED_NVIDIA_DXVK=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -111,8 +111,15 @@
            HidD_GetPreparsedData/HidP_GetCaps; nothing in this project needed these before.
            dxgi.lib: 2026-09-23, vram_diag.cpp's real IDXGIAdapter3::QueryVideoMemoryInfo
            diagnostic (CreateDXGIFactory1/EnumAdapters1/QueryInterface); see that file's
-           own header comment. -->
-      <AdditionalDependencies>hid.lib;setupapi.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+           own header comment.
+           ncnn/glslang/SPIRV: 2026-09-28, texture-upscale-cache feature's real
+           Real-ESRGAN inference (texture_upscale_ncnn.cpp). ncnn vendored from
+           source with the /MT static CRT to match this project's own convention
+           (see proxy_d3d9/third_party/ncnn/README.md for the real CRT mismatch
+           story); glslang/SPIRV are ncnn's own bundled Vulkan shader compile
+           dependencies, statically linked the same way ncnn.lib itself is. -->
+      <AdditionalLibraryDirectories>third_party\ncnn\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hid.lib;setupapi.lib;dxgi.lib;ncnn.lib;glslang.lib;SPIRV.lib;glslang-default-resource-limits.lib;MachineIndependent.lib;GenericCodeGen.lib;OSDependent.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -254,6 +261,7 @@
     <ClCompile Include="src\texture_upscale_iwi_writer.cpp" />
     <ClCompile Include="src\texture_upscale_cache.cpp" />
     <ClCompile Include="src\texture_upscale_dxt_codec.cpp" />
+    <ClCompile Include="src\texture_upscale_ncnn.cpp" />
     <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
@@ -318,6 +326,7 @@
     <ClInclude Include="src\texture_upscale_iwi_writer.h" />
     <ClInclude Include="src\texture_upscale_cache.h" />
     <ClInclude Include="src\texture_upscale_dxt_codec.h" />
+    <ClInclude Include="src\texture_upscale_ncnn.h" />
     <ClInclude Include="src\vram_diag.h" />
     <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\plugin_loader.h" />

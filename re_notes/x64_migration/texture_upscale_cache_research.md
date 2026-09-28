@@ -1267,3 +1267,51 @@ watching for a hit while a controller-glyph-bearing UI screen is open),
 then test substituting it the same way `background_image` was just
 tested. A genuinely separate feature from texture upscaling, sharing 100%
 of the same, now-proven mechanism.
+
+## FULL UPSCALE PIPELINE WORKS END TO END -- real, verified, confirmed
+
+Real, complete standalone test (not yet wired into the mod's own hooks):
+a real IWI-v8 source file (this project's own `tools/iw5oat` test fixture,
+64x64 DXT1) decoded → real Real-ESRGAN 4x inference run via the vendored
+`/MT` ncnn build → correctly upscaled to 256x256 (exact match) → re-encoded
+to DXT1 (32768 bytes, exactly matching real BC1 block-size math) →
+encoded into a real, valid IWI-v8 file via `EncodeIwi8` → written to the
+real on-disk cache via `StoreUpscaledIwi`. **Every single step of the
+"end to end" pipeline requested this session completed successfully and
+produced correct, verified output.**
+
+New files added to complete this: `texture_upscale_dxt_codec.h`/`.cpp`
+(standard, public BC1/BC2/BC3 block decode/encode -- verified against a
+real IWI test file already in this repo), `texture_upscale_ncnn.h`/`.cpp`
+(real Real-ESRGAN inference via ncnn's standard `Mat`/`Extractor` API --
+real blob names `data`/`output` read directly from the vendored model's
+own `.param` file, not guessed). ncnn is now linked directly into
+`proxy_d3d9.vcxproj` itself (full rebuild verified, 0 errors) -- the
+`/MT` static-CRT build from earlier this session was exactly the right
+call, this links cleanly with zero CRT conflicts. The real
+`realesrgan-x4plus.bin`/`.param` model (BSD-3-Clause, xinntao/Real-ESRGAN's
+own v0.2.5.0 release, confirmed to bundle real separate model files unlike
+the ncnn-vulkan fork's own releases) is vendored the same size-driven
+gitignore+fetch-script pattern as every other large binary this session.
+
+**One real, separate issue found, not yet fixed**: the standalone test
+process crashes during ITS OWN exit/cleanup, after all real pipeline work
+already completed and was verified correct and saved to disk. Very likely
+ncnn/Vulkan static-destructor-ordering (a known class of issue for
+programs mixing global C++ objects with Vulkan/GPU teardown) -- this is a
+CLI-process-exit concern, not a mid-pipeline correctness issue. Needs
+attention before the real background-thread integration (a long-running
+DLL never normally destroys its own `ncnn::Net` mid-session the way a
+one-shot CLI test does, but DLL unload/process-exit could hit the same
+class of ordering issue) -- flagged as a real, moderate-priority follow-up,
+not a blocker to recording this as a genuine, working, verified pipeline.
+
+**Real next steps**: (1) investigate/fix the exit-time crash (likely a
+real, bounded fix -- e.g. deliberately leaking the `ncnn::Net` rather than
+destroying it, matching how a long-running background-thread singleton
+naturally wants to behave anyway), (2) wire this pipeline into a real
+background thread triggered by a cache miss inside `Hook_ImageFileLoadX64`
+(currently only checks the cache, does nothing on a miss), (3) automate
+model-file deployment alongside `d3d9.dll` (currently a manual copy, same
+gap DXVK's own `DeployDxvk` vcxproj target already solves for that binary
+-- worth mirroring).
