@@ -1163,3 +1163,34 @@ re-verified via the standalone unit test (`fileSizeForPicmip=[60,44,36,0]`
 for the 3-mip test case, `60` now correctly matching the real total size —
 was `[36,44,60,0]` before), rebuilt, deployed, and the live test cache
 entry regenerated with the corrected encoder. Ready for a real re-test.
+
+## Same error persisted after the encoder fix -- real second bug, a design gap, found and fixed
+
+Same "Image file corrupt." error on re-test even with the corrected
+encoder. Real root cause, distinct from the encoder bug: `Hook_ImageFileLoadX64`
+was still passing the REAL `param_2` read-callback through to the real
+`FUN_1401bae80` on a cache hit. That real callback reports the REAL
+original file's own real size (`lVar3`), which gets checked against
+`fileSizeForPicmip[0]` — a completely different, unrelated number from
+our substituted buffer's own total size. This meant the corruption check
+was mathematically guaranteed to fail no matter how correct the encoder
+was, since the two numbers being compared came from two entirely
+different, unsynchronized sources (the real file's real metadata vs. our
+fake header).
+
+**Fixed**: on a cache hit, `Hook_ImageFileLoadX64` now passes a synthetic
+callback (`FakeSubstitutionReadCallback`, matching the real callback's
+exact signature/calling convention) instead of the real `param_2` —
+it reports OUR substituted buffer's own real total size and writes a
+dummy sentinel "handle" (never actually used as a real handle, since
+`Hook_ReadBytesSubstitutionX64` only checks the armed flag, not the
+handle value, when serving bytes). Build-verified, deployed. Ready for a
+real re-test.
+
+**Real lesson**: the original two-hook design correctly identified
+`FUN_1402b5ec0` as the byte-serving primitive to intercept, but missed
+that the callback FUNCTION ITSELF (not just its later reads) also
+reports data — specifically the file size — that downstream code
+validates against the substituted content. A full substitution needs
+every real data source the target function consults to agree with each
+other, not just the raw byte stream.
