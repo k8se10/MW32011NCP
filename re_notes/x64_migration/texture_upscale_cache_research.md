@@ -1070,3 +1070,34 @@ source `.iwi`'s mip data, runs it through Real-ESRGAN, and re-encodes DXT
 mips to feed this encoder; the cache file format/lookup on disk; and the
 two substitution hooks (`Hook_ImageFileLoadX64`'s real cache-check logic,
 the new hook on `FUN_1402b5ec0`) designed in the round above.
+
+## Cache lookup/storage implemented and verified working
+
+`proxy_d3d9/src/texture_upscale_cache.h`/`.cpp`
+(`TextureUpscaleCache::TryLoadCachedUpscaledIwi`/`StoreUpscaledIwi`):
+real image name + scale multiplier maps to a real `.iwi` file under
+`<gameDir>\texture_upscale_cache\` (the filename itself IS the cache
+key — sanitized name + scale, so a `TextureRenderRes` change naturally
+invalidates old entries by no longer matching any filename, no explicit
+invalidation pass needed). Read side deliberately synchronous (a hit
+replaces a real synchronous disk/archive read the game already does at
+this exact call site, so no new stall risk); write side uses a
+temp-file-then-atomic-rename pattern so the synchronous reader can never
+observe a half-written cache file, matching `asset_capture.cpp`'s own
+established write-safety discipline without needing a second background
+queue here (the real caller — the not-yet-built ncnn pipeline — already
+has to run on its own background thread given inference cost).
+
+Verified via a standalone round-trip test: miss before store, correct
+store, exact byte match on read-back, a different scale factor correctly
+misses, and filename sanitization confirmed correct for a name containing
+`/`, `~`, and `-` (matching real observed name shapes from the earlier
+live diagnostic rounds). Build-verified as part of the main
+`proxy_d3d9.vcxproj`.
+
+**Two of the four remaining implementation pieces are now done** (the
+`.iwi` encoder, the cache lookup/storage). Remaining: the ncnn-based
+upscale pipeline (decode source mips → Real-ESRGAN inference → re-encode
+DXT mips → `EncodeIwi8` → `StoreUpscaledIwi`) and the two substitution
+hooks (`Hook_ImageFileLoadX64`'s real cache-check call, the new hook on
+`FUN_1402b5ec0`).
