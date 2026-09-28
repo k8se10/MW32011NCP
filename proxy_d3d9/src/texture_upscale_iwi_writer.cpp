@@ -69,24 +69,25 @@ uint8_t* EncodeIwi8(uint16_t width, uint16_t height, uint16_t depth, Format form
     if (mipCount <= 1) header.flags |= 0x2; // IMG_FLAG_NOMIPMAPS (iwi8::IwiFlags), matches
                                              // IwiWriter8.cpp's own !HasMipMaps() case
 
-    // Real writer's own accumulation logic (IwiWriter8.cpp DumpImage), ported
-    // verbatim: iterate SMALLEST mip first, running total starts at
-    // sizeof(version)+sizeof(header), each entry in fileSizeForPicmip is the
-    // CUMULATIVE size after that mip is included -- not that mip's own size
-    // alone. mipsLargestFirst[0] is this feature's own largest/base mip
-    // (index `mipCount-1` in the real on-disk smallest-first order), so the
-    // real per-level index used for fileSizeForPicmip here is
-    // `mipCount-1-i` where `i` walks mipsLargestFirst backwards.
+    // Real writer's own accumulation logic (IwiWriter8.cpp DumpImage) --
+    // REAL BUG FOUND AND FIXED, 2026-09-28: a live test hit the real engine's
+    // own "Image file corrupt." error (FUN_1401bae80's `if (local_58[0] !=
+    // lVar3)` check, `lVar3` = the real total file size). `fileSizeForPicmip`
+    // is indexed by REAL semantic mip level (0 = largest/base), and each
+    // entry is the CUMULATIVE size of that level and every SMALLER level
+    // below it -- so `fileSizeForPicmip[0]` must equal the TOTAL file size
+    // (base level needs everything), not "after the first mip processed."
+    // The earlier version of this loop mapped its own `realMipLevel` (0 =
+    // smallest) directly onto the array index -- exactly backwards. Fixed by
+    // accumulating from the smallest array slot (mipCount-1, the real
+    // smallest mip) up to index 0 (the real base/largest mip, matching
+    // `mipsLargestFirst[0]`'s own documented meaning) -- array index and real
+    // mip level are the SAME number for this struct, no reversal needed once
+    // the accumulation direction itself is correct.
     uint32_t runningSize = static_cast<uint32_t>(sizeof(versionHeader) + sizeof(header));
-    for (int realMipLevel = 0; realMipLevel < mipCount; ++realMipLevel) {
-        // realMipLevel 0 = smallest (last in mipsLargestFirst), ascending to
-        // mipCount-1 = largest/base (mipsLargestFirst[0]) -- matches the real
-        // writer's own descending-currentMipLevel loop exactly, just indexed
-        // from the opposite end since our own input order is reversed from
-        // the real on-disk order.
-        const MipLevel& mip = mipsLargestFirst[mipCount - 1 - realMipLevel];
-        runningSize += mip.size;
-        if (realMipLevel < kMaxPicmipEntries) header.fileSizeForPicmip[realMipLevel] = runningSize;
+    for (int arrIdx = mipCount - 1; arrIdx >= 0; --arrIdx) {
+        runningSize += mipsLargestFirst[arrIdx].size;
+        if (arrIdx < kMaxPicmipEntries) header.fileSizeForPicmip[arrIdx] = runningSize;
     }
 
     memcpy(buffer + sizeof(versionHeader), &header, sizeof(header));
