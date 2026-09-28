@@ -519,10 +519,14 @@ be resolved before the cache-key design in item 2 below is finalized.
   same as every other pre-1.0 experimental feature — exact cache location
   and any "which textures actually get touched" accounting still open.
 
-**Real next steps, in order**: (1) live-verify `FUN_1400a5a20`/`assetType
-0xa` via a diagnostic-only hook (log every image name seen, no behavior
-change) — build-verifiable now, needs the user to launch and play per
-this project's own "never launch the game myself" convention, (2) confirm
+**Real next steps, in order**: (1) **DONE, deployed, awaiting live
+confirmation** — `Hook_FindOrLoadAssetX64`/`InstallFindOrLoadAssetImageDiagHookX64`
+(`analog_input_hooks_x64.cpp`), a read-only diagnostic logging the first 5
+`assetType==0xa` hits (real image name, flag, result pointer). Build-
+verified (x64 Release, 0 errors), confirmed genuine x64 via `dumpbin`,
+deployed to the live install. Needs the user to launch and play so
+`proxy_d3d9.log` can confirm real image names actually come through
+before anything is built on this assumption further. (2) confirm
 the existing x64 `CreateTexture` vtable hook wiring (`asset_capture.cpp`)
 is correctly installed on x64 (likely already fine, not independently
 re-verified this pass), (3) port `Hook_FindOrLoadAsset` from
