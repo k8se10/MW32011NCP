@@ -700,18 +700,46 @@ larger size because THIS function reported it from the substituted
 file's own real header. **This is a real, load-bearing design win** — it
 was worth re-deriving now that the confirmed hook point sits upstream of
 D3D9 entirely, rather than assuming the old constraint (found against a
-downstream DXVK-layer hook) still applies unchanged. **Not yet fully
-specified**: `FUN_1401bae80`'s exact file-read mechanism (what `param_2`,
-the callback passed to it, actually reads from — presumably the real
-`.iwd`/`.ff` archive path, not a loose disk file) needs its own RE pass
-before a real substitution can be implemented; the local `img
-width/height` field layout (`local_58[...]`) referenced in the existing
-decompile also needs precise mapping. **Real next steps, updated**: (1)
-RE `FUN_1401bae80`'s own file-read callback and header-field layout
-precisely enough to design the real substitution, (2) prototype ncnn-vulkan
+downstream DXVK-layer hook) still applies unchanged. **CORRECTION, same day, from a fuller decompile of `FUN_1401bae80`'s
+real body**: the "substitute the raw `.iwi` file bytes and let the
+existing header-driven logic handle everything for free" framing above
+is WRONG, or at least incomplete — real pixel width/height are NOT read
+from the 32-byte `.iwi` header this function reads at all. That header
+(`local_68`/`local_67`/`local_66`/`local_65` = the real `"IWi"` magic +
+version-8 byte; `local_64` = a flags byte; `local_5e`/`local_5c` = two
+shorts, likely streamed/unstreamed mip-count fields; `local_58[4]` = four
+ints, confirmed via `iVar2 = local_58[uVar8]` and the corruption check
+`local_58[0] != lVar3` (`lVar3` = the real file's own total byte size) to
+be PER-MIP-LEVEL COMPRESSED DATA SIZES, not dimensions at all — matches
+IWI's real streaming design (only the smallest few mip levels' byte
+sizes are stored for on-demand streaming). **Real pixel dimensions are
+written elsewhere**, onto `param_1` itself, by `FUN_1401ba0c0`
+(`*(short*)(param_1+0x18)=width`, `+0x1a`=height, `+0x1c`=depth) — a
+sibling function in the same decode chain, fed by data that itself
+traces back to the `GfxImage` asset's OWN pre-populated fields, set at
+zone/fastfile-parse time, BEFORE `FUN_1401bae80` ever runs. **This means
+substituting the `.iwi` file's raw bytes alone does NOT resize the
+eventual texture** — the width/height driving `CreateTexture` are
+already fixed by the time this function runs. **The real fix is still
+available from this same hook, just requires one more explicit step**:
+since the hook already owns `param_1` (the real struct pointer), it can
+directly overwrite `param_1+0x18`/`+0x1a` (and whatever mip-count/size
+fields the substituted, upscaled `.iwi` payload's own real header
+correctly describes) to the real upscaled dimensions, in addition to
+supplying the upscaled pixel/mip data itself — more explicit work than
+last turn's overclaim, but still fully achievable at this one hook point,
+no DXVK-side resize machinery needed. **Real next steps, updated**: (1)
+map `param_1`'s own struct layout precisely (confirmed fields so far:
+`+0xb`=a flags byte, `+0xc`=current/target mip level, `+0x18`/`+0x1a`/
+`+0x1c`=width/height/depth, `+0x20`=the real image name pointer) and
+confirm exactly which fields the substitution needs to set, (2) RE
+`param_2`'s own real implementation (the file-read callback — presumably
+reads from the real `.iwd`/`.ff` archive, not a loose disk file) to
+understand what "supplying a substituted file" would actually require,
+prototype ncnn-vulkan
 completely standalone (a small test harness, not wired into the mod) to
-confirm it runs against this machine's real GPU via Vulkan, (3) design the
-background-thread queue and cache file format, (4) only then write the
+confirm it runs against this machine's real GPU via Vulkan, (4) design the
+background-thread queue and cache file format, (5) only then write the
 actual hook + substitution code. The `FindOrLoadAsset` hook
 (`Hook_FindOrLoadAssetX64`) stays in the tree as a real, working,
 independently-useful diagnostic/correlation tool, just no longer the
