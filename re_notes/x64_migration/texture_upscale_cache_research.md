@@ -1145,3 +1145,21 @@ Staged: `texture_upscale_cache\background_image_4x.iwi` (32x32 RGBA
 checkerboard), `TextureRenderRes=4x` set live. Ready for a real live test
 -- the main menu background should render as a magenta/black checkerboard
 if the substitution hooks work correctly.
+
+## First live test hit a real bug -- found, fixed, re-staged
+
+First real live test result: the game showed its own real "Image file
+corrupt." error dialog on launch. This is a real, direct hit of
+`FUN_1401bae80`'s own integrity check (`if (local_58[0] != lVar3)`,
+`lVar3` = the real total file size) — confirms the substitution hooks
+ARE firing and ARE reaching the real decode logic (a genuine, if noisy,
+positive signal), but the encoder itself had a real bug: `fileSizeForPicmip`
+is indexed by real semantic mip level (0 = largest/base), and each entry
+must be the cumulative size of that level plus everything smaller below
+it — so `fileSizeForPicmip[0]` has to equal the TOTAL file size. The
+encoder's accumulation loop mapped its own "0 = smallest" convention
+directly onto the array index, exactly backwards. Fixed (`texture_upscale_iwi_writer.cpp`),
+re-verified via the standalone unit test (`fileSizeForPicmip=[60,44,36,0]`
+for the 3-mip test case, `60` now correctly matching the real total size —
+was `[36,44,60,0]` before), rebuilt, deployed, and the live test cache
+entry regenerated with the corrected encoder. Ready for a real re-test.
