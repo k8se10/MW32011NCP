@@ -29,6 +29,10 @@ void InstallAnalogInputHooksX64(); // defined in analog_input_hooks_x64.cpp -- 2
     // x64 migration, real signature-scanned hooks (CLAUDE.md SS5/SS10.3 policy).
     // Deliberately a separate function, not an overload, so the platform split is
     // visible at the call site below, not hidden in a single shared name.
+void InstallFindOrLoadAssetImageDiagHookX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-28, groundwork for the runtime texture-upscale-cache feature. SP-only
+    // (signature only ever verified against iw5sp.exe); read-only diagnostic, no
+    // behavior change.
 #if defined(_M_X64) || defined(_WIN64)
 void InstallRenderScaleHookX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-23,
     // split out of InstallAnalogInputHooksX64() specifically so it can be called under
@@ -918,6 +922,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // same SP-only gating as every other x64 hook here.
             InstallIwdReadCacheHooksX64(); // 2026-09-16, see iwd_read_cache_x64.cpp --
                 // same signature-verified-against-iw5sp.exe-only gating.
+            InstallFindOrLoadAssetImageDiagHookX64(); // 2026-09-28, groundwork for the
+                // runtime texture-upscale-cache feature (re_notes/x64_migration/
+                // texture_upscale_cache_research.md) -- read-only, confirms x86's
+                // FindOrLoadAsset x64 twin (FUN_1400a5a20) and the assetType==0xa
+                // ("image") correlation live before any real upscale/cache logic is
+                // built on that static-RE-only finding.
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif

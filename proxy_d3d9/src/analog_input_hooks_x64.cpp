@@ -12050,3 +12050,106 @@ void InstallAnalogInputHooksX64()
         }
     }
 }
+
+// ---- FindOrLoadAsset image-name diagnostic (2026-09-28) -------------------------
+// Read-only groundwork for the runtime texture-upscale-cache feature
+// (re_notes/x64_migration/texture_upscale_cache_research.md) -- confirms the x64
+// twin of x86's FindOrLoadAsset (FUN_004ff000, re_notes/iw5sp.md) actually fires
+// for real image (GfxImage) loads with the assetType this pass's static RE found
+// (0xa, "image" -- re_notes/x64_migration/texture_upscale_cache_research.md's
+// dumped assetType->name table, 0x1404c2430 in the offline binary), before any
+// upscale/cache/substitution logic is built on that assumption. Confirmed via
+// static RE only so far (signature match, InterlockedIncrement+spin-wait lock
+// pattern matching x86's documented shape, 58-caller count vs. x86's confirmed
+// 59, and an independently-verified 1-occurrence-only raw signature match against
+// the offline binary) -- this hook is the first LIVE confirmation. Zero behavior
+// change: calls through to the real function unconditionally and only reads its
+// arguments/return value for logging, same "read-only observer" standard as
+// asset_capture.cpp's own material-name capture on x86.
+//
+// Signature (FUN_1400a5a20's own real, fixed prologue bytes -- no PC-relative/
+// RIP-relative operand anywhere in this span, so no wildcarding needed; the
+// MOV [RSP+disp8],REG stack-spill instructions DumpSigBytes.java's own heuristic
+// flagged as "likely needs wildcarding" are the same known RSP-relative false
+// positive this project has already documented and corrected for elsewhere --
+// fixed displacements into the caller's own stack frame, not addresses):
+//   48 89 5C 24 08     MOV [RSP+0x8],RBX
+//   48 89 6C 24 10     MOV [RSP+0x10],RBP
+//   48 89 74 24 18     MOV [RSP+0x18],RSI
+//   57                 PUSH RDI
+//   41 56              PUSH R14
+//   41 57              PUSH R15
+//   48 83 EC 40        SUB RSP,0x40
+//   45 8B F8           MOV R15D,R8D
+// Independently verified unique (exactly 1 raw occurrence) against
+// re_notes/x64_migration/binaries/iw5sp.exe via a standalone byte search, not
+// just Ghidra's own confidence -- this project's standing "verify before
+// hooking" rule.
+constexpr const char* kFindOrLoadAssetSignature =
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 40 45 8B F8";
+
+// __fastcall(int assetType, const char* name, int flag) -> real asset handle
+// (an opaque pointer this diagnostic never dereferences). Confirmed standard MS
+// x64 fastcall (RCX/RDX/R8 map directly onto the three published arguments,
+// confirmed via the prologue's own `mov r15d,r8d` spilling the real R8D/flag
+// argument) -- no raw/naked trampoline needed, a plain MinHook C++ detour is
+// safe here, same as Hook_VmNotify's own precedent (analog_input_hooks_x64.cpp,
+// 2026-09-17) for the same reason.
+using FindOrLoadAssetFnX64 = void*(__fastcall*)(int assetType, const char* name, int flag);
+FindOrLoadAssetFnX64 g_realFindOrLoadAssetX64 = nullptr;
+
+constexpr int kFindOrLoadAssetImageTypeX64 = 0xa; // confirmed via the dumped
+    // assetType->name table, texture_upscale_cache_research.md's third RE round.
+
+void* __fastcall Hook_FindOrLoadAssetX64(int assetType, const char* name, int flag)
+{
+    void* result = g_realFindOrLoadAssetX64(assetType, name, flag);
+
+    if (assetType == kFindOrLoadAssetImageTypeX64) {
+        static int s_loggedCount = 0;
+        if (s_loggedCount < 5) {
+            ++s_loggedCount;
+            char buf[400];
+            sprintf_s(buf, "[x64-findasset-image-diag] FindOrLoadAsset(image) name=\"%.300s\" "
+                "flag=%d result=%p (hit #%d/5)",
+                name ? name : "(null)", flag, result, s_loggedCount);
+            LogFromController(buf);
+        }
+    }
+
+    return result;
+}
+
+// SP-only (per this project's own standing per-exe signature-verification policy --
+// this signature has only ever been resolved/verified against iw5sp.exe, never
+// iw5mp.exe). Diagnostic only: confirms the image-load correlation live before
+// any real texture-upscale-cache hook/substitution logic is built on it.
+void InstallFindOrLoadAssetImageDiagHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kFindOrLoadAssetSignature);
+    if (!r.found) {
+        LogFromController("[x64-findasset-image-diag] FATAL: FindOrLoadAsset signature did not resolve -- "
+            "texture-upscale-cache groundwork diagnostic inactive this session");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_FindOrLoadAssetX64),
+                                            reinterpret_cast<void**>(&g_realFindOrLoadAssetX64));
+    if (createStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-findasset-image-diag] FATAL: MH_CreateHook failed for FindOrLoadAsset @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-findasset-image-diag] FATAL: MH_EnableHook failed for FindOrLoadAsset @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[x64-findasset-image-diag] FindOrLoadAsset hook installed and enabled (read-only, "
+        "texture-upscale-cache groundwork) -- FUN_1400a5a20.");
+}
