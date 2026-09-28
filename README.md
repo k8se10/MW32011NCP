@@ -17,8 +17,7 @@
 ### 🚀 `v0.0.3-x64` — the biggest release in the project's history
 
 ![Release v0.0.3-x64](https://img.shields.io/badge/release-v0.0.3--x64-2ea44f)
-![LTS candidate](https://img.shields.io/badge/LTS-candidate-8250df)
-![Development break until 2026-10-04](https://img.shields.io/badge/development%20break-until%202026--10--04-orange)
+![LTS candidate withdrawn](https://img.shields.io/badge/LTS-none%20currently-lightgrey)
 
 - 🌋 **Native Vulkan rendering**, on by default in Campaign/Survival
 - 🟩 **NVIDIA DLSS/DLAA** for RTX GPUs (opt-in)
@@ -36,8 +35,11 @@ navigation but no in-game controller movement/aiming yet (render scale and the p
 > and in [`re_notes/known_issues_x64.md`](re_notes/known_issues_x64.md).
 
 > [!IMPORTANT]
-> 🏖️ **Planned development break: 2026-09-27 to 2026-10-04.** `v0.0.3-x64` is the LTS candidate for the `0.0.x`
-> line ([`LTS_POLICY.md`](LTS_POLICY.md)), and this week lets it settle under real play with nothing new landing on top.
+> `v0.0.3-x64`'s LTS candidacy has been **withdrawn** (2026-09-28) — a recurring config-loading buffer-overflow bug
+> class (see [`known_issues_x64.md`](re_notes/known_issues_x64.md)) means this build isn't a sound long-term-support
+> anchor until that class is fixed structurally, not just patched once more. No `0.0.x`-line LTS candidate currently
+> stands; see [`LTS_POLICY.md`](LTS_POLICY.md) for the full record and what promotion requires next. The planned
+> post-release development break has also been withdrawn (2026-09-28) — development continues normally.
 
 ## About
 

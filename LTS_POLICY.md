@@ -11,15 +11,26 @@ reconstructed from a GitHub Releases page or inferred from patch notes.
 v0.0.2-x64 (2026-09-23) and v0.0.3-x64 (2026-09-27) have shipped; none has
 completed the 4-week window below yet.
 
-**LTS candidate for the `0.0.x` line: v0.0.3-x64**, released 2026-09-27. It
-becomes eligible for promotion on 2026-10-25, provided no confirmed major
-regression resets the clock first (see **Promotion process**).
-
-**Development break: 2026-09-27 to 2026-10-04.** A planned one-week break
-starts on v0.0.3-x64's release day so the candidate can sit under real play
-with nothing new landing on top of it. The break doesn't shorten the 4-week
-window; the reports that come in during it are part of what the promotion
-decision is judged on.
+**v0.0.3-x64's LTS candidacy WITHDRAWN, 2026-09-28 — no `0.0.x`-line LTS
+candidate currently stands.** Direct instruction, following the same-day
+discovery of a real config-loading buffer-overflow bug (`LoadModConfig`'s
+own config-summary log line — the fourth confirmed recurrence of this exact
+bug class, per the 2026-09-16 Version Timeline entry in `CLAUDE.md`/
+`AGENTS.md`). This isn't treated as an ordinary "regression resets the
+clock" case (Promotion process step 3) — the user's own reasoning is that
+the underlying weakness is structural, not a one-off: the bug is a fixed-
+size buffer that has already silently overflowed multiple times as config
+keys were added incrementally over separate sessions, with no systemic fix
+(e.g. dynamic sizing, or a build-time/compile-time assertion) yet in place
+to stop it recurring a fifth time as more keys are added going forward —
+"would become an exponential issue," not a single fixable instance. A build
+carrying that standing weakness is not a sound LTS anchor even once this
+one instance is patched. **No replacement candidate is designated yet** —
+the next `0.0.x` (or later) release only becomes a real candidate once it
+ships with a genuine structural fix for this bug class (not just the one
+overflowing buffer widened again), starting its own clean 4-week window
+from that release date. Until then, per Promotion process step 5, this line
+simply has no LTS candidate.
 
 The prior `-x86` line's own LTS history (its Current LTS and LTS candidate)
 was withdrawn outright when that line was discontinued following MW3's

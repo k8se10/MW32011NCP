@@ -12280,6 +12280,9 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     // the player hasn't turned this on.
     uint8_t* cacheBuffer = nullptr;
     uint32_t cacheSize = 0;
+    bool cacheBufferIsCustomAsset = false; // for accurate logging below --
+        // custom_assets\ overrides and runtime upscale-cache hits are two
+        // genuinely different mechanisms sharing one substitution path.
 
     // Custom asset override check (2026-09-28, generalized same day) --
     // takes priority over the upscale cache, checked for EVERY real image
@@ -12295,6 +12298,7 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     // own header comment.
     if (name && g_modConfig.customAssetOverridesEnabled) {
         cacheBuffer = TextureUpscaleCache::TryLoadCustomAsset(name, &cacheSize);
+        if (cacheBuffer) cacheBufferIsCustomAsset = true;
     }
 
     if (!cacheBuffer && name && g_modConfig.textureRenderRes > 1) {
@@ -12315,8 +12319,13 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
             // session's worth of data to answer an open research question.
             ++s_loggedSubCount;
             char buf[400];
-            sprintf_s(buf, "[texture-upscale-sub] serving cached upscale for \"%.300s\" (%u bytes, %dx) (hit #%d/100)",
-                name, cacheSize, g_modConfig.textureRenderRes, s_loggedSubCount);
+            if (cacheBufferIsCustomAsset) {
+                sprintf_s(buf, "[texture-upscale-sub] serving custom_assets override for \"%.300s\" (%u bytes) (hit #%d/100)",
+                    name, cacheSize, s_loggedSubCount);
+            } else {
+                sprintf_s(buf, "[texture-upscale-sub] serving cached upscale for \"%.300s\" (%u bytes, %dx) (hit #%d/100)",
+                    name, cacheSize, g_modConfig.textureRenderRes, s_loggedSubCount);
+            }
             LogFromController(buf);
         }
     }
