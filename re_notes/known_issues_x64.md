@@ -5276,12 +5276,21 @@ closes, not before, unless explicitly reprioritized.
 
 ---
 
-**RESOLVED (mechanism), NOT YET LIVE-TESTED, 2026-09-14 — DPV/Goalpost
-mortar/Goalpost M2 turret aim, the "third analog input channel" (cross-
-reference: `re_notes/known_issues.md` issue #30 and issue #27 Bug #1/#5/#6,
-`re_notes/killstreak_reference.md`).** This bug never worked on EITHER
-architecture -- new ground, not a parity port. Per this project's own
-directive to start from GSC/script logic before native RE:
+**RESOLVED AND LIVE-CONFIRMED, mechanism found 2026-09-14, confirmed live
+2026-09-28 — DPV/Goalpost mortar/Goalpost M2 turret aim, the "third analog
+input channel" (cross-reference: `re_notes/known_issues.md` issue #30 and
+issue #27 Bug #1/#5/#6, `re_notes/killstreak_reference.md`).** This bug
+never worked on EITHER architecture -- new ground, not a parity port. Per
+this project's own directive to start from GSC/script logic before native RE:
+
+**LIVE CONFIRMATION, 2026-09-28**: direct extended-Campaign-playtest report,
+"turret sens is fixed, mortar works fully properly like it would on
+controller." Both real symptoms this fix targeted (mounted-turret look
+sensitivity, and full mortar aim/control) are now confirmed working as
+intended on real hardware -- the fix below is no longer just mechanism-
+resolved/build-verified, it's genuinely closed. (DPV/Hunter Killer itself
+wasn't specifically named in this report -- same shared fix/mechanism, not
+separately re-flagged as open, but not explicitly re-confirmed either.)
 
 **GSC-first pass -- blocked by a real, newly-discovered environmental
 issue, not a dead end in this bug specifically.** OpenAssetTools' Unlinker
@@ -11806,7 +11815,9 @@ Two real, independent, compounding cost drivers, both now confirmed with hard nu
 
 **Status: Open.** Two direct, live-playtest findings, 2026-09-28, both worth recording even though neither has a concrete fix or full investigation yet.
 
-**1. Campaign is more complete than this project's own documentation assumed.** Direct report, after a fresh extended retest: "campaign is much more complete then we knew of, after retest a lot more acts as it should." This project's own standing framing (`README.md`, `CLAUDE.md`'s Version Timeline) has treated Campaign as "best-effort, never a release gate" largely on the strength of Survival's own "Gameplay Complete" status and a handful of specific known Campaign gaps (QTEs, the AC-130 gun-switch, killstreak steering fixes from the 2026-09-14 marathon session) -- this report suggests the REAL current state is broader/better than what's been explicitly verified and written down. **No specific list of what now works was given in this report** -- before this can update README's own Campaign status line or close out any specific known-gap entry, the next real step is asking for (or re-testing to capture) the specific missions/mechanics confirmed working this pass, so any documentation update is backed by the same real per-item confirmation standard this project's other status claims already hold to, not a blanket "Campaign works now" upgrade on a single summary sentence.
+**1. Campaign is more complete than this project's own documentation assumed.** Direct report, after a fresh extended retest: "campaign is much more complete then we knew of, after retest a lot more acts as it should." This project's own standing framing (`README.md`, `CLAUDE.md`'s Version Timeline) has treated Campaign as "best-effort, never a release gate" largely on the strength of Survival's own "Gameplay Complete" status and a handful of specific known Campaign gaps (QTEs, the AC-130 gun-switch, killstreak steering fixes from the 2026-09-14 marathon session) -- this report suggests the REAL current state is broader/better than what's been explicitly verified and written down.
+
+**UPDATE, same day (2026-09-28), real specifics given**: "turret sens is fixed, mortar works fully properly like it would on controller, breach etc working fine, many fixed things though full campaign test on x64 isnt done." Turret sensitivity and full mortar control are the DPV/Goalpost mortar/M2 turret shared-root-cause fix from 2026-09-14 (above, in this same file) -- now moved from "mechanism resolved, build-verified" to real, live-confirmed working, see that entry's own updated status line. **"Breach etc" is a genuinely new, previously-undocumented confirmation** -- no prior entry in this project's own research (`known_issues.md`, `known_issues_x64.md`, `CLAUDE.md`) names a breach mechanic specifically, so this is new information, not a re-confirmation of an already-tracked item; not investigated further here since it's confirmed WORKING, not broken. **Still explicitly NOT a full Campaign pass** -- the user's own words, "full campaign test on x64 isnt done" -- so this does not yet support rewriting README's own Campaign status line to claim broader completeness; treat as confirmed-good data points for the specific items named (turret/mortar/breach), not a blanket upgrade.
 
 **2. A real, distinct visual bug, misidentified at first glance as LOD pop-in: shadow resolution gets WORSE at close range, not better.** Direct report: "the pop in isnt lod pop in but the shadow resolution breaking up close and looking WORSE." This is a genuinely different symptom shape from every shadow-related finding already on record in this project's own research:
    - Issue #107 (x86-era, referenced above and in `known_issues.md`) was about shadow-map resolution being uniformly soft/low-res, never found a native resolution-scaling hook.
