@@ -892,6 +892,22 @@ struct ModConfig
     // once.
     int internalRenderScalePercent = 0;
 
+    // [Video] TextureRenderRes (2026-09-28) -- runtime AI texture-upscale-cache
+    // feature, re_notes/x64_migration/texture_upscale_cache_research.md. STRICTLY
+    // OPT-IN, `1` (i.e. no scaling, cache never consulted) by default, same "off
+    // unless the player explicitly asks" convention as every other pre-1.0
+    // experimental feature. A multiplier of each real image's OWN original
+    // resolution -- direct instruction, "lets do it on a percentage or multiplier
+    // of the original res" -- not a fixed absolute target, since `GfxImage` assets
+    // span everything from 1x1 utility textures to large world diffuse maps.
+    //
+    // Stored as a plain int (the real multiplier, e.g. 4 for the real config value
+    // "4x") -- ParseTextureRenderRes/TextureRenderResName own the "4x" string
+    // format's own parsing/formatting, matching this project's own established
+    // ParseGraphicsApi/GraphicsApiName pattern for a formatted (not plain-integer)
+    // config value.
+    int textureRenderRes = 1;
+
     // [Video] CustomResolutionWidth/CustomResolutionHeight -- REMOVED 2026-08-29,
     // not achieving its actual goal. Shipped 2026-08-28 (issue #102, community
     // request/GitHub issue #3) as an independent W/H override reusing

@@ -602,6 +602,35 @@ void ReadGraphicsApi(const char* path, GraphicsApi& outValue)
     NoteIfUnknownOption("Video", "GraphicsApi", buf, GraphicsApiName(outValue), "LegacyD3D9, Vulkan");
 }
 
+// "4x" <-> 4 -- see mod_config.h's own textureRenderRes field comment. Same
+// formatted-value pattern as GraphicsApi's own Name/Parse pair above, just for
+// a small integer multiplier instead of an enum.
+void TextureRenderResName(int multiplier, char* outBuf, size_t outBufSize)
+{
+    sprintf_s(outBuf, outBufSize, "%dx", multiplier < 1 ? 1 : multiplier);
+}
+
+int ParseTextureRenderRes(const char* s, int fallback)
+{
+    // Accepts "4x"/"4X"/plain "4" -- tolerant of the trailing 'x' being
+    // omitted, since it's easy for a player hand-editing the .ini to drop it.
+    int value = atoi(s);
+    if (value < 1) return fallback; // "1x"/"0"/unparseable all mean "disabled"
+    if (value > 8) return 8; // real, sane ceiling -- an 8x upscale of even a
+        // modest source texture is already a large real VRAM/disk cost; this
+        // is a safety clamp against a typo (e.g. "40x"), not a tuned limit.
+    return value;
+}
+
+void ReadTextureRenderRes(const char* path, int& outValue)
+{
+    char nameBuf[16];
+    TextureRenderResName(outValue, nameBuf, sizeof(nameBuf));
+    char buf[16];
+    GetPrivateProfileStringA("Video", "TextureRenderRes", nameBuf, buf, sizeof(buf), path);
+    outValue = ParseTextureRenderRes(buf, outValue);
+}
+
 void ReadGlyphStyle(const char* path, GlyphStyle& outValue)
 {
     char buf[32];
@@ -634,6 +663,9 @@ void WriteDefaultConfig(const char* path)
 {
     FILE* f = nullptr;
     if (fopen_s(&f, path, "w") != 0 || !f) return;
+
+    char textureRenderResBuf[16];
+    TextureRenderResName(g_modConfig.textureRenderRes, textureRenderResBuf, sizeof(textureRenderResBuf));
 
     fprintf(f,
         "; MW3 Native Controller Support -- configuration\n"
@@ -840,6 +872,13 @@ void WriteDefaultConfig(const char* path)
         "; above ~150%% carry real risk; this mod shows an in-game warning the first\n"
         "; time you cross that line, but does not block you from going higher.\n"
         "InternalRenderScalePercent=%d\n"
+        "; TextureRenderRes (2026-09-28) -- runtime AI texture-upscale-cache feature,\n"
+        "; re_notes/x64_migration/texture_upscale_cache_research.md. STRICTLY OPT-IN,\n"
+        "; '1x' (disabled, cache never consulted) by default. A multiplier of each\n"
+        "; real texture's OWN original resolution (e.g. '4x'), not a fixed target --\n"
+        "; GfxImage assets span everything from 1x1 utility textures to large world\n"
+        "; diffuse maps, so a single absolute target would be wrong for most of them.\n"
+        "TextureRenderRes=%s\n"
         "; --- Recommended companion settings for everything below (FSR/motion blur/\n"
         "; render-scale) -- confirmed live 2026-08-27, known_issues.md issue #99: this\n"
         "; engine's own camera-look pacing gets visibly worse under vsync (a real,\n"
@@ -1291,6 +1330,7 @@ void WriteDefaultConfig(const char* path)
         GraphicsApiName(g_modConfig.graphicsApi),
         g_modConfig.streamlineEnabled ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
+        textureRenderResBuf,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
         g_modConfig.smaaEnabled ? 1 : 0,
@@ -1690,6 +1730,7 @@ void LoadModConfig()
         int v = GetPrivateProfileIntA("Video", "InternalRenderScalePercent", g_modConfig.internalRenderScalePercent, path);
         g_modConfig.internalRenderScalePercent = v;
     }
+    ReadTextureRenderRes(path, g_modConfig.textureRenderRes);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
@@ -1763,7 +1804,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
-        "useCustomOptionsScreen=%d internalRenderScalePercent=%d pluginsEnabled=%d "
+        "useCustomOptionsScreen=%d internalRenderScalePercent=%d textureRenderRes=%dx pluginsEnabled=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -1789,6 +1830,7 @@ void LoadModConfig()
         g_modConfig.glyphStyleAuto ? 1 : 0,
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
+        g_modConfig.textureRenderRes,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,
