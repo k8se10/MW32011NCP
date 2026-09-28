@@ -12106,15 +12106,21 @@ void* __fastcall Hook_FindOrLoadAssetX64(int assetType, const char* name, int fl
     void* result = g_realFindOrLoadAssetX64(assetType, name, flag);
 
     if (assetType == kFindOrLoadAssetImageTypeX64) {
+        // Unbounded, 2026-09-28, direct instruction ("the logging it must be unbounded
+        // for dev data") -- this is a one-session deep-dive dump, not a standing
+        // per-frame log (same precedent as the GSC-VM_Notify full-session dump,
+        // known_issues_x64.md 2026-09-17: "dump all vm stuff in the session for a
+        // total inspection"). Image loads are asset-load-event-frequency, not
+        // per-frame, so this doesn't carry the "unthrottled per-frame log write"
+        // risk issue #87 already fixed elsewhere in this codebase -- safe to log
+        // every hit for a real, complete picture of the whole session's image loads.
         static int s_loggedCount = 0;
-        if (s_loggedCount < 5) {
-            ++s_loggedCount;
-            char buf[400];
-            sprintf_s(buf, "[x64-findasset-image-diag] FindOrLoadAsset(image) name=\"%.300s\" "
-                "flag=%d result=%p (hit #%d/5)",
-                name ? name : "(null)", flag, result, s_loggedCount);
-            LogFromController(buf);
-        }
+        ++s_loggedCount;
+        char buf[400];
+        sprintf_s(buf, "[x64-findasset-image-diag] FindOrLoadAsset(image) name=\"%.300s\" "
+            "flag=%d result=%p (hit #%d)",
+            name ? name : "(null)", flag, result, s_loggedCount);
+        LogFromController(buf);
     }
 
     return result;
