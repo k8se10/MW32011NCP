@@ -519,14 +519,27 @@ be resolved before the cache-key design in item 2 below is finalized.
   same as every other pre-1.0 experimental feature — exact cache location
   and any "which textures actually get touched" accounting still open.
 
-**Real next steps, in order**: (1) **DONE, deployed, awaiting live
-confirmation** — `Hook_FindOrLoadAssetX64`/`InstallFindOrLoadAssetImageDiagHookX64`
-(`analog_input_hooks_x64.cpp`), a read-only diagnostic logging the first 5
-`assetType==0xa` hits (real image name, flag, result pointer). Build-
-verified (x64 Release, 0 errors), confirmed genuine x64 via `dumpbin`,
-deployed to the live install. Needs the user to launch and play so
-`proxy_d3d9.log` can confirm real image names actually come through
-before anything is built on this assumption further. (2) confirm
+**Real next steps, in order**: (1) **DONE — LIVE-CONFIRMED, 2026-09-28.**
+`Hook_FindOrLoadAssetX64`/`InstallFindOrLoadAssetImageDiagHookX64`
+(`analog_input_hooks_x64.cpp`) installed and enabled cleanly, fired
+exactly as designed: 19 real hits captured (18 image loads + the install
+confirmation line), all real, correct, recognizable IW-engine built-in
+default/placeholder image names — `$white`, `$black`, `$black_3d`,
+`$black_cube`, `$gray`, `$identitynormalmap` (each seen 3 times,
+consistent with the engine's own default-asset registration running
+multiple times at startup/menu load). **This is definitive proof the x64
+twin (`FUN_1400a5a20`) and the `assetType==0xa` correlation are both
+correct, live, not just statically inferred** — no crash, no garbage
+data, real names matching exactly the kind of asset the per-type
+dispatch's own embedded error string (`"Could not load default asset
+'%s'..."`) already predicted would exist for this type. **Real, honest
+gap**: only built-in defaults were captured this session — no real named
+level content (e.g. `images/some_prop_diffuse`) came through yet, most
+likely because this capture window was a short startup/menu-only session
+rather than a full gameplay session with a level loaded. **Next
+confirmation needed**: a real in-level playtest to confirm real, named
+per-level texture assets also flow through this same hook the same way —
+not yet done. (2) confirm
 the existing x64 `CreateTexture` vtable hook wiring (`asset_capture.cpp`)
 is correctly installed on x64 (likely already fine, not independently
 re-verified this pass), (3) port `Hook_FindOrLoadAsset` from
