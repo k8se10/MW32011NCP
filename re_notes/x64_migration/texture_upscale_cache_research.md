@@ -316,6 +316,78 @@ already proven for other central dispatchers in this project's history.
 Paused here for tonight; the full-analysis project being confirmed usable
 is the headline result of this round.
 
+### Third round, same day — `FindOrLoadAsset`'s x64 twin FOUND and CONFIRMED, plus a major bonus: the real numeric `assetType` for images
+
+Built `re_notes/ghidra_scripts/FindLockPrefixHotFuncs.java` (new, reusable
+tooling): raw-byte-scans `.text` for `LOCK`-prefixed `INC`/`DEC`/`XADD`/
+`CMPXCHG` instructions, finds each hit's containing function (via the
+full-analysis project opened with `-process`, so real function boundaries
+exist), and ranks candidates by real caller count via the reference
+manager — the same "a widely-shared lock stands out with a high caller
+count" reasoning x86's own 59-caller `FindOrLoadAsset` finding already
+established. Found 784 distinct lock-containing functions; filtered to
+27 with 10+ callers.
+
+**`FUN_1400a5a20` (58 callers, remarkably close to x86's confirmed 59)
+is `FindOrLoadAsset`'s real x64 twin — confirmed, not just plausible**:
+- **Signature match**: `undefined8 FUN_1400a5a20(int param_1, undefined8
+  param_2, int param_3)` — exactly `(int assetType, const char* name, int
+  flag)`.
+- **Lock/spin-wait pattern match**: `LOCK(); DAT_140c5cee8 =
+  DAT_140c5cee8 + 1; UNLOCK(); while (DAT_140c5ceec != 0) { Sleep(0); }`
+  — structurally identical to x86's documented
+  `InterlockedIncrement/Decrement` + spin-wait-via-`Sleep` shape.
+  `FUN_1400a5950(param_1, param_2)` is the cache-hit name lookup (x86's
+  `FUN_00585400` twin); on a miss with `param_3` (the `flag` argument)
+  set, `FUN_1400a54c0(param_1, param_2)` does the real load/create.
+- **`FUN_1400a54c0` independently confirmed as the per-asset-type
+  dispatch/create function** (x86's `FUN_004b6b70` twin) via a real,
+  literal embedded error string: `"Could not load default asset '%s' for
+  asset type '%s'.\nTried to load asset '%s'."`, formatted with entries
+  from two parallel tables indexed by the same `assetType` integer — a
+  function-pointer jump table (`DAT_1404c3240`, per-type load callbacks)
+  and a string-name table (`PTR_s_physpreset_1404c2430`, real type names
+  for the error message).
+
+**Dumped that real string-name table directly** (`DumpRawQwords.java`,
+`0x1404c2430`-`0x1404c2598`) — a complete, real, x64 `assetType`→name
+mapping, confirmed identical in ordering to x86's `IW5_Assets.h`-matching
+scheme (index `5` = `"material"`, matching x86's already-confirmed `5`;
+index `0x19` = `"menufile"`, matching x86's already-confirmed `0x19` for
+menuList): `0`=physpreset, `1`=phys_collmap, `2`=xanim, `3`=xmodelsurfs,
+`4`=xmodel, `5`=material, `6`=pixelshader, `7`=vertexshader,
+`8`=vertexdecl, `9`=techset, **`0xa`=image**, `0xb`=sound, `0xc`=sndcurve,
+`0xd`=loaded_sound, `0xe`=col_map_sp, ... `0x19`=menufile, `0x1c`=attachment,
+`0x1d`=weapon, and more through `addon_map_ents`.
+
+**This resolves the earlier granularity compromise entirely.** The
+original design worried the real cache key would have to be "material
+name + texture-slot index" because the x86 dead-end investigation only
+ever showed a name at the MATERIAL level. **Confirmed now: images get
+their own independent `FindOrLoadAsset(0xa, name, flag)` calls**, the
+same real interning mechanism materials use — meaning the actual cache
+key can be the real, individual image asset name directly, exactly the
+"free, perfect identifier" the very first (pre-correction) design pass
+assumed, now genuinely verified rather than assumed. The port target for
+`asset_capture.cpp`'s existing hook-and-correlate mechanism is confirmed:
+hook `FUN_1400a5a20` (x64 `FindOrLoadAsset`), push the real name onto the
+capture stack while `assetType==0xa`, correlate against the existing
+`CreateTexture` vtable hook exactly as the x86 material-capture code
+already does for `assetType==5`.
+
+**Not yet done, real next steps**: (1) confirm `FUN_1400a5a20` behaves
+identically for real image loads via a live test (build a diagnostic-only
+hook, log every `assetType==0xa` name seen, deploy, have the user play —
+per this project's own "never launch the game myself" convention), (2)
+locate/confirm x64's `CreateTexture` vtable hook is already wired
+correctly for x64 (the existing `asset_capture.cpp` install call is
+arch-neutral per earlier findings, so likely already fine, but not
+independently re-verified this pass), (3) only then port the actual
+`Hook_FindOrLoadAsset` wiring from `analog_input_hooks.cpp` (x86-only) to
+`analog_input_hooks_x64.cpp`. This is real, concrete, unblocked next work
+for the texture-upscale feature — the single biggest open dependency from
+every earlier scoping round is now resolved.
+
 ## Blocker resolution, 2026-09-28: hook the engine's own asset-load layer, not DXVK's D3D9 layer (SUPERSEDED by the correction above — a specific GfxImage-realization hook is not confirmed safe to exist; the material-name/CreateTexture correlation approach above is the real plan)
 
 The chicken-and-egg problem above only exists because `D3D9CommonTexture`'s
@@ -403,32 +475,42 @@ further design work here: determine which of (a)/(c) is actually
 buildable** — this changes the entire shape of the feature and needs to
 be resolved before the cache-key design in item 2 below is finalized.
 
-## Status — scoping complete, no code written yet
+## Status — scoping complete, hook point FOUND and CONFIRMED, no implementation code written yet
 
-**Locked design (2026-09-28):**
+**Locked design (2026-09-28, updated after the third RE round):**
 - **Target**: source asset textures (`.iwd`/`.ff` `GfxImage` assets) only —
   never the backbuffer/render targets (already handled by
   `InternalRenderScalePercent`, a separate mechanism).
 - **Never modify `.iwd`/`.ff` on disk, ever** — runtime interception only,
   same "read-only game install, only our own injected code writes
   anything" policy as the rest of this project.
-- **Hook point: the native engine's `GfxImage`→D3D9-texture realization
-  function**, not DXVK/D3D9's own `CreateTexture`/`UpdateTextureFromBuffer`
-  — gives a real, stable, free cache key (the asset's own name) BEFORE any
-  texture is created, letting a cache hit's upscaled dimensions be passed
-  into `CreateTexture` from the start. No DxvkImage resize/recreate
-  machinery needed. **Not yet located in `iw5sp.exe`** — real next RE step.
-- **Cache key**: `GfxImage` name + a model-version/scale-factor stamp
-  (exact format still open, small remaining design work).
+- **Hook point: CONFIRMED.** `FUN_1400a5a20` in `iw5sp.exe` (x64) is
+  `FindOrLoadAsset`'s real x64 twin — verified via signature match
+  (`int assetType, const char* name, int flag`), an identical
+  `InterlockedIncrement`+spin-wait lock pattern to x86's documented
+  behavior, and a 58-caller count matching x86's confirmed 59. Its
+  per-type dispatch callee `FUN_1400a54c0` (x86's `FUN_004b6b70` twin) was
+  independently confirmed via a real embedded error string and a real,
+  dumped `assetType`→name table (`0x1404c2430`) that also revealed
+  **`assetType 0xa` = `"image"`** — images get their own independent
+  `FindOrLoadAsset(0xa, name, flag)` calls, giving a real, individual,
+  free cache key (no material-name/slot-index compromise needed). Hook
+  `FUN_1400a5a20`, push the real name while `assetType==0xa`, correlate
+  against `CreateTexture` exactly as `asset_capture.cpp` already does for
+  materials (`assetType==5`) on x86 — same mechanism, now confirmed
+  portable to x64.
+- **Cache key**: the real `GfxImage` name (confirmed available) + a
+  model-version/scale-factor stamp (exact format still open, small
+  remaining design work).
 - **Upscaler**: Real-ESRGAN-ncnn-vulkan (MIT/BSD, model weights BSD-3-Clause,
   both verified), Vulkan-compute-native, no CUDA/ONNX dependency — vendor
   as a nested subtree, same pattern as `MW32011DXVK`/MinHook/Streamline.
   NVIDIA RTX Neural Texture Compression checked and ruled out as a
   competing primary path (solves VRAM footprint, not detail addition) —
   possible later complementary use for compressing the cache itself.
-- **Compressed (DXT/BC) source textures**: decode once at the `GfxImage`
-  hook layer before upscaling; re-encode vs. upload-uncompressed is a real
-  open cost/quality tradeoff, not a blocker.
+- **Compressed (DXT/BC) source textures**: decode once at the
+  `FindOrLoadAsset(0xa, ...)` hook layer before upscaling; re-encode vs.
+  upload-uncompressed is a real open cost/quality tradeoff, not a blocker.
 - **First-use cost**: background-thread upscale queue (serve original
   texture until the cached upscale is ready, swap in on completion),
   reusing this project's own established one-thread-per-job convention —
@@ -437,10 +519,15 @@ be resolved before the cache-key design in item 2 below is finalized.
   same as every other pre-1.0 experimental feature — exact cache location
   and any "which textures actually get touched" accounting still open.
 
-**Real next steps, in order**: (1) locate the native `GfxImage`-to-D3D9-
-texture realization function in `iw5sp.exe` (the actual hook point — this
-is the one piece every other design decision above depends on), (2)
+**Real next steps, in order**: (1) live-verify `FUN_1400a5a20`/`assetType
+0xa` via a diagnostic-only hook (log every image name seen, no behavior
+change) — build-verifiable now, needs the user to launch and play per
+this project's own "never launch the game myself" convention, (2) confirm
+the existing x64 `CreateTexture` vtable hook wiring (`asset_capture.cpp`)
+is correctly installed on x64 (likely already fine, not independently
+re-verified this pass), (3) port `Hook_FindOrLoadAsset` from
+`analog_input_hooks.cpp` (x86-only) to `analog_input_hooks_x64.cpp`, (4)
 prototype ncnn-vulkan completely standalone (a small test harness, not
 wired into the mod) to confirm it runs against this machine's real GPU via
-Vulkan, (3) design the background-thread queue and cache file format, (4)
+Vulkan, (5) design the background-thread queue and cache file format, (6)
 only then write the actual hook + substitution code.
