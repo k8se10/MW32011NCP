@@ -12159,3 +12159,112 @@ void InstallFindOrLoadAssetImageDiagHookX64()
     LogFromController("[x64-findasset-image-diag] FindOrLoadAsset hook installed and enabled (read-only, "
         "texture-upscale-cache groundwork) -- FUN_1400a5a20.");
 }
+
+// ---- Universal per-image file-load diagnostic (2026-09-28) ----------------------
+// Found by tracing REAL callers back from the already-established, already-hooked
+// CreateTexture device call (asset_capture.cpp's first-N caller trace), per direct
+// instruction ("trace the real callers by tracing back from the already-established
+// backbuffer"), rather than forward from FindOrLoadAsset -- which the live test
+// confirmed does NOT see real in-level gameplay texture content (only built-in
+// defaults), a real gap the FindOrLoadAsset-only design couldn't close on its own.
+//
+// FUN_1401bae80 is a genuine, generic, per-image FILE LOADER, reached by the exact
+// same call chain for BOTH tiny built-in-default-shaped textures AND real,
+// unambiguous level content (256x256/1024x256/512x256 real DXT-compressed
+// textures) -- a universal choke point every image passes through regardless of
+// how it was originally requested. It builds a real "images/<name>" file path
+// (`sprintf`-style: "%s%s%s", "images/", name, extension) from a name pointer at
+// a fixed struct offset (param_1+0x20), opens/reads the real .iwi container file,
+// and validates its own real "IWi"+version-8 magic header before decoding --
+// see texture_upscale_cache_research.md's "LIVE-TESTED SAME DAY" round for the
+// full decompile and reasoning. This hook exists to confirm that name pointer is
+// safe/real to read live, BEFORE any real upscale/cache/substitution logic is
+// built on this finding -- same "verify before building further" discipline as
+// every other hook in this file.
+//
+// Signature (FUN_1401bae80's own real prologue bytes -- two genuine RIP-relative
+// LEA instructions wildcarded; the MOV [RSP+disp8],REG stack-spill instructions
+// are the same known RSP-relative false positive DumpSigBytes.java's own
+// heuristic already over-flags elsewhere in this project, kept fixed):
+//   48 89 5C 24 18     MOV [RSP+0x18],RBX
+//   48 89 74 24 20     MOV [RSP+0x20],RSI
+//   57                 PUSH RDI
+//   48 81 EC 90 00 00 00   SUB RSP,0x90
+//   48 8D 05 ?? ?? ?? ??   LEA RAX,[rip+disp32]   (real RIP-relative -- wildcarded)
+//   48 8B DA           MOV RBX,RDX
+//   48 89 44 24 28     MOV [RSP+0x28],RAX
+//   4C 8D 0D ?? ?? ?? ??   LEA R9,[rip+disp32]    (real RIP-relative -- wildcarded)
+// Independently verified unique (exactly 1 occurrence, wildcards accounted for
+// via a regex scan) against re_notes/x64_migration/binaries/iw5sp.exe -- this
+// project's standing "verify before hooking" rule.
+constexpr const char* kImageFileLoadSignature =
+    "48 89 5C 24 18 48 89 74 24 20 57 48 81 EC 90 00 00 00 48 8D 05 ?? ?? ?? ?? "
+    "48 8B DA 48 89 44 24 28 4C 8D 0D ?? ?? ?? ??";
+
+// __fastcall(longlong param_1, code* param_2) -> longlong. Confirmed standard MS
+// x64 fastcall (RCX/RDX map directly onto the two published arguments, confirmed
+// via the prologue's own `mov rbx,rdx` saving the real RDX/param_2 argument) --
+// no raw/naked trampoline needed.
+using ImageFileLoadFnX64 = long long(__fastcall*)(long long param_1, void* param_2);
+ImageFileLoadFnX64 g_realImageFileLoadX64 = nullptr;
+
+long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
+{
+    static int s_loggedCount = 0;
+    if (s_loggedCount < 400) {
+        // Read the real name pointer at param_1+0x20 BEFORE calling through --
+        // param_1 is a struct this function itself mutates internally (per the
+        // decompile), so reading before the real call guarantees this reflects
+        // what was actually asked to load, not any post-call mutated state.
+        // SEH-guarded: this offset is a static-RE inference, not yet proven safe
+        // for every possible caller of this function, matching this project's own
+        // "SEH-guarded" convention for raw-offset struct reads (PLUGIN_API.md's
+        // ReadMemory).
+        const char* name = nullptr;
+        __try {
+            name = *reinterpret_cast<const char* const*>(param_1 + 0x20);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            name = nullptr;
+        }
+        ++s_loggedCount;
+        char buf[400];
+        sprintf_s(buf, "[x64-imagefileload-diag] FUN_1401bae80 name=\"%.300s\" (hit #%d/400)",
+            name ? name : "(null/unreadable)", s_loggedCount);
+        LogFromController(buf);
+    }
+    return g_realImageFileLoadX64(param_1, param_2);
+}
+
+// SP-only (per this project's own standing per-exe signature-verification policy --
+// this signature has only ever been resolved/verified against iw5sp.exe, never
+// iw5mp.exe). Diagnostic only: confirms the real name-pointer offset live before
+// any real texture-upscale-cache hook/substitution logic is built on it.
+void InstallImageFileLoadDiagHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kImageFileLoadSignature);
+    if (!r.found) {
+        LogFromController("[x64-imagefileload-diag] FATAL: image-file-load signature did not resolve -- "
+            "texture-upscale-cache groundwork diagnostic inactive this session");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ImageFileLoadX64),
+                                            reinterpret_cast<void**>(&g_realImageFileLoadX64));
+    if (createStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-imagefileload-diag] FATAL: MH_CreateHook failed for image-file-load @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-imagefileload-diag] FATAL: MH_EnableHook failed for image-file-load @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[x64-imagefileload-diag] Image-file-load hook installed and enabled (read-only, "
+        "texture-upscale-cache groundwork) -- FUN_1401bae80.");
+}

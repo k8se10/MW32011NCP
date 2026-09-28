@@ -33,6 +33,11 @@ void InstallFindOrLoadAssetImageDiagHookX64(); // defined in analog_input_hooks_
     // 2026-09-28, groundwork for the runtime texture-upscale-cache feature. SP-only
     // (signature only ever verified against iw5sp.exe); read-only diagnostic, no
     // behavior change.
+void InstallImageFileLoadDiagHookX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-28, same groundwork, found by tracing real callers back from the
+    // already-hooked CreateTexture device call (asset_capture.cpp's first-N caller
+    // trace) rather than forward from FindOrLoadAsset, which the live test showed
+    // doesn't see real in-level gameplay texture content. SP-only; read-only.
 #if defined(_M_X64) || defined(_WIN64)
 void InstallRenderScaleHookX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-23,
     // split out of InstallAnalogInputHooksX64() specifically so it can be called under
@@ -928,6 +933,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // FindOrLoadAsset x64 twin (FUN_1400a5a20) and the assetType==0xa
                 // ("image") correlation live before any real upscale/cache logic is
                 // built on that static-RE-only finding.
+            InstallImageFileLoadDiagHookX64(); // 2026-09-28, same feature -- confirms
+                // FUN_1401bae80's real name-pointer offset (param_1+0x20) live. Found
+                // by tracing real callers back from the already-hooked CreateTexture
+                // device call (see texture_upscale_cache_research.md's "LIVE-TESTED
+                // SAME DAY" round) after FindOrLoadAsset alone was shown not to see
+                // real in-level gameplay texture content.
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif
