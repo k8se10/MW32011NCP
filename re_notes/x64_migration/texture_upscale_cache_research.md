@@ -903,3 +903,28 @@ done: re-run the standalone smoke test against this newly-built,
 `/MT`-matching `ncnn.lib` to confirm it still detects both real GPUs
 correctly (same test program already proven against the prebuilt `/MD`
 build), then vendor this `/MT` build in place of the prebuilt one.
+
+## RESOLVED — ncnn now vendored as a from-source, /MT, CRT-compatible build
+
+Real from-source build completed and confirmed working: `NCNN_VULKAN=ON`,
+`NCNN_BUILD_WITH_STATIC_CRT=ON`, x64 Release, Visual Studio 18 2026
+generator. Re-ran the standalone smoke test against the new `ncnn.lib` —
+identical result to the earlier `/MD` prebuilt test (both real GPUs
+correctly detected via Vulkan, working `VulkanDevice` acquired) — and it
+now links cleanly under `/MT` with zero CRT mismatch. `proxy_d3d9/third_party/ncnn/`
+updated: `build_ncnn.bat` (real build-from-source script, replaces the old
+`fetch_ncnn.bat` prebuilt-zip downloader) and the four CMake-generated
+headers refreshed from this exact build. The CRT-linkage question raised
+earlier this session is now fully closed — `ncnn.lib` is ready to link
+directly into `proxy_d3d9.vcxproj` with no build-setting changes needed.
+
+**Vendoring/prototyping phase is now complete.** Everything the original
+"real next steps" list called for is done: hook point found and
+live-confirmed (`FUN_1401bae80`), cache key confirmed, scale-factor config
+decided (`TextureRenderRes=4x`), the loose-file-override question closed
+(decisively no), and ncnn-vulkan vendored and proven working in a
+CRT-compatible form. What remains is genuine implementation, not more
+scoping/RE: design the actual cache file format and background-thread
+queue, then write the real hook + substitution code at `FUN_1401bae80`
+(overwriting `param_1`'s width/height fields per the earlier corrected
+design, decoding/upscaling/re-encoding the `.iwi` payload).
