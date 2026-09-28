@@ -130,6 +130,21 @@ upscale step itself; not scoped further here.
 **Texture upscaling goes first, RT after.** Direct instruction. Starting
 the real next steps below now.
 
+## Scope clarification, 2026-09-28: source asset textures, not the backbuffer
+
+**This feature targets the game's own source textures loaded from disk
+(`.iwd`/`.ff` assets — diffuse maps, normal maps, UI art, etc.), not the
+backbuffer or any render target.** `D3D9CommonTexture`/`UpdateTextureFromBuffer`
+(below) is specifically the path for textures the game fills via
+`LockRect`/write/`UnlockRect` then uploads to the GPU once via a staging
+buffer — real, static asset content. Render targets and the backbuffer
+never go through this path at all (they're rendered into directly by the
+GPU every frame) and are already handled by this project's existing,
+completely separate `InternalRenderScalePercent` mechanism. No overlap
+between the two — recording this explicitly so a future session doesn't
+conflate "upscale the game's textures" with "upscale the render
+resolution," which this project already has a solved, shipped answer for.
+
 ## Real upload path found (`D3D9DeviceEx::UpdateTextureFromBuffer`) — and a genuine architectural blocker it surfaces
 
 Read `dxvk/src/d3d9/d3d9_device.cpp`'s real upload chain in full:
