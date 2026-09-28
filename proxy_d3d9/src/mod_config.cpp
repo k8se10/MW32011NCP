@@ -320,7 +320,20 @@ void ReadBool(const char* path, const char* section, const char* key, bool& outV
 // symptom reported. All 13 keys added to the template now, each sourced from
 // g_modConfig (never a hardcoded literal), so a real customized value already loaded
 // from the old file is what gets written back, not a fresh default.
-constexpr unsigned long kCurrentConfigVersion = 46; // v44->v45: [Video] GraphicsApi (LegacyD3D9/Vulkan selector)
+// v46->v47 (2026-09-28): REAL, CONFIRMED LIVE REGRESSION -- SkipRedundantShadowActivation's
+// compiled default reversed true->false. Extended playtesting found close-up shadow quality
+// genuinely breaking up/looking worse than distant (LOD) shadows with this on -- confirmed by
+// direct A/B (setting it to 0 fixed close-up shadows live). See mod_config.h's own field
+// comment and known_issues_x64.md issue #4's newest round for the full mechanism/trail.
+// HONEST LIMIT of this version bump: this project's own "an explicit value in the file always
+// wins" design (the same one v19->v20's GlyphStyleAuto entry above relies on) means this bump
+// does NOT retroactively fix anyone who already launched v0.0.3-x64 at least once -- their file
+// already has a real, explicit `SkipRedundantShadowActivation=1` written by that same launch's
+// own WriteDefaultConfig call, and no version bump can distinguish "the old wrong default,
+// never touched" from "the player genuinely wants 1" once it's sitting in the file. Only fresh
+// installs (or a player who deletes/edits their own ini) get the corrected default automatically
+// -- anyone already on v0.0.3-x64 needs the fix flagged directly (PATCHNOTES.md/known_issues_x64.md).
+constexpr unsigned long kCurrentConfigVersion = 47; // v44->v45: [Video] GraphicsApi (LegacyD3D9/Vulkan selector)
                                                      // v24->v25: MotionBlurEnabled/MotionBlurStrength (Phase E),
                                                      // FsrSharpenStrength default 0.5->0.3 (live feedback: "needs more softness")
                                                      // v25->v26: ForceAnisotropicFiltering

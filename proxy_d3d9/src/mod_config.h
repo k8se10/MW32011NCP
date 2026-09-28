@@ -1153,19 +1153,31 @@ struct ModConfig
     // Hook_CreateDevice) and, when the check reports "capable," skips
     // forwarding this ONE specific activator call (identified via its own
     // known, signature-scanned return address -- every other one of the
-    // activator's real callers is completely unaffected). LIVE-CONFIRMED
-    // the same day, real playtest: 30->40fps on an intensive repro mission
-    // (200% render scale, full visual-enhancement suite), 17->27fps on the
-    // pause menu itself (zero simulation running -- rules out a content-
-    // cost explanation), and direct confirmation shadows still render
-    // correctly ("visuals looked better if anything, shadows looked
-    // better"). Still real, native rendering-behavior-changing code -- kept
-    // a config toggle (not made unconditional/removed) rather than treated
-    // as fully proven, since it's only been confirmed on one machine across
-    // two scenarios so far; a player who ever suspects a shadow regression
-    // can turn this off without a recompile. See Hook_RenderViewSelectDiag's
-    // own comment (analog_input_hooks_x64.cpp) for the full mechanism.
-    bool skipRedundantShadowActivationX64 = true;
+    // activator's real callers is completely unaffected). Real playtest,
+    // 2026-09-26: 30->40fps on an intensive repro mission (200% render
+    // scale, full visual-enhancement suite), 17->27fps on the pause menu
+    // itself, and a same-session report of "shadows looked better if
+    // anything" -- but that pass never specifically compared close-up vs.
+    // distant shadow quality.
+    // REVERSED, 2026-09-28 (real, confirmed live regression): extended
+    // playtesting found close-up shadow quality genuinely breaking up/
+    // looking worse than distant (LOD) shadows -- backwards from what
+    // "just a redundant call" should ever produce, since a call that's
+    // truly a no-op skip can't selectively degrade only nearby geometry.
+    // The one specific call site this toggle skips (out of ~40 real
+    // activator callers, all others untouched) is very likely the per-
+    // light reactivation path for nearby dynamic lights specifically --
+    // explaining exactly why distant/static shadow casting through every
+    // OTHER call site stayed fine while this one call site's own skip
+    // degraded only what it actually touches. Confirmed by direct A/B:
+    // setting this to 0 fixed the close-up shadow quality live, at the
+    // cost of the fps gain above. Defaulted back OFF until the real
+    // reason the skip degrades quality (despite the hardware-capability
+    // probe correctly matching the genuine D3DFMT_NULL trick, not a
+    // fallback -- ruled out as the cause) is actually understood -- see
+    // known_issues_x64.md issue #4's newest round. Still a real, opt-in
+    // fps win for a player who doesn't mind the close-up shadow cost.
+    bool skipRedundantShadowActivationX64 = false;
 
     // [Video] SkipRedundantConsoleFontInit (2026-09-26, issue #4's console-
     // font-init cost -- known_issues_x64.md). Real, confirmed, LIVE-TIMED
