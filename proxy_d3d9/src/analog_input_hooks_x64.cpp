@@ -12280,3 +12280,89 @@ void InstallImageFileLoadDiagHookX64()
     LogFromController("[x64-imagefileload-diag] Image-file-load hook installed and enabled (read-only, "
         "texture-upscale-cache groundwork) -- FUN_1401bae80.");
 }
+
+// ---- Real loose-file-open path diagnostic (2026-09-28) ---------------------------
+// Empirical half of the "does a loose file override work" question, direct
+// instruction ("do both one by one no forksx" -- the static trace of
+// FUN_1402b42c0/FUN_1403ac410 is the other half, see
+// texture_upscale_cache_research.md's "File-read callback traced" round).
+// FUN_1403ac410 is a genuine CRT fopen+fread wrapper (real _LocaleUpdate
+// construction, real errno-style checks against 0xfde9) reached from
+// FUN_1402b42c0's mod-folder-prefixed branch -- confirmed real disk I/O, not
+// zone-archive access. This hook logs the REAL resolved path string it's asked
+// to open, live, for every real image load -- directly reveals where the game
+// actually looks on disk without needing to reverse-engineer the exact
+// fs_game/mod-folder path-construction logic by hand.
+//
+// Signature (FUN_1403ac410's own real prologue -- no genuine RIP-relative
+// operand in this span; the MOV [RSP+disp8],REG stack spills are the same
+// known RSP-relative false positive already documented elsewhere in this
+// project, kept fixed):
+//   48 89 5C 24 10   MOV [RSP+0x10],RBX
+//   48 89 7C 24 18   MOV [RSP+0x18],RDI
+//   55               PUSH RBP
+//   48 8B EC         MOV RBP,RSP
+//   48 83 EC 70      SUB RSP,0x70
+//   48 8B DA         MOV RBX,RDX
+//   48 8B F9         MOV RDI,RCX
+//   48 85 C9         TEST RCX,RCX
+// Independently verified unique (1 raw occurrence) against
+// re_notes/x64_migration/binaries/iw5sp.exe before use.
+constexpr const char* kLooseFileOpenSignature =
+    "48 89 5C 24 10 48 89 7C 24 18 55 48 8B EC 48 83 EC 70 48 8B DA 48 8B F9 48 85 C9";
+
+// __fastcall(const char* path, void* outBuffer) -> undefined4. Confirmed
+// standard MS x64 fastcall (RCX/RDX map directly onto the prologue's own
+// `mov rdi,rcx` / `mov rbx,rdx`) -- plain MinHook C++ detour, no naked
+// trampoline needed.
+using LooseFileOpenFnX64 = int(__fastcall*)(const char* path, void* outBuffer);
+LooseFileOpenFnX64 g_realLooseFileOpenX64 = nullptr;
+
+int __fastcall Hook_LooseFileOpenX64(const char* path, void* outBuffer)
+{
+    // Unbounded from the start -- same "dev data" reasoning as this file's
+    // other 2026-09-28 diagnostics; this is a genuine investigation hook, not
+    // a standing feature, and will be removed once the question is answered.
+    static int s_loggedCount = 0;
+    ++s_loggedCount;
+    char buf[400];
+    sprintf_s(buf, "[x64-loosefileopen-diag] FUN_1403ac410 path=\"%.300s\" (hit #%d)",
+        path ? path : "(null)", s_loggedCount);
+    LogFromController(buf);
+
+    return g_realLooseFileOpenX64(path, outBuffer);
+}
+
+// SP-only (per this project's own standing per-exe signature-verification policy).
+// Diagnostic only: reveals the real loose-file search path live, for the
+// texture-upscale-cache substitution design -- see
+// texture_upscale_cache_research.md's "File-read callback traced" round.
+void InstallLooseFileOpenDiagHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kLooseFileOpenSignature);
+    if (!r.found) {
+        LogFromController("[x64-loosefileopen-diag] FATAL: loose-file-open signature did not resolve -- "
+            "texture-upscale-cache groundwork diagnostic inactive this session");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_LooseFileOpenX64),
+                                            reinterpret_cast<void**>(&g_realLooseFileOpenX64));
+    if (createStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-loosefileopen-diag] FATAL: MH_CreateHook failed for loose-file-open @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-loosefileopen-diag] FATAL: MH_EnableHook failed for loose-file-open @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[x64-loosefileopen-diag] Loose-file-open hook installed and enabled (read-only, "
+        "texture-upscale-cache groundwork) -- FUN_1403ac410.");
+}
