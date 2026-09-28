@@ -557,7 +557,27 @@ zone-load path (a `DB_LinkXAssetEntry`-class function registering a
 level's own `GfxImage` entries directly from its `.ff`, without an
 interning "find or load by name" call) — genuinely unresolved, a
 separate, harder RE target for a future round, not blocking menu-texture
-upscaling from proceeding now.** Original first-draft note, kept for the
+upscaling from proceeding now.**
+
+**Phase 2 groundwork started same day, direct instruction ("we need to
+trace the real callers by tracing back from the already-established
+backbuffer")**: rather than a second forward-tracing attempt from the
+asset-loading side, this traces backward from the real, already-hooked,
+already-confirmed-working `CreateTexture` device call every texture
+(regardless of load path) must eventually reach. New
+`AssetCapture_RecordCreateTextureFirstNCaller`/
+`AssetCapture_DumpFirstNCreateTextureCallersIfDue` (`asset_capture.cpp`/
+`.h`) captures a real call stack for the first 40 `CreateTexture` calls
+this session UNCONDITIONALLY — not gated behind the existing storm
+diagnostic's 200-calls-in-200ms burst threshold, which ordinary/steady
+level loading may never cross — resolved to module-relative offsets
+against the real game module for direct Ghidra lookup once dumped.
+Build-verified (x64 Release, 0 errors), deployed; **not yet live-tested**
+— needs a fresh in-level session so the buffer actually fills and dumps.
+Once real caller addresses come back, decompile them (via the confirmed-
+working `-process`-opened full-analysis project) to find the real bulk
+zone-load registration function for level `GfxImage` content — the
+actual Phase 2 target. Original first-draft note, kept for the
 record rather than deleted: only built-in defaults were captured this
 session — no real named
 level content (e.g. `images/some_prop_diffuse`) came through yet, most
