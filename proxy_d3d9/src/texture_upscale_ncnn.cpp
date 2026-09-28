@@ -1,9 +1,16 @@
 #include "texture_upscale_ncnn.h"
 
+#ifndef NOMINMAX
+#define NOMINMAX // real MSVC C2589/C2059 fix: windows.h's own min/max macros
+                 // collide with std::min/std::clamp used below -- must be
+                 // defined before windows.h is included.
+#endif
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
 
 #include "net.h"
 #include "mat.h"
@@ -59,6 +66,99 @@ namespace
     constexpr int kRealScaleFactor = 4; // this specific model's own real,
         // fixed upscale factor -- matches TextureRenderRes's own default
         // config value ("4x") by design, not a coincidence.
+
+    // Real tiling constants (2026-09-28). kTileMaxDim is an input-space
+    // (pre-upscale) size -- a 256x256 input tile produces a 1024x1024 4x
+    // output tile, a safe, real-world-proven size for consumer GPU VRAM
+    // budgets with this model class. kTileOverlap is the real per-edge
+    // overlap (input space) used to hide convolution border artifacts at
+    // tile seams -- standard technique, matching what real tiled-ESRGAN
+    // tools (e.g. Real-ESRGAN-ncnn-vulkan's own --tilesize option) use.
+    constexpr int kTileMaxDim = 256;
+    constexpr int kTileOverlap = 16;
+
+    // Runs the real Real-ESRGAN inference on ONE already-RGB, already-sized
+    // tile. Caller owns the returned buffer (malloc'd, tileWidth*4 x
+    // tileHeight*4 x 3 bytes RGB, no alpha -- alpha is handled once, at the
+    // whole-image level, by the public UpscaleRGBA4x below, not per-tile).
+    // Must be called with g_netLock already held.
+    uint8_t* RunInferenceOnTileRgb(const uint8_t* rgb, int tileWidth, int tileHeight, int* outTileWidth, int* outTileHeight)
+    {
+        // Same real, already-proven ncnn::Mat::from_pixels API this file's
+        // original single-shot implementation used (from_pixels makes its
+        // own internal planar copy, so `rgb` is never mutated by this call) --
+        // just PIXEL_RGB instead of PIXEL_RGBA2RGB, since `rgb` here is
+        // already a tight 3-channel buffer (alpha was already split off by
+        // the caller, UpscaleRGBA4x, before tiling).
+        ncnn::Mat in = ncnn::Mat::from_pixels(rgb, ncnn::Mat::PIXEL_RGB, tileWidth, tileHeight);
+        if (in.empty()) {
+            LogFromController("[texture-upscale-ncnn] FAILED: from_pixels produced an empty Mat");
+            return nullptr;
+        }
+        const float normVals[3] = { 1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f };
+        in.substract_mean_normalize(nullptr, normVals);
+
+        ncnn::Extractor ex = g_net->create_extractor();
+        if (ex.input(kInputBlobName, in) != 0) {
+            LogFromController("[texture-upscale-ncnn] FAILED: Extractor::input failed");
+            return nullptr;
+        }
+
+        ncnn::Mat out;
+        if (ex.extract(kOutputBlobName, out) != 0) {
+            LogFromController("[texture-upscale-ncnn] FAILED: Extractor::extract failed");
+            return nullptr;
+        }
+        if (out.w <= 0 || out.h <= 0) {
+            LogFromController("[texture-upscale-ncnn] FAILED: output Mat has zero dimensions");
+            return nullptr;
+        }
+
+        const float denormVals[3] = { 255.0f, 255.0f, 255.0f };
+        out.substract_mean_normalize(nullptr, denormVals);
+
+        uint8_t* rgbOut = static_cast<uint8_t*>(malloc(static_cast<size_t>(out.w) * out.h * 3));
+        if (!rgbOut) return nullptr;
+        out.to_pixels(rgbOut, ncnn::Mat::PIXEL_RGB);
+
+        *outTileWidth = out.w;
+        *outTileHeight = out.h;
+        return rgbOut;
+    }
+
+    // Plain bilinear resize of a single-channel (alpha) plane -- real,
+    // standard image-scaling math, used because the vendored Real-ESRGAN
+    // model has no alpha channel at all (RGB-only input/output). Good
+    // enough for an alpha mask (which is rarely as detail-critical as the
+    // color channels this GAN model specializes in), and far cheaper than
+    // running a second full inference pass just for alpha.
+    void BilinearResizePlane(const uint8_t* src, int srcW, int srcH, uint8_t* dst, int dstW, int dstH)
+    {
+        if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0) return;
+        for (int y = 0; y < dstH; ++y) {
+            float srcYf = (static_cast<float>(y) + 0.5f) * (static_cast<float>(srcH) / dstH) - 0.5f;
+            int y0 = static_cast<int>(std::floor(srcYf));
+            float fy = srcYf - static_cast<float>(y0);
+            int y0c = std::clamp(y0, 0, srcH - 1);
+            int y1c = std::clamp(y0 + 1, 0, srcH - 1);
+            for (int x = 0; x < dstW; ++x) {
+                float srcXf = (static_cast<float>(x) + 0.5f) * (static_cast<float>(srcW) / dstW) - 0.5f;
+                int x0 = static_cast<int>(std::floor(srcXf));
+                float fx = srcXf - static_cast<float>(x0);
+                int x0c = std::clamp(x0, 0, srcW - 1);
+                int x1c = std::clamp(x0 + 1, 0, srcW - 1);
+
+                float v00 = src[static_cast<size_t>(y0c) * srcW + x0c];
+                float v01 = src[static_cast<size_t>(y0c) * srcW + x1c];
+                float v10 = src[static_cast<size_t>(y1c) * srcW + x0c];
+                float v11 = src[static_cast<size_t>(y1c) * srcW + x1c];
+                float top = v00 + (v01 - v00) * fx;
+                float bot = v10 + (v11 - v10) * fx;
+                float val = top + (bot - top) * fy;
+                dst[static_cast<size_t>(y) * dstW + x] = static_cast<uint8_t>(std::clamp(val, 0.0f, 255.0f));
+            }
+        }
+    }
 }
 
 bool EnsureModelLoaded()
@@ -66,14 +166,9 @@ bool EnsureModelLoaded()
     ScopedSrwLock lock(&g_netLock);
     if (g_modelLoaded) return true;
 
-    // Real model location, relative to the deployed d3d9.dll -- this project
-    // only ever ships the two small vendoring source files
-    // (README.md/fetch_models.bat) under proxy_d3d9/third_party/ in the repo;
-    // the real 33MB .bin/.param pair is gitignored and expected to be placed
-    // directly beside the deployed d3d9.dll at runtime (a real, separate
-    // deployment step -- not yet automated by this project's own build, a
-    // known gap for a later pass, same as how the DXVK binary's own deploy
-    // step already works via proxy_d3d9.vcxproj's DeployDxvk target).
+    // Real model location, relative to the deployed d3d9.dll -- deployed
+    // automatically by proxy_d3d9.vcxproj's DeployTextureUpscaleAssets
+    // target (mirrors the DXVK binary's own DeployDxvk target).
     char exeDir[MAX_PATH];
     GetModuleFileNameA(nullptr, exeDir, MAX_PATH);
     char* lastSlash = strrchr(exeDir, '\\');
@@ -115,60 +210,140 @@ uint8_t* UpscaleRGBA4x(const uint8_t* rgba, uint32_t width, uint32_t height, uin
 
     ScopedSrwLock lock(&g_netLock);
 
-    // Real preprocessing: RGBA -> RGB (the vendored model has no alpha
-    // input), normalized to [0,1] -- Real-ESRGAN's own well-documented,
-    // standard preprocessing convention (no mean subtraction, plain /255).
-    ncnn::Mat in = ncnn::Mat::from_pixels(rgba, ncnn::Mat::PIXEL_RGBA2RGB,
-                                           static_cast<int>(width), static_cast<int>(height));
-    if (in.empty()) {
-        LogFromController("[texture-upscale-ncnn] FAILED: from_pixels produced an empty Mat");
+    const int w = static_cast<int>(width), h = static_cast<int>(height);
+    const int outW = w * kRealScaleFactor, outH = h * kRealScaleFactor;
+
+    // Real preprocessing shared by both paths below: split the input into a
+    // planar RGB buffer (for the model) and a separate alpha plane (handled
+    // by BilinearResizePlane, never fed to the network -- see this file's
+    // own header comment on why).
+    uint8_t* srcRgb = static_cast<uint8_t*>(malloc(static_cast<size_t>(w) * h * 3));
+    uint8_t* srcAlpha = static_cast<uint8_t*>(malloc(static_cast<size_t>(w) * h));
+    if (!srcRgb || !srcAlpha) { free(srcRgb); free(srcAlpha); return nullptr; }
+    for (int i = 0; i < w * h; ++i) {
+        srcRgb[i * 3 + 0] = rgba[i * 4 + 0];
+        srcRgb[i * 3 + 1] = rgba[i * 4 + 1];
+        srcRgb[i * 3 + 2] = rgba[i * 4 + 2];
+        srcAlpha[i] = rgba[i * 4 + 3];
+    }
+
+    uint8_t* rgbaOut = static_cast<uint8_t*>(malloc(static_cast<size_t>(outW) * outH * 4));
+    if (!rgbaOut) { free(srcRgb); free(srcAlpha); return nullptr; }
+
+    bool ok = true;
+    if (w <= kTileMaxDim && h <= kTileMaxDim) {
+        // Fast path -- the common case (most real UI/HUD textures are far
+        // smaller than kTileMaxDim). No tiling overhead at all.
+        int realOutW = 0, realOutH = 0;
+        uint8_t* rgbResult = RunInferenceOnTileRgb(srcRgb, w, h, &realOutW, &realOutH);
+        if (!rgbResult || realOutW != outW || realOutH != outH) {
+            // A real mismatch here (model produced a different scale factor
+            // than expected) is a real, logged failure, not silently patched
+            // over -- this project's own "verify live, don't assume"
+            // standard applies to this feature's own math too.
+            if (rgbResult) {
+                char buf[200];
+                sprintf_s(buf, "[texture-upscale-ncnn] FAILED: expected %dx%d output, got %dx%d",
+                    outW, outH, realOutW, realOutH);
+                LogFromController(buf);
+                free(rgbResult);
+            }
+            ok = false;
+        } else {
+            for (int i = 0; i < outW * outH; ++i) {
+                rgbaOut[i * 4 + 0] = rgbResult[i * 3 + 0];
+                rgbaOut[i * 4 + 1] = rgbResult[i * 3 + 1];
+                rgbaOut[i * 4 + 2] = rgbResult[i * 3 + 2];
+            }
+            free(rgbResult);
+        }
+    } else {
+        // Real tiling path (2026-09-28) -- see this file's own header
+        // comment above UpscaleRGBA4x's declaration for the rationale.
+        // Tiles are laid out on a simple grid; each tile is expanded by
+        // kTileOverlap pixels on every internal edge (clamped at the real
+        // image boundary, where there's no neighboring tile to blend
+        // against and the full edge is kept), inferred independently, then
+        // the overlap border is cropped back off (scaled by kRealScaleFactor)
+        // before the tile's own "core" region is pasted into the final
+        // output buffer at its correct location.
+        for (int tileY = 0; tileY < h && ok; tileY += kTileMaxDim) {
+            for (int tileX = 0; tileX < w && ok; tileX += kTileMaxDim) {
+                int coreW = std::min(kTileMaxDim, w - tileX);
+                int coreH = std::min(kTileMaxDim, h - tileY);
+
+                int padX0 = std::min(kTileOverlap, tileX);
+                int padY0 = std::min(kTileOverlap, tileY);
+                int padX1 = std::min(kTileOverlap, w - (tileX + coreW));
+                int padY1 = std::min(kTileOverlap, h - (tileY + coreH));
+
+                int srcTileX = tileX - padX0, srcTileY = tileY - padY0;
+                int srcTileW = coreW + padX0 + padX1, srcTileH = coreH + padY0 + padY1;
+
+                uint8_t* tileBuf = static_cast<uint8_t*>(malloc(static_cast<size_t>(srcTileW) * srcTileH * 3));
+                if (!tileBuf) { ok = false; break; }
+                for (int ty = 0; ty < srcTileH; ++ty) {
+                    memcpy(tileBuf + static_cast<size_t>(ty) * srcTileW * 3,
+                           srcRgb + (static_cast<size_t>(srcTileY + ty) * w + srcTileX) * 3,
+                           static_cast<size_t>(srcTileW) * 3);
+                }
+
+                int tileOutW = 0, tileOutH = 0;
+                uint8_t* tileResult = RunInferenceOnTileRgb(tileBuf, srcTileW, srcTileH, &tileOutW, &tileOutH);
+                free(tileBuf);
+                if (!tileResult || tileOutW != srcTileW * kRealScaleFactor || tileOutH != srcTileH * kRealScaleFactor) {
+                    char buf[200];
+                    sprintf_s(buf, "[texture-upscale-ncnn] FAILED: tile at (%d,%d) produced unexpected output size", tileX, tileY);
+                    LogFromController(buf);
+                    free(tileResult);
+                    ok = false;
+                    break;
+                }
+
+                // Crop the overlap border off (scaled) and paste the core
+                // region into the final output buffer.
+                int cropX0 = padX0 * kRealScaleFactor, cropY0 = padY0 * kRealScaleFactor;
+                int coreOutW = coreW * kRealScaleFactor, coreOutH = coreH * kRealScaleFactor;
+                int dstX0 = tileX * kRealScaleFactor, dstY0 = tileY * kRealScaleFactor;
+                for (int ty = 0; ty < coreOutH; ++ty) {
+                    const uint8_t* srcRow = tileResult + (static_cast<size_t>(cropY0 + ty) * tileOutW + cropX0) * 3;
+                    for (int tx = 0; tx < coreOutW; ++tx) {
+                        size_t dstIdx = (static_cast<size_t>(dstY0 + ty) * outW + (dstX0 + tx)) * 4;
+                        rgbaOut[dstIdx + 0] = srcRow[tx * 3 + 0];
+                        rgbaOut[dstIdx + 1] = srcRow[tx * 3 + 1];
+                        rgbaOut[dstIdx + 2] = srcRow[tx * 3 + 2];
+                    }
+                }
+                free(tileResult);
+            }
+        }
+    }
+
+    free(srcRgb);
+
+    if (!ok) {
+        free(srcAlpha);
+        free(rgbaOut);
         return nullptr;
     }
-    const float normVals[3] = { 1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f };
-    in.substract_mean_normalize(nullptr, normVals);
 
-    ncnn::Extractor ex = g_net->create_extractor();
-    if (ex.input(kInputBlobName, in) != 0) {
-        LogFromController("[texture-upscale-ncnn] FAILED: Extractor::input failed");
-        return nullptr;
+    // Real alpha compositing (2026-09-28) -- see this file's own header
+    // comment on why this is a separate bilinear pass rather than model
+    // output.
+    uint8_t* dstAlpha = static_cast<uint8_t*>(malloc(static_cast<size_t>(outW) * outH));
+    if (dstAlpha) {
+        BilinearResizePlane(srcAlpha, w, h, dstAlpha, outW, outH);
+        for (int i = 0; i < outW * outH; ++i) rgbaOut[i * 4 + 3] = dstAlpha[i];
+        free(dstAlpha);
+    } else {
+        for (int i = 0; i < outW * outH; ++i) rgbaOut[i * 4 + 3] = 255; // degrade
+            // gracefully on real OOM -- opaque fallback, matching the old
+            // unconditional behavior, rather than leaving alpha
+            // uninitialized garbage.
     }
 
-    ncnn::Mat out;
-    if (ex.extract(kOutputBlobName, out) != 0) {
-        LogFromController("[texture-upscale-ncnn] FAILED: Extractor::extract failed");
-        return nullptr;
-    }
-
-    uint32_t realOutWidth = static_cast<uint32_t>(out.w);
-    uint32_t realOutHeight = static_cast<uint32_t>(out.h);
-    if (realOutWidth == 0 || realOutHeight == 0) {
-        LogFromController("[texture-upscale-ncnn] FAILED: output Mat has zero dimensions");
-        return nullptr;
-    }
-
-    // Real postprocessing: [0,1] -> [0,255], clamp, RGB -> RGBA (real alpha
-    // channel information was discarded by the network's own RGB-only
-    // input/output -- filled back in as fully opaque here; a real known
-    // simplification, not a bug, flagged in this file's own header comment).
-    const float denormVals[3] = { 255.0f, 255.0f, 255.0f };
-    out.substract_mean_normalize(nullptr, denormVals);
-
-    uint8_t* rgbTemp = static_cast<uint8_t*>(malloc(static_cast<size_t>(realOutWidth) * realOutHeight * 3));
-    if (!rgbTemp) return nullptr;
-    out.to_pixels(rgbTemp, ncnn::Mat::PIXEL_RGB);
-
-    uint8_t* rgbaOut = static_cast<uint8_t*>(malloc(static_cast<size_t>(realOutWidth) * realOutHeight * 4));
-    if (!rgbaOut) { free(rgbTemp); return nullptr; }
-    for (uint32_t i = 0; i < realOutWidth * realOutHeight; ++i) {
-        rgbaOut[i * 4 + 0] = rgbTemp[i * 3 + 0];
-        rgbaOut[i * 4 + 1] = rgbTemp[i * 3 + 1];
-        rgbaOut[i * 4 + 2] = rgbTemp[i * 3 + 2];
-        rgbaOut[i * 4 + 3] = 255;
-    }
-    free(rgbTemp);
-
-    if (outWidth) *outWidth = realOutWidth;
-    if (outHeight) *outHeight = realOutHeight;
+    if (outWidth) *outWidth = static_cast<uint32_t>(outW);
+    if (outHeight) *outHeight = static_cast<uint32_t>(outH);
     return rgbaOut;
 }
 

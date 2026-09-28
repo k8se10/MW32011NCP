@@ -69,5 +69,45 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
+      # 2026-09-28: the main mod links against ncnn (proxy_d3d9/third_party/ncnn/lib/)
+      # for the runtime texture-upscale-cache feature -- those .lib files are
+      # gitignored (real, large, rebuildable CMake/MSVC output, same convention as
+      # every other vendored-but-not-committed binary in this repo), so a plain
+      # checkout leaves nothing for the linker and this job fails with a real
+      # LNK1181 ("cannot open input file 'ncnn.lib'"). Only the main-mod matrix
+      # entry needs this -- the other two projects don't reference ncnn at all.
+      - name: Cache ncnn build (Vulkan, static CRT)
+        if: matrix.project == 'proxy_d3d9/proxy_d3d9.vcxproj'
+        id: ncnn-cache
+        uses: actions/cache@v4
+        with:
+          path: proxy_d3d9/third_party/ncnn/lib
+          key: ncnn-20260526-vulkan-staticcrt-${{ hashFiles('proxy_d3d9/third_party/ncnn/build_ncnn.bat') }}
+
+      # Vulkan SDK is only needed to build ncnn from source (its CMake config
+      # requires the SDK's headers to be found via VULKAN_SDK, even though ncnn
+      # itself uses its own in-house Vulkan function loader rather than linking
+      # vulkan-1.lib -- see build_ncnn.bat's own header comment). Skipped
+      # entirely on a cache hit.
+      - name: Install Vulkan SDK
+        if: matrix.project == 'proxy_d3d9/proxy_d3d9.vcxproj' && steps.ncnn-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/VulkanSDK.exe" -OutFile "$env:RUNNER_TEMP\VulkanSDK.exe"
+          Start-Process -FilePath "$env:RUNNER_TEMP\VulkanSDK.exe" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
+          $sdkDir = Get-ChildItem "C:\VulkanSDK" | Select-Object -First 1
+          echo "VULKAN_SDK=C:\VulkanSDK\$($sdkDir.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Builds real ncnn from source (Tencent/ncnn, pinned tag, matching this
+      # project's own documented local process exactly -- same script a
+      # developer runs locally, not a CI-only shortcut) whenever the cache
+      # above misses. This is real build verification, same philosophy as the
+      # rest of this workflow -- not a stub or a prebuilt-binary download.
+      - name: Build ncnn from source
+        if: matrix.project == 'proxy_d3d9/proxy_d3d9.vcxproj' && steps.ncnn-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        working-directory: proxy_d3d9/third_party/ncnn
+        run: build_ncnn.bat
+
       - name: Build ${{ matrix.name }} (Release x64)
         run: msbuild "${{ matrix.project }}" /p:Configuration=Release /p:Platform=x64 /m /warnaserror:false

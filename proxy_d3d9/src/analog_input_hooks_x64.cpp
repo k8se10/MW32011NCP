@@ -95,6 +95,11 @@
                      // MP anchor signature depending on which real exe loaded this DLL.
 #include "texture_upscale_cache.h" // TryLoadCachedUpscaledIwi -- 2026-09-28, texture-upscale-
                      // cache feature, see Hook_ImageFileLoadX64/Hook_ReadBytesSubstitutionX64.
+#include "texture_upscale_worker.h" // QueueUpscaleJob -- 2026-09-28, real cache-population
+                     // wiring, see the capture logic in the same two hooks.
+#include "texture_upscale_dxt_codec.h" // CompressedSize -- used to locate the real base mip
+                     // inside a captured raw IWI file, see Hook_ImageFileLoadX64's capture path.
+#include "texture_upscale_iwi_writer.h" // TextureUpscaleIwi::Format -- shared with the capture path.
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -12233,6 +12238,63 @@ struct ActiveTextureSubstitution
 };
 thread_local ActiveTextureSubstitution g_activeTextureSubstitutionX64;
 
+// ---- Active-CAPTURE state (2026-09-28) -- the real cache-population wiring
+// this feature's substitution mechanism above was always missing. Armed by
+// Hook_ImageFileLoadX64 on a genuine cache MISS (upscaling enabled, no
+// existing cache/custom_assets entry for this name) instead of the
+// substitution struct above; Hook_ReadBytesSubstitutionX64's real
+// pass-through branch appends every real byte it reads into this growing
+// buffer. Once Hook_ImageFileLoadX64's own call-through returns, the
+// captured buffer holds a complete, real, unmodified copy of the original
+// IWI file the game just loaded -- parsed to find the base (largest) mip
+// and queued to TextureUpscaleWorker for background upscaling. thread_local
+// for the same reason as ActiveTextureSubstitution above (a real VFS
+// handle-table system means FUN_1401bae80 could plausibly run concurrently
+// on different threads for different images).
+struct ActiveTextureCapture
+{
+    char name[256] = {};
+    uint8_t* buffer = nullptr;
+    uint32_t size = 0;
+    uint32_t capacity = 0;
+    bool active = false;
+};
+thread_local ActiveTextureCapture g_activeTextureCaptureX64;
+
+// Appends `len` bytes to the active capture buffer, growing it (doubling)
+// as needed. Called from Hook_ReadBytesSubstitutionX64's real pass-through
+// branch -- real, if infrequent, per-read realloc cost, acceptable since
+// this only ever runs while capturing a genuine cache-miss image (a rare,
+// one-time-per-new-texture event, never the hot substitution-serving path).
+void AppendToActiveCapture(const void* data, uint32_t len)
+{
+    ActiveTextureCapture& cap = g_activeTextureCaptureX64;
+    if (!cap.active || len == 0) return;
+    if (cap.size + len > cap.capacity) {
+        uint32_t newCapacity = cap.capacity == 0 ? 65536u : cap.capacity;
+        while (newCapacity < cap.size + len) newCapacity *= 2;
+        uint8_t* grown = static_cast<uint8_t*>(realloc(cap.buffer, newCapacity));
+        if (!grown) {
+            // Real OOM (or a genuinely huge, unexpected real file) -- abandon
+            // this capture rather than risk corrupting/overrunning memory.
+            // The player is completely unaffected either way (the real
+            // texture already loaded correctly via the pass-through this
+            // function is only ever called alongside); this only costs a
+            // missed upscale-cache opportunity for this one texture.
+            free(cap.buffer);
+            cap.buffer = nullptr;
+            cap.size = 0;
+            cap.capacity = 0;
+            cap.active = false;
+            return;
+        }
+        cap.buffer = grown;
+        cap.capacity = newCapacity;
+    }
+    memcpy(cap.buffer + cap.size, data, len);
+    cap.size += len;
+}
+
 // Real bug found and fixed live, 2026-09-28: the first live test hit the
 // engine's own real "Image file corrupt." error even after the encoder's
 // own fileSizeForPicmip bug was fixed -- root cause was a design gap, not
@@ -12273,6 +12335,36 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
         name = nullptr;
     }
 
+    // Temporary, SCOPED name diagnostic (2026-09-28) -- investigating a live
+    // report that the custom main-menu background disappears when opening the
+    // Spec Ops submenu (Survival/Missions/Chaos modal), most likely because
+    // that screen loads a second, distinct background asset (a real candidate
+    // already seen in an earlier full-name dump: "background_image_blur_less",
+    // observed immediately adjacent to "background_image" in main-menu load
+    // order). Scoped to names containing "background" or "blur" (case-
+    // insensitive) rather than every name, to stay low-noise -- bounded to 50
+    // hits. Remove once the real asset name used on that screen is confirmed.
+    if (name) {
+        static int s_bgNameLogCount = 0;
+        if (s_bgNameLogCount < 50) {
+            bool looksBackgroundRelated = false;
+            for (const char* p = name; *p; ++p) {
+                char c = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+                if ((c == 'b' && _strnicmp(p, "background", 10) == 0) ||
+                    (c == 'b' && _strnicmp(p, "blur", 4) == 0)) {
+                    looksBackgroundRelated = true;
+                    break;
+                }
+            }
+            if (looksBackgroundRelated) {
+                ++s_bgNameLogCount;
+                char nbuf[400];
+                sprintf_s(nbuf, "[x64-bgname-diag] \"%.300s\" (hit #%d)", name, s_bgNameLogCount);
+                LogFromController(nbuf);
+            }
+        }
+    }
+
     // Real cache-check logic (2026-09-28) -- replaces the earlier diagnostic-
     // only version. Strictly opt-in: g_modConfig.textureRenderRes == 1 means
     // "1x", the feature's own disabled default -- skip the cache lookup
@@ -12301,8 +12393,25 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
         if (cacheBuffer) cacheBufferIsCustomAsset = true;
     }
 
-    if (!cacheBuffer && name && g_modConfig.textureRenderRes > 1) {
+    bool wantsUpscale = name && g_modConfig.textureRenderRes > 1;
+    if (!cacheBuffer && wantsUpscale) {
         cacheBuffer = TextureUpscaleCache::TryLoadCachedUpscaledIwi(name, g_modConfig.textureRenderRes, &cacheSize);
+    }
+
+    // Real cache-population capture (2026-09-28) -- a genuine miss (no
+    // cache/custom_assets entry exists yet) on an upscaling-enabled name:
+    // arm the capture buffer so Hook_ReadBytesSubstitutionX64's real
+    // pass-through appends the real file bytes as the game loads them
+    // normally. NOT armed at the same time as g_activeTextureSubstitutionX64
+    // above -- those two are mutually exclusive by construction (a cache HIT
+    // serves a substitution and never captures; a MISS captures and never
+    // substitutes), so both hooks only ever need to check their own struct.
+    bool capturingThisLoad = false;
+    if (!cacheBuffer && wantsUpscale) {
+        g_activeTextureCaptureX64.active = true;
+        strncpy_s(g_activeTextureCaptureX64.name, name, _TRUNCATE);
+        g_activeTextureCaptureX64.size = 0;
+        capturingThisLoad = true;
     }
 
     if (cacheBuffer) {
@@ -12344,6 +12453,70 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
         free(cacheBuffer); // TryLoadCachedUpscaledIwi's own malloc'd buffer --
             // this hook owns its lifetime, matching TextureUpscaleCache's own
             // documented "caller must free()" contract.
+    }
+
+    // Real capture-complete parse-and-queue (2026-09-28). g_activeTextureCaptureX64
+    // now holds a complete, real, unmodified copy of the original IWI file
+    // (header + every mip, smallest-first) if the game's own real load
+    // actually reached the read-bytes primitive at all (a load can still
+    // fail/short-circuit upstream of that for reasons unrelated to this
+    // feature -- an empty or too-small capture is a real, silent, expected
+    // case, not logged as an error).
+    if (capturingThisLoad) {
+        ActiveTextureCapture& cap = g_activeTextureCaptureX64;
+        // Real IWI-v8 header layout, per texture_upscale_iwi_writer.h's own
+        // documented, disassembly-verified layout -- read directly, not via
+        // that header's own encoder-only API.
+        constexpr uint32_t kIwiHeaderSize = 0x20;
+        if (cap.active && cap.buffer && cap.size > kIwiHeaderSize &&
+            cap.buffer[0] == 'I' && cap.buffer[1] == 'W' && cap.buffer[2] == 'i' && cap.buffer[3] == 8) {
+            int8_t rawFormat = static_cast<int8_t>(cap.buffer[0x08]);
+            uint16_t iwiWidth = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0A);
+            uint16_t iwiHeight = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0C);
+
+            TextureUpscaleDxt::BlockFormat blockFmt;
+            bool formatOk = true;
+            switch (static_cast<TextureUpscaleIwi::Format>(rawFormat)) {
+                case TextureUpscaleIwi::Format::DXT1: blockFmt = TextureUpscaleDxt::BlockFormat::BC1; break;
+                case TextureUpscaleIwi::Format::DXT3: blockFmt = TextureUpscaleDxt::BlockFormat::BC2; break;
+                case TextureUpscaleIwi::Format::DXT5: blockFmt = TextureUpscaleDxt::BlockFormat::BC3; break;
+                default: formatOk = false; break; // raw bitmap or an unhandled
+                    // format -- out of scope for this feature (see
+                    // texture_upscale_dxt_codec.h's own header comment),
+                    // silently skipped, not logged (a routine, expected case
+                    // for e.g. small UI bitmap assets, not a real error).
+            }
+
+            if (formatOk && iwiWidth > 0 && iwiHeight > 0) {
+                // The base (largest, full-resolution) mip is always the
+                // LAST bytes in the file regardless of exact real mip-count/
+                // fileSizeForPicmip-table semantics -- mip data is smallest-
+                // first by construction, and this format's block compression
+                // has no per-mip padding, so the base mip's own byte size is
+                // exactly and unambiguously CompressedSize(width,height,format).
+                uint32_t baseMipSize = TextureUpscaleDxt::CompressedSize(iwiWidth, iwiHeight, blockFmt);
+                if (cap.size >= kIwiHeaderSize + baseMipSize) {
+                    uint8_t* mipCopy = static_cast<uint8_t*>(malloc(baseMipSize));
+                    if (mipCopy) {
+                        memcpy(mipCopy, cap.buffer + (cap.size - baseMipSize), baseMipSize);
+                        if (!TextureUpscaleWorker::QueueUpscaleJob(cap.name, rawFormat, iwiWidth, iwiHeight,
+                                                                    mipCopy, baseMipSize, g_modConfig.textureRenderRes)) {
+                            free(mipCopy); // already in flight, queue full, or
+                                // invalid args -- QueueUpscaleJob logs the
+                                // success case itself; a rejection here is a
+                                // normal, expected outcome (e.g. this exact
+                                // name is already queued from an earlier load
+                                // this session), not an error.
+                        }
+                    }
+                }
+            }
+        }
+        free(cap.buffer);
+        cap.buffer = nullptr;
+        cap.size = 0;
+        cap.capacity = 0;
+        cap.active = false;
     }
 
     return result;
@@ -12440,7 +12613,16 @@ unsigned long long __fastcall Hook_ReadBytesSubstitutionX64(long long destPtr, u
         }
         return toCopy;
     }
-    return g_realReadBytesX64(destPtr, requestedSize, handle);
+    unsigned long long realCopied = g_realReadBytesX64(destPtr, requestedSize, handle);
+    // Real cache-population capture (2026-09-28) -- see g_activeTextureCaptureX64's
+    // own header comment. Appends exactly the bytes the real function
+    // actually reported copying (not `requestedSize`, which the real
+    // function is free to under-fulfill on a real short read) -- keeps the
+    // captured buffer byte-exact with what the game itself just loaded.
+    if (g_activeTextureCaptureX64.active && realCopied > 0) {
+        AppendToActiveCapture(reinterpret_cast<const void*>(destPtr), static_cast<uint32_t>(realCopied));
+    }
+    return realCopied;
 }
 
 // SP-only (per this project's own standing per-exe signature-verification

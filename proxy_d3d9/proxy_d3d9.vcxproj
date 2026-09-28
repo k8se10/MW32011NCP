@@ -262,6 +262,7 @@
     <ClCompile Include="src\texture_upscale_cache.cpp" />
     <ClCompile Include="src\texture_upscale_dxt_codec.cpp" />
     <ClCompile Include="src\texture_upscale_ncnn.cpp" />
+    <ClCompile Include="src\texture_upscale_worker.cpp" />
     <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
@@ -327,6 +328,7 @@
     <ClInclude Include="src\texture_upscale_cache.h" />
     <ClInclude Include="src\texture_upscale_dxt_codec.h" />
     <ClInclude Include="src\texture_upscale_ncnn.h" />
+    <ClInclude Include="src\texture_upscale_worker.h" />
     <ClInclude Include="src\vram_diag.h" />
     <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\plugin_loader.h" />
