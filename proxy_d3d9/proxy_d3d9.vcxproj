@@ -252,6 +252,7 @@
     <ClCompile Include="src\options_render_suppress.cpp" />
     <ClCompile Include="src\asset_capture.cpp" />
     <ClCompile Include="src\texture_upscale_iwi_writer.cpp" />
+    <ClCompile Include="src\texture_upscale_cache.cpp" />
     <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
@@ -314,6 +315,7 @@
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\asset_capture.h" />
     <ClInclude Include="src\texture_upscale_iwi_writer.h" />
+    <ClInclude Include="src\texture_upscale_cache.h" />
     <ClInclude Include="src\vram_diag.h" />
     <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\plugin_loader.h" />
