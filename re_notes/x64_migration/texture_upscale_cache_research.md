@@ -928,3 +928,66 @@ scoping/RE: design the actual cache file format and background-thread
 queue, then write the real hook + substitution code at `FUN_1401bae80`
 (overwriting `param_1`'s width/height fields per the earlier corrected
 design, decoding/upscaling/re-encoding the `.iwi` payload).
+
+## DEFINITIVE HEADER LAYOUT, byte-verified via raw disassembly — reverses the prior "must overwrite param_1 manually" correction
+
+Before writing any real substitution code, went back to verify the exact
+byte layout of `FUN_1401bae80`'s own 32-byte `.iwi` header read, since
+`FUN_1401bab10` (reached via the mip-decode dispatch) turned out to read
+short fields directly from that same header — a discrepancy with the
+prior round's conclusion that width/height live only on `param_1`, set
+independently of the file. Pulled the RAW DISASSEMBLY (not just decompiler
+pseudocode, which had already misled this investigation once) of
+`FUN_1401bae80` to get exact stack-relative byte offsets, cross-referenced
+against `FUN_1401bab10`'s own field reads.
+
+**Real, disassembly-confirmed 32-byte `.iwi` header layout** (offsets
+relative to the header's own base):
+- `0x00-0x03`: `"IWi"` + version byte `0x08` (real magic, already known)
+- `0x04`: flags byte (already known, `local_64`)
+- `0x05-0x09`: unaccounted/padding (not needed for this feature)
+- **`0x0A-0x0B`: WIDTH** (int16) — confirmed via `FUN_1401bab10` reading
+  `*(short*)(param_2+0xa)` and feeding it into
+  `*(short*)(param_1+0x18) = width` (`FUN_1401ba0c0`'s own write, already
+  mapped as the width field two rounds ago)
+- **`0x0C-0x0D`: HEIGHT** (int16) — `*(short*)(param_2+0xc)` →
+  `*(short*)(param_1+0x1a)`
+- **`0x0E-0x0F`: DEPTH** (int16) — `*(short*)(param_2+0xe)` →
+  `*(short*)(param_1+0x1c)`
+- `0x10-0x1F`: four int32 per-mip-level compressed data sizes (already
+  confirmed, `local_58[0..3]`)
+
+All three dimension shorts get right-shifted by the current streamed mip
+level (`FUN_1401bab10`'s own `>> (bVar1 & 0x1f)`) to compute each
+individual mip's own real dimensions from this one base width/height/
+depth — standard mip-chain math, confirmed correct and expected.
+
+**This REVERSES the prior round's correction, which was itself wrong.**
+Width/height/depth are NOT set independently on `param_1` from separate
+zone-load-time `GfxImage` metadata — they're read DIRECTLY from this same
+32-byte header, the exact header this hook already fully controls (reads,
+validates, and could substitute). **The original, very first design idea
+from earlier this session — supply a real, correctly-formatted, larger
+`.iwi` payload and let `FUN_1401bae80`'s own existing decode logic handle
+everything downstream "for free" — was correct all along.** No manual
+`param_1+0x18/0x1a/0x1c` overwrite is needed; a substituted `.iwi` file
+with its own real, bigger width/height baked into header offsets
+`0xA`/`0xC` (plus correctly recomputed per-mip sizes at `0x10-0x1F` for
+the new resolution) is sufficient on its own.
+
+**Real lesson worth keeping**: decompiler pseudocode variable-naming
+inference (`local_58`/`local_5e` etc.) led this investigation to a wrong
+conclusion once already (assuming `local_58[4]` was the ONLY structured
+data in the header, missing that `0xA`/`0xC`/`0xE` were separately
+meaningful dimension fields) — the raw disassembly with real stack
+offsets is what actually resolved it correctly, cross-referenced against
+a second function's own field reads into the same buffer. This project's
+own standing "trust native RE over assumption" discipline paid off here.
+
+**Design status: the cache/substitution mechanism is now fully specified
+and simpler than previously thought.** Real next step: design the cache
+file's own real `.iwi` container format (reuse the real header/mip-size
+layout just mapped, computing new per-mip sizes for the upscaled
+resolution) and the substitution point (intercepting the raw bytes
+`FUN_1401bae80` reads via `local_res8`/the read callback, before its own
+header-validate/decode logic runs).
