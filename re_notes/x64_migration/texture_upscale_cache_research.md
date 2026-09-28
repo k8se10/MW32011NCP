@@ -285,6 +285,37 @@ known x64 material-loading entry point the same way, or check possibility
 (a) above directly by searching for a bulk/startup-time asset-registration
 pass on x64 that x86 doesn't have.
 
+### Second round, same day — a real capability unlock, and the lock-signature is the next concrete angle
+
+**Found a full-analysis Ghidra project already sitting on disk**:
+`re_notes/x64_migration/ghidra_project_x64_analyzed/iw5sp_x64_full.gpr`
+(from the 2026-09-24 renderer-architecture mapping session, per
+`CLAUDE.md`'s own Version Timeline — "two full (non-`-noanalysis`) Ghidra
+analysis passes run against BOTH binaries same day"). Opening it with
+`-process` (not `-import`) makes Ghidra's own reference manager actually
+work — confirmed by re-running `DecompileAndCallersAt.java` (the
+reference-manager-based caller tool that returned nothing under a fresh
+`-noanalysis` import) against `FUN_1402ad950` and getting all 37 real
+callers back correctly, matching the raw-byte-scan result exactly. **This
+is a real, reusable capability for every future x64 RE task in this
+project, not just this hunt** — `-noanalysis` raw-byte-scan workarounds
+(`FindDirectCallers.java` etc.) are still valid but no longer the only
+option; a full analysis already exists and should be tried first via
+`-process` before reaching for a raw scan.
+
+**Confirmed `InterlockedIncrement`/`InterlockedDecrement` are NOT real
+imports in the x64 binary** (`grep -i interlocked
+x64_imports_full_dumpbin.txt` — no match), meaning `FindOrLoadAsset`'s x86
+lock pattern is compiled as inlined `lock`-prefixed instructions on x64,
+not a callable import — ruling out an import-xref-based search for it.
+**Real next concrete angle, not yet attempted**: a raw byte-pattern scan
+for the `lock inc`/`lock xadd` instruction encoding (`F0 FF` / `F0 0F C1`)
+across `.text`, filtered to matches near a spin-wait-shaped loop and a
+large switch/dispatch call — the same structural-signature technique
+already proven for other central dispatchers in this project's history.
+Paused here for tonight; the full-analysis project being confirmed usable
+is the headline result of this round.
+
 ## Blocker resolution, 2026-09-28: hook the engine's own asset-load layer, not DXVK's D3D9 layer (SUPERSEDED by the correction above — a specific GfxImage-realization hook is not confirmed safe to exist; the material-name/CreateTexture correlation approach above is the real plan)
 
 The chicken-and-egg problem above only exists because `D3D9CommonTexture`'s
