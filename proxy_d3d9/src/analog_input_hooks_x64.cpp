@@ -93,6 +93,8 @@
 #include "game_exe_detect.h" // GetDetectedGameExecutable() -- 2026-09-27, MP menu-navigation
                      // port: InstallMenuNavigationHooksX64() needs to pick between the SP and
                      // MP anchor signature depending on which real exe loaded this DLL.
+#include "texture_upscale_cache.h" // TryLoadCachedUpscaledIwi -- 2026-09-28, texture-upscale-
+                     // cache feature, see Hook_ImageFileLoadX64/Hook_ReadBytesSubstitutionX64.
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -12208,21 +12210,31 @@ constexpr const char* kImageFileLoadSignature =
 using ImageFileLoadFnX64 = long long(__fastcall*)(long long param_1, void* param_2);
 ImageFileLoadFnX64 g_realImageFileLoadX64 = nullptr;
 
+// ---- Active-substitution state, shared with Hook_ReadBytesSubstitutionX64
+// below (2026-09-28) -----------------------------------------------------------
+// Real design (texture_upscale_cache_research.md's "FINAL substitution
+// architecture" round): Hook_ImageFileLoadX64 arms this on a cache hit before
+// calling through to the real, unmodified FUN_1401bae80; Hook_ReadBytesSubstitutionX64
+// (the new hook on FUN_1402b5ec0, the shared low-level "read N bytes via
+// handle" primitive both the header read and mip-data read inside
+// FUN_1401bae80 call) serves bytes from this buffer instead of the real
+// handle while armed. thread_local, not a plain static, since this project's
+// own research already confirmed a real VFS handle-table system
+// (`FUN_1402b42c0`/`FUN_1402b5ec0`) -- `FUN_1401bae80` could plausibly be
+// called concurrently for different images on different threads, and a
+// plain static here would let one thread's substitution buffer leak into
+// another thread's unrelated read.
+struct ActiveTextureSubstitution
+{
+    const uint8_t* data = nullptr;
+    uint32_t size = 0;
+    uint32_t cursor = 0;
+    bool armed = false;
+};
+thread_local ActiveTextureSubstitution g_activeTextureSubstitutionX64;
+
 long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
 {
-    // Unbounded, 2026-09-28 (same treatment as Hook_FindOrLoadAssetX64's own
-    // image-diag hook, same day, same reasoning: "the logging it must be
-    // unbounded for dev data"). The first 400 hits all read back clean, sane,
-    // real names, but every one of them was UI/HUD/menu-adjacent
-    // (scrollbar_arrow_up, checkbox_current, flashbangicon, rain_drop, etc.) --
-    // the 400 cap most likely filled during early UI/HUD population before real
-    // world-geometry material textures came through, so this is unbounded to
-    // see the FULL session and confirm whether Phase 2 (gameplay world
-    // textures) content also flows through this same universal loader, not
-    // just Phase 1 (menu/UI) content. Image loads are asset-load-event
-    // frequency, not per-frame, so this doesn't carry the "unthrottled
-    // per-frame log write" risk issue #87 already fixed elsewhere in this
-    // codebase.
     // Read the real name pointer at param_1+0x20 BEFORE calling through --
     // param_1 is a struct this function itself mutates internally (per the
     // decompile), so reading before the real call guarantees this reflects
@@ -12237,20 +12249,56 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         name = nullptr;
     }
-    static int s_loggedCount = 0;
-    ++s_loggedCount;
-    char buf[400];
-    sprintf_s(buf, "[x64-imagefileload-diag] FUN_1401bae80 name=\"%.300s\" (hit #%d)",
-        name ? name : "(null/unreadable)", s_loggedCount);
-    LogFromController(buf);
 
-    return g_realImageFileLoadX64(param_1, param_2);
+    // Real cache-check logic (2026-09-28) -- replaces the earlier diagnostic-
+    // only version. Strictly opt-in: g_modConfig.textureRenderRes == 1 means
+    // "1x", the feature's own disabled default -- skip the cache lookup
+    // entirely rather than pay a filesystem stat for every image load when
+    // the player hasn't turned this on.
+    uint8_t* cacheBuffer = nullptr;
+    uint32_t cacheSize = 0;
+    if (name && g_modConfig.textureRenderRes > 1) {
+        cacheBuffer = TextureUpscaleCache::TryLoadCachedUpscaledIwi(name, g_modConfig.textureRenderRes, &cacheSize);
+    }
+
+    if (cacheBuffer) {
+        g_activeTextureSubstitutionX64.data = cacheBuffer;
+        g_activeTextureSubstitutionX64.size = cacheSize;
+        g_activeTextureSubstitutionX64.cursor = 0;
+        g_activeTextureSubstitutionX64.armed = true;
+
+        static int s_loggedSubCount = 0;
+        if (s_loggedSubCount < 100) { // bounded -- a real substitution firing
+            // repeatedly for the same handful of textures across a session is
+            // expected and not interesting past the first several confirmations,
+            // unlike the earlier pure name-diagnostic hooks which needed a full
+            // session's worth of data to answer an open research question.
+            ++s_loggedSubCount;
+            char buf[400];
+            sprintf_s(buf, "[texture-upscale-sub] serving cached upscale for \"%.300s\" (%u bytes, %dx) (hit #%d/100)",
+                name, cacheSize, g_modConfig.textureRenderRes, s_loggedSubCount);
+            LogFromController(buf);
+        }
+    }
+
+    long long result = g_realImageFileLoadX64(param_1, param_2);
+
+    if (g_activeTextureSubstitutionX64.armed) {
+        g_activeTextureSubstitutionX64.armed = false;
+        g_activeTextureSubstitutionX64.data = nullptr;
+        free(cacheBuffer); // TryLoadCachedUpscaledIwi's own malloc'd buffer --
+            // this hook owns its lifetime, matching TextureUpscaleCache's own
+            // documented "caller must free()" contract.
+    }
+
+    return result;
 }
 
 // SP-only (per this project's own standing per-exe signature-verification policy --
 // this signature has only ever been resolved/verified against iw5sp.exe, never
-// iw5mp.exe). Diagnostic only: confirms the real name-pointer offset live before
-// any real texture-upscale-cache hook/substitution logic is built on it.
+// iw5mp.exe). Real substitution logic as of 2026-09-28 (see
+// Hook_ImageFileLoadX64's own comment above) -- name kept for historical
+// continuity with the diagnostic-only version this replaced, not renamed.
 void InstallImageFileLoadDiagHookX64()
 {
     SigScan::Result r = SigScan::FindPatternInMainModule(kImageFileLoadSignature);
@@ -12279,6 +12327,99 @@ void InstallImageFileLoadDiagHookX64()
     }
     LogFromController("[x64-imagefileload-diag] Image-file-load hook installed and enabled (read-only, "
         "texture-upscale-cache groundwork) -- FUN_1401bae80.");
+}
+
+// ---- Read-bytes substitution hook (2026-09-28) -----------------------------------
+// The second of the two hooks texture_upscale_cache_research.md's "FINAL
+// substitution architecture" round designed. FUN_1402b5ec0 is the shared,
+// low-level "read N bytes via a real VFS handle" primitive both the 32-byte
+// header read and the mip-data read inside FUN_1401bae80 call -- confirmed via
+// decompile (this function dispatches per-handle to either a real streaming
+// read or an in-memory-backed path, indexed through the same handle table
+// `FUN_1402b42c0` resolves). Rather than understand or spoof that handle
+// table's own internal record layout, this hook serves bytes directly from
+// `g_activeTextureSubstitutionX64` (armed by Hook_ImageFileLoadX64 above)
+// whenever it's armed, ignoring the real handle entirely; otherwise it's a
+// pure pass-through to the real function, unmodified.
+//
+// Signature (FUN_1402b5ec0's own real prologue -- no genuine RIP-relative
+// operand in this span):
+//   40 55         PUSH RBP
+//   56            PUSH RSI
+//   41 57         PUSH R15
+//   48 83 EC 20   SUB RSP,0x20
+//   4D 8B F8      MOV R15,R8
+//   48 8B EA      MOV RBP,RDX
+//   48 8B F1      MOV RSI,RCX
+//   4D 85 C0      TEST R8,R8
+// Independently verified unique (1 raw occurrence) against
+// re_notes/x64_migration/binaries/iw5sp.exe before use.
+constexpr const char* kReadBytesSubstitutionSignature =
+    "40 55 56 41 57 48 83 EC 20 4D 8B F8 48 8B EA 48 8B F1 4D 85 C0";
+
+// __fastcall(longlong destPtr, ulonglong requestedSize, longlong handle) ->
+// ulonglong bytes actually copied. Confirmed standard MS x64 fastcall
+// (RCX/RDX/R8 map directly onto the prologue's own mov rsi,rcx/mov rbp,rdx/
+// mov r15,r8) -- plain MinHook C++ detour, no naked trampoline needed. Real
+// function's own success convention (confirmed via its decompile and its
+// real caller inside FUN_1401bae80, which compares the return value against
+// the size it asked for): returns the number of bytes actually copied --
+// equal to requestedSize on a full/successful read. Since this hook always
+// has the complete substituted buffer already in memory (no real streaming
+// I/O to retry/short-read against), it always either copies the full
+// requested amount or however many bytes remain in the cached buffer --
+// never needs the real function's own retry-loop behavior.
+using ReadBytesFnX64 = unsigned long long(__fastcall*)(long long destPtr, unsigned long long requestedSize, long long handle);
+ReadBytesFnX64 g_realReadBytesX64 = nullptr;
+
+unsigned long long __fastcall Hook_ReadBytesSubstitutionX64(long long destPtr, unsigned long long requestedSize, long long handle)
+{
+    if (g_activeTextureSubstitutionX64.armed && g_activeTextureSubstitutionX64.data) {
+        uint32_t remaining = g_activeTextureSubstitutionX64.size - g_activeTextureSubstitutionX64.cursor;
+        uint32_t toCopy = static_cast<uint32_t>(requestedSize);
+        if (toCopy > remaining) toCopy = remaining;
+        if (toCopy > 0) {
+            memcpy(reinterpret_cast<void*>(destPtr),
+                   g_activeTextureSubstitutionX64.data + g_activeTextureSubstitutionX64.cursor, toCopy);
+            g_activeTextureSubstitutionX64.cursor += toCopy;
+        }
+        return toCopy;
+    }
+    return g_realReadBytesX64(destPtr, requestedSize, handle);
+}
+
+// SP-only (per this project's own standing per-exe signature-verification
+// policy). Read-only pass-through unless a texture-upscale-cache
+// substitution is actively armed, matching the "never alter real behavior
+// unless explicitly substituting" standard the rest of this feature's own
+// hooks already follow.
+void InstallReadBytesSubstitutionHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kReadBytesSubstitutionSignature);
+    if (!r.found) {
+        LogFromController("[texture-upscale-sub] FATAL: read-bytes signature did not resolve -- "
+            "texture-upscale-cache substitution inactive this session (cache lookups will always miss)");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ReadBytesSubstitutionX64),
+                                            reinterpret_cast<void**>(&g_realReadBytesX64));
+    if (createStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[texture-upscale-sub] FATAL: MH_CreateHook failed for read-bytes @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[texture-upscale-sub] FATAL: MH_EnableHook failed for read-bytes @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    LogFromController("[texture-upscale-sub] Read-bytes substitution hook installed and enabled -- FUN_1402b5ec0.");
 }
 
 // ---- Real loose-file-open path diagnostic (2026-09-28) ---------------------------

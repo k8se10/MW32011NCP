@@ -41,6 +41,10 @@ void InstallImageFileLoadDiagHookX64(); // defined in analog_input_hooks_x64.cpp
 void InstallLooseFileOpenDiagHookX64(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-28, empirical half of the "does a loose file override work"
     // question for the texture-upscale-cache feature. SP-only; read-only.
+void InstallReadBytesSubstitutionHookX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-28, the second of the texture-upscale-cache feature's two real
+    // substitution hooks (FUN_1402b5ec0). SP-only; pass-through unless a
+    // substitution is actively armed by Hook_ImageFileLoadX64.
 #if defined(_M_X64) || defined(_WIN64)
 void InstallRenderScaleHookX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-23,
     // split out of InstallAnalogInputHooksX64() specifically so it can be called under
@@ -945,6 +949,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallLooseFileOpenDiagHookX64(); // 2026-09-28, empirical test of whether
                 // a loose file override works for this feature -- see
                 // texture_upscale_cache_research.md's "File-read callback traced" round.
+            InstallReadBytesSubstitutionHookX64(); // 2026-09-28, the real substitution
+                // mechanism's second hook -- see Hook_ImageFileLoadX64/
+                // Hook_ReadBytesSubstitutionX64's own comments (analog_input_hooks_x64.cpp).
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif
