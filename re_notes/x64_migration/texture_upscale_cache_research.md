@@ -67,6 +67,25 @@ DXT-compressed, which changes what "upscale" even operates on: decompress
 first, upscale, re-encode or store uncompressed) before any code is
 written — **not done yet, real next step**.
 
+## NVIDIA-native alternative checked, genuinely doesn't apply here
+
+Following the RT roadmap's own DLSS-preferred/FSR-fallback pattern, checked
+whether an equivalent NVIDIA-native path exists for texture upscaling
+specifically (2026-09-28 web verification, not assumed). **NVIDIA RTX
+Neural Texture Compression** (`NVIDIA-RTX/RTXNTC`, real, current, GTC 2026)
+is the closest real SDK, but it solves a different problem: NTC reduces
+VRAM footprint by reconstructing textures at runtime from a small trained
+neural representation of the ORIGINAL texture — it doesn't add detail a
+source texture never had, the way an ESRGAN-class upscaler does. **No
+real "prefer NVIDIA, fall back to ncnn-vulkan" split exists for this
+feature** the way it does for RT reconstruction (DLSS Ray Reconstruction
+vs. FSR 3.1 genuinely compete for the same job; NTC and ESRGAN-class
+upscaling don't). Real-ESRGAN-ncnn-vulkan remains the single primary
+approach. NTC is worth flagging as a possible later, complementary
+optimization — compressing the CACHE this feature builds (the upscaled
+2K+ textures) to cut its own disk/VRAM cost — not a competing path to the
+upscale step itself; not scoped further here.
+
 ## Real open design questions (none answered yet — this is scoping, not a plan)
 
 1. **Compressed-texture handling — confirmed a real, present case, not
