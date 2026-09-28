@@ -879,6 +879,12 @@ void WriteDefaultConfig(const char* path)
         "; GfxImage assets span everything from 1x1 utility textures to large world\n"
         "; diffuse maps, so a single absolute target would be wrong for most of them.\n"
         "TextureRenderRes=%s\n"
+        "; CustomMainMenuBackground (2026-09-28) -- the real MW3 2011 NCP branded\n"
+        "; main menu background, shipped with the mod itself. Genuinely optional --\n"
+        "; disable to see the real, unmodified native menu background instead. ON by\n"
+        "; default (1), unlike most experimental features in this project, since this\n"
+        "; is purely cosmetic branding, not a risk-bearing feature.\n"
+        "CustomMainMenuBackground=%d\n"
         "; --- Recommended companion settings for everything below (FSR/motion blur/\n"
         "; render-scale) -- confirmed live 2026-08-27, known_issues.md issue #99: this\n"
         "; engine's own camera-look pacing gets visibly worse under vsync (a real,\n"
@@ -1331,6 +1337,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.streamlineEnabled ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
         textureRenderResBuf,
+        g_modConfig.customMainMenuBackground ? 1 : 0,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
         g_modConfig.smaaEnabled ? 1 : 0,
@@ -1731,6 +1738,7 @@ void LoadModConfig()
         g_modConfig.internalRenderScalePercent = v;
     }
     ReadTextureRenderRes(path, g_modConfig.textureRenderRes);
+    ReadBool(path, "Video", "CustomMainMenuBackground", g_modConfig.customMainMenuBackground);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
@@ -1804,7 +1812,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
-        "useCustomOptionsScreen=%d internalRenderScalePercent=%d textureRenderRes=%dx pluginsEnabled=%d "
+        "useCustomOptionsScreen=%d internalRenderScalePercent=%d textureRenderRes=%dx customMainMenuBackground=%d pluginsEnabled=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -1831,6 +1839,7 @@ void LoadModConfig()
         g_modConfig.useCustomOptionsScreen ? 1 : 0,
         g_modConfig.internalRenderScalePercent,
         g_modConfig.textureRenderRes,
+        g_modConfig.customMainMenuBackground ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,

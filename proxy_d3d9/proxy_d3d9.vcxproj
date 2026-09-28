@@ -364,4 +364,25 @@
     <MakeDir Directories="$(OutDir)dxvk" Condition="!Exists('$(OutDir)dxvk')" />
     <Copy SourceFiles="third_party\dxvk\x64\d3d9.dll" DestinationFolder="$(OutDir)dxvk\" SkipUnchangedFiles="true" />
   </Target>
+
+  <!-- Texture-upscale-cache feature deployment (2026-09-28), mirrors DeployDxvk's
+       own pattern. Two real, independent asset sets:
+       1. realesrgan_models: gitignored (33MB), only present locally after
+          running third_party\realesrgan_models\fetch_models.bat. Condition
+          guards mean a build with these absent still succeeds (the feature
+          itself already handles a missing model gracefully, logging and
+          returning false from EnsureModelLoaded rather than crashing).
+       2. custom_assets: real, committed, shipped with the mod bundled
+          assets (currently just background_image.iwi, the custom main menu
+          background), always deployed, not conditional. -->
+  <Target Name="DeployTextureUpscaleAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <ItemGroup>
+      <RealesrganModelFiles Include="third_party\realesrgan_models\*.bin;third_party\realesrgan_models\*.param" />
+      <CustomAssetFiles Include="custom_assets\*.iwi" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)realesrgan_models" Condition="!Exists('$(OutDir)realesrgan_models')" />
+    <Copy SourceFiles="@(RealesrganModelFiles)" DestinationFolder="$(OutDir)realesrgan_models\" SkipUnchangedFiles="true" Condition="'@(RealesrganModelFiles)' != ''" />
+    <MakeDir Directories="$(OutDir)custom_assets" Condition="!Exists('$(OutDir)custom_assets')" />
+    <Copy SourceFiles="@(CustomAssetFiles)" DestinationFolder="$(OutDir)custom_assets\" SkipUnchangedFiles="true" Condition="'@(CustomAssetFiles)' != ''" />
+  </Target>
 </Project>

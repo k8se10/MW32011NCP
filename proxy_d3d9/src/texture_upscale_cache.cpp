@@ -74,6 +74,52 @@ namespace
     }
 }
 
+namespace
+{
+    // Shared "read a whole file into a malloc'd buffer" helper -- used by
+    // both TryLoadCachedUpscaledIwi and TryLoadCustomAsset below, which
+    // differ only in how they build the real path, not in how they read it.
+    uint8_t* ReadWholeFile(const char* path, uint32_t* outSize)
+    {
+        if (outSize) *outSize = 0;
+        FILE* f = nullptr;
+        if (fopen_s(&f, path, "rb") != 0 || !f) return nullptr; // real, expected
+            // miss case -- no file at this path yet, not an error worth logging
+
+        fseek(f, 0, SEEK_END);
+        long size = ftell(f);
+        if (size <= 0) {
+            fclose(f);
+            return nullptr;
+        }
+        fseek(f, 0, SEEK_SET);
+
+        uint8_t* buffer = static_cast<uint8_t*>(malloc(static_cast<size_t>(size)));
+        if (!buffer) {
+            fclose(f);
+            return nullptr;
+        }
+        size_t readBytes = fread(buffer, 1, static_cast<size_t>(size), f);
+        fclose(f);
+        if (readBytes != static_cast<size_t>(size)) {
+            // Real, worth-logging case -- the file exists but is truncated/
+            // corrupt. Treat identically to a miss for the caller (fall
+            // through to the real, original image), but log it once so a
+            // corrupt file doesn't silently and permanently shadow a real
+            // texture.
+            char buf[300];
+            sprintf_s(buf, "[texture-upscale-cache] WARNING: '%.256s' read %zu of %ld expected bytes -- "
+                "treating as a miss, falling back to the original image", path, readBytes, size);
+            LogFromController(buf);
+            free(buffer);
+            return nullptr;
+        }
+
+        if (outSize) *outSize = static_cast<uint32_t>(size);
+        return buffer;
+    }
+}
+
 uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, uint32_t* outSize)
 {
     if (outSize) *outSize = 0;
@@ -82,41 +128,7 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
     char path[MAX_PATH];
     if (!BuildCacheFilePath(imageName, scaleMultiplier, path, sizeof(path))) return nullptr;
 
-    FILE* f = nullptr;
-    if (fopen_s(&f, path, "rb") != 0 || !f) return nullptr; // real, expected miss case --
-        // no cache entry for this (name, scale) yet, not an error worth logging
-
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    if (size <= 0) {
-        fclose(f);
-        return nullptr;
-    }
-    fseek(f, 0, SEEK_SET);
-
-    uint8_t* buffer = static_cast<uint8_t*>(malloc(static_cast<size_t>(size)));
-    if (!buffer) {
-        fclose(f);
-        return nullptr;
-    }
-    size_t readBytes = fread(buffer, 1, static_cast<size_t>(size), f);
-    fclose(f);
-    if (readBytes != static_cast<size_t>(size)) {
-        // Real, worth-logging case -- a cache file exists but is truncated/
-        // corrupt (e.g. a previous write was interrupted). Treat identically
-        // to a miss for the caller (fall through to the real, original
-        // image), but log it once so a corrupt cache doesn't silently and
-        // permanently shadow a real texture.
-        char buf[300];
-        sprintf_s(buf, "[texture-upscale-cache] WARNING: cache file '%.256s' read %zu of %ld expected bytes -- "
-            "treating as a miss, falling back to the original image", path, readBytes, size);
-        LogFromController(buf);
-        free(buffer);
-        return nullptr;
-    }
-
-    if (outSize) *outSize = static_cast<uint32_t>(size);
-    return buffer;
+    return ReadWholeFile(path, outSize);
 }
 
 bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t* iwiData, uint32_t iwiSize)
@@ -163,6 +175,33 @@ bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t*
     }
 
     return true;
+}
+
+uint8_t* TryLoadCustomAsset(const char* imageName, uint32_t* outSize)
+{
+    if (outSize) *outSize = 0;
+    if (!imageName || imageName[0] == '\0') return nullptr;
+
+    char safeName[256];
+    SanitizeForFilename(imageName, safeName, sizeof(safeName));
+    if (safeName[0] == '\0') return nullptr;
+
+    // Real, bundled, shipped-with-the-mod asset directory -- distinct from
+    // texture_upscale_cache\ (that one holds runtime-generated upscale
+    // entries; this one holds fixed assets the mod itself ships, e.g. the
+    // custom main menu background). Deployed alongside d3d9.dll by
+    // proxy_d3d9.vcxproj's own build (mirrors the DXVK binary's existing
+    // DeployDxvk target) -- never created/written by this project's own
+    // runtime code, only ever read.
+    char exeDir[MAX_PATH];
+    GetModuleFileNameA(nullptr, exeDir, MAX_PATH);
+    char* lastSlash = strrchr(exeDir, '\\');
+    if (lastSlash) *(lastSlash + 1) = '\0';
+
+    char path[MAX_PATH];
+    sprintf_s(path, "%scustom_assets\\%s.iwi", exeDir, safeName);
+
+    return ReadWholeFile(path, outSize);
 }
 
 }

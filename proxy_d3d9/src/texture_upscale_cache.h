@@ -62,4 +62,22 @@ namespace TextureUpscaleCache
     // treat a failed store as non-fatal -- worst case, the same image gets
     // re-upscaled next time it's requested.
     bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t* iwiData, uint32_t iwiSize);
+
+    // ---- Custom bundled asset overrides (2026-09-28) -------------------------
+    // A genuinely separate concept from the upscale cache above, sharing only
+    // the same real substitution mechanism (Hook_ImageFileLoadX64/
+    // Hook_ReadBytesSubstitutionX64) -- these are real, fixed, BUNDLED assets
+    // shipped with the mod itself (e.g. the custom main menu background),
+    // never generated at runtime, never scale-keyed, never written by
+    // StoreUpscaledIwi. Kept as a distinct directory/function pair rather
+    // than overloading the upscale cache's own (name, scale) key space with
+    // a sentinel scale value, for real code clarity -- these are different
+    // things and should read as different things.
+
+    // Synchronous read, same "no new stall risk" reasoning as
+    // TryLoadCachedUpscaledIwi above -- a hit here replaces the exact same
+    // real synchronous read the game would otherwise do. Looks under
+    // <gameDir>\custom_assets\<sanitized name>.iwi. Returns a malloc'd
+    // buffer (caller must free()) on a hit, nullptr on a miss/failure.
+    uint8_t* TryLoadCustomAsset(const char* imageName, uint32_t* outSize);
 }

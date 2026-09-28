@@ -908,6 +908,21 @@ struct ModConfig
     // config value.
     int textureRenderRes = 1;
 
+    // [Video] CustomMainMenuBackground (2026-09-28) -- a real, bundled asset
+    // override shipped with the mod (proxy_d3d9/custom_assets/
+    // background_image.iwi, the real MW3 2011 NCP branded main menu
+    // background), substituted via the exact same texture-upscale-cache
+    // substitution mechanism (Hook_ImageFileLoadX64/
+    // Hook_ReadBytesSubstitutionX64) but through a distinct code path
+    // (TextureUpscaleCache::TryLoadCustomAsset, not the upscale cache --
+    // this is a fixed bundled asset, never runtime-generated). Direct
+    // instruction: "add a custom (optional) menu screen on by default" --
+    // ON by default (unlike every other pre-1.0 experimental feature in
+    // this project, which defaults off) since this is cosmetic branding,
+    // not a risk-bearing feature, and genuinely optional (a player can
+    // disable it to see the real native menu background instead).
+    bool customMainMenuBackground = true;
+
     // [Video] CustomResolutionWidth/CustomResolutionHeight -- REMOVED 2026-08-29,
     // not achieving its actual goal. Shipped 2026-08-28 (issue #102, community
     // request/GitHub issue #3) as an independent W/H override reusing

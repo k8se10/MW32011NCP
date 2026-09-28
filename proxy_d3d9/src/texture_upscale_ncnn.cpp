@@ -36,7 +36,20 @@ namespace
         ScopedSrwLock& operator=(const ScopedSrwLock&) = delete;
     };
 
-    ncnn::Net g_net;
+    // Real fix, 2026-09-28: a real live/standalone test crashed during
+    // process exit, AFTER all real inference work already completed and was
+    // verified correct -- a plain static ncnn::Net's own C++ destructor runs
+    // during normal static-object teardown, which can race against ncnn's
+    // own internal Vulkan global cleanup (also happening via its own static
+    // destructors) in an unpredictable order -- a known class of issue for
+    // programs mixing global C++ objects with Vulkan/GPU teardown, not a bug
+    // in this project's own code. Fixed by deliberately leaking it: a
+    // background-thread singleton that lives for the whole process/DLL
+    // lifetime doesn't NEED clean teardown at exit anyway (the OS reclaims
+    // GPU resources on process exit regardless), so never destructing it at
+    // all sidesteps the ordering race entirely rather than trying to control
+    // an ordering this project doesn't own (ncnn's own internal statics).
+    ncnn::Net* g_net = nullptr;
     bool g_modelLoaded = false;
 
     // Real blob names, read directly from the vendored realesrgan-x4plus.param
@@ -70,15 +83,18 @@ bool EnsureModelLoaded()
     sprintf_s(paramPath, "%srealesrgan_models\\realesrgan-x4plus.param", exeDir);
     sprintf_s(modelPath, "%srealesrgan_models\\realesrgan-x4plus.bin", exeDir);
 
-    g_net.opt.use_vulkan_compute = true;
+    g_net = new ncnn::Net(); // deliberately leaked, never delete'd -- see this
+        // file's own header comment above g_net's declaration for the real
+        // exit-crash reasoning this sidesteps.
+    g_net->opt.use_vulkan_compute = true;
 
-    if (g_net.load_param(paramPath) != 0) {
+    if (g_net->load_param(paramPath) != 0) {
         char buf[400];
         sprintf_s(buf, "[texture-upscale-ncnn] FAILED to load param file '%.300s'", paramPath);
         LogFromController(buf);
         return false;
     }
-    if (g_net.load_model(modelPath) != 0) {
+    if (g_net->load_model(modelPath) != 0) {
         char buf[400];
         sprintf_s(buf, "[texture-upscale-ncnn] FAILED to load model file '%.300s'", modelPath);
         LogFromController(buf);
@@ -111,7 +127,7 @@ uint8_t* UpscaleRGBA4x(const uint8_t* rgba, uint32_t width, uint32_t height, uin
     const float normVals[3] = { 1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f };
     in.substract_mean_normalize(nullptr, normVals);
 
-    ncnn::Extractor ex = g_net.create_extractor();
+    ncnn::Extractor ex = g_net->create_extractor();
     if (ex.input(kInputBlobName, in) != 0) {
         LogFromController("[texture-upscale-ncnn] FAILED: Extractor::input failed");
         return nullptr;

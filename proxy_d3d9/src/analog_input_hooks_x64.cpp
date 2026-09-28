@@ -12280,7 +12280,18 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     // the player hasn't turned this on.
     uint8_t* cacheBuffer = nullptr;
     uint32_t cacheSize = 0;
-    if (name && g_modConfig.textureRenderRes > 1) {
+
+    // Custom bundled asset override check (2026-09-28) -- takes priority
+    // over the upscale cache for the one specific name it targets (currently
+    // just "background_image", the real main menu background). A genuinely
+    // separate feature sharing the same substitution mechanism -- see
+    // TextureUpscaleCache::TryLoadCustomAsset's own header comment for why
+    // this is a distinct code path, not folded into the upscale cache.
+    if (name && g_modConfig.customMainMenuBackground && _stricmp(name, "background_image") == 0) {
+        cacheBuffer = TextureUpscaleCache::TryLoadCustomAsset(name, &cacheSize);
+    }
+
+    if (!cacheBuffer && name && g_modConfig.textureRenderRes > 1) {
         cacheBuffer = TextureUpscaleCache::TryLoadCachedUpscaledIwi(name, g_modConfig.textureRenderRes, &cacheSize);
     }
 
