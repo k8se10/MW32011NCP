@@ -169,7 +169,76 @@ upscale substitution has to happen at the `D3D9CommonTexture`/upload layer
 archives players' own game installs already have integrity-checked — ruling
 out any design that assumed disk-level asset replacement as a shortcut.
 
-## Blocker resolution, 2026-09-28: hook the engine's own asset-load layer, not DXVK's D3D9 layer
+## CORRECTION, 2026-09-28: the "clean GfxImage-name hook" proposed below does not safely exist — reuse this project's own already-built, already-proven correlation mechanism instead
+
+The design further below (hook a single native "GfxImage becomes a D3D9
+texture" function to get a name before `CreateTexture`) was proposed
+without first checking this project's own prior RE on exactly this
+question. It already exists, on x86, and already ran into the real reason
+that clean hook point doesn't exist: **`re_notes/iw5sp.md`'s "Runtime
+material/texture capture" section (2026-08-17)** traced the real per-image
+load path below a material's own name (`FUN_0047a2f0` → `FUN_005511c0` →
+`FUN_00585ae0`) and found it bottoms out in an `unaff_ESI` **implicit-
+register-passed** hash-bucket residency check — the same calling-convention
+hazard this project already treats as too risky to hook blind elsewhere in
+the codebase — and even then, it "does not obviously create a texture
+itself," reading more like an "is this image resident, mark it wanted if
+not" check, quite possibly feeding an **async streaming request**, not a
+synchronous `CreateTexture` call at all. That investigation explicitly
+decided **not** to chase this further, for good reason — this document's
+"locate the GfxImage realization function" plan would very likely
+rediscover the exact same dead end on x64.
+
+**The real, already-built, already-shipped (opt-in, `[Experimental]
+CaptureRuntimeMenuAssets`) answer instead: correlate by call stack/call-
+order, not by finding one perfect name-bearing hook.** `FindOrLoadAsset`
+(`FUN_004ff000` on x86, `__cdecl(int assetType, const char* name, int
+flag)`, a real generic "find or load an asset of type N by name"
+function used for every asset type by numeric ID — material is type `5`)
+is hooked; while a load of the relevant type is on the stack, its real
+`name` is pushed onto a small fixed-depth stack (`asset_capture.cpp`).
+Separately, `IDirect3DDevice9::CreateTexture` (vtable index 23) is hooked
+on the real device. Any texture created while a matching load is on the
+capture stack gets attributed to that name — a correlation, not a
+guarantee of a 1:1 single-hook mapping, but one this project's own "never
+associate a texture with a name it isn't confident about" discipline
+already applies correctly (no capture outside a confirmed matching
+`FindOrLoadAsset` call on the stack). **This mechanism is real, already
+implemented, and already deployed for material-name capture — it has
+NOT been ported to x64** (`analog_input_hooks_x64.cpp` has no
+`FindOrLoadAsset`/`Hook_FindOrLoadAsset` equivalent; `asset_capture.cpp`
+itself has no arch guards, so it likely already builds on x64, but its
+x86-only `FindOrLoadAsset` hook wiring in `analog_input_hooks.cpp` means
+it currently does nothing useful there).
+
+**What this changes for the texture-upscale cache key**: the granularity
+is MATERIAL name (assetType `5`), not a raw `GfxImage` name — a material
+can reference several distinct textures (diffuse/normal/specular/etc.), so
+the real, practical cache key is likely `materialName` + a stable index
+for which texture-creation-within-that-material-load this is (first,
+second, third `CreateTexture` call seen while that material's name is on
+the capture stack), not a clean single image identifier. This is workable
+(the same material load should request the same textures in the same
+order run to run) but is a real, small design cost compared to the
+"free, perfect identifier" the earlier framing assumed — worth being
+honest about rather than repeating the overclaim.
+
+**Real next step, correctly scoped now**: find `FindOrLoadAsset`'s x64
+twin (a real, bounded, already-precedented RE task — this project has
+already successfully found several x64 structural twins of x86 dispatch
+functions this way, e.g. the MP kbutton-dispatcher twin) and port
+`asset_capture.cpp`'s existing hook-and-correlate mechanism to x64,
+rather than hunting for a brand-new, cleaner hook point this project's
+own prior research already shows likely doesn't safely exist. Also worth
+checking, before assuming material-level granularity is the ceiling:
+whether a real numeric assetType value for images exists and is ever
+passed through `FindOrLoadAsset` independently of a material's own load
+(not confirmed either way this pass) — if images DO get their own
+`FindOrLoadAsset(imageType, name, flag)` calls, that would give a cleaner,
+image-level cache key for free, same mechanism, no material-index
+guessing needed. Not yet checked.
+
+## Blocker resolution, 2026-09-28: hook the engine's own asset-load layer, not DXVK's D3D9 layer (SUPERSEDED by the correction above — a specific GfxImage-realization hook is not confirmed safe to exist; the material-name/CreateTexture correlation approach above is the real plan)
 
 The chicken-and-egg problem above only exists because `D3D9CommonTexture`'s
 own `CreateTexture` call carries no identity — D3D9 itself has no named-
