@@ -872,3 +872,34 @@ Three real options, none chosen yet:
 writing any real integration code, since it changes both the build setup
 and (for option 1) a real, player-visible dependency change worth a
 direct decision rather than a quiet default.
+
+## Rebuilding ncnn from source with /MT (user's chosen option), in progress
+
+Direct decision, via `AskUserQuestion`: rebuild ncnn from source with the
+static CRT rather than switching the mod to `/MD` or shipping ncnn as a
+separate DLL — keeps `d3d9.dll` fully self-contained, no new player-visible
+dependency.
+
+Real, concrete steps taken: cloned `Tencent/ncnn` source at the same
+pinned tag (`20260526`) as the prebuilt SDK already vendored, initialized
+the real `glslang` submodule (Vulkan shader-compile dependency, not
+bundled in a shallow clone by default), then hit and fixed a genuine
+Windows path-length issue (MSBuild's FileTracker failing under the deeply
+nested scratchpad temp path — moved the source/build to a short path,
+`D:\ncnn_src`, not a project-tree location, purely a local build
+workspace). Confirmed via `NCNN_BUILD_WITH_STATIC_CRT` (ncnn's own real
+CMake option, default OFF, which is why the official prebuilt SDK uses
+`/MD`) and `NCNN_VULKAN=ON` in `CMakeCache.txt` after configuring with
+Visual Studio 18 2026's own generator. Real, useful side note: ncnn
+implements its own in-house Vulkan function loader rather than statically
+linking `vulkan-1.lib` — the explicit `Vulkan_LIBRARY`/`Vulkan_INCLUDE_DIR`
+hints passed to CMake were reported unused for exactly this reason, not
+an error; likely means the eventual mod integration won't need to link
+`vulkan-1.lib` directly either, since ncnn loads it dynamically itself at
+runtime the same way DXVK's own Vulkan loader does.
+
+Release x64 build kicked off; not yet complete as of this entry. Once
+done: re-run the standalone smoke test against this newly-built,
+`/MT`-matching `ncnn.lib` to confirm it still detects both real GPUs
+correctly (same test program already proven against the prebuilt `/MD`
+build), then vendor this `/MT` build in place of the prebuilt one.
