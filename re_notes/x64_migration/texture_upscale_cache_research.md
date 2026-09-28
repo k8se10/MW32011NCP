@@ -1101,3 +1101,27 @@ upscale pipeline (decode source mips → Real-ESRGAN inference → re-encode
 DXT mips → `EncodeIwi8` → `StoreUpscaledIwi`) and the two substitution
 hooks (`Hook_ImageFileLoadX64`'s real cache-check call, the new hook on
 `FUN_1402b5ec0`).
+
+## Substitution hooks wired end to end; a real, live-testable synthetic test entry is staged
+
+`Hook_ImageFileLoadX64` now does a real cache check (`TextureUpscaleCache::
+TryLoadCachedUpscaledIwi`) and arms a `thread_local` substitution buffer;
+the new `Hook_ReadBytesSubstitutionX64` (`FUN_1402b5ec0`) serves bytes from
+it. Both hooks build-verified and deployed. `g_modConfig.textureRenderRes
+> 1` gates the whole mechanism, so this is completely inert at the
+default `1x`.
+
+**Staged a real, live-testable synthetic entry** (a one-off tool, not part
+of the shipped mod, `make_test_cache_entry.cpp`): a deliberately obvious
+32x32 solid bright magenta, uncompressed RGBA, single-mip test texture,
+stored via the real `StoreUpscaledIwi` path as
+`texture_upscale_cache\3_cursor3_4x.iwi` — targeting `"3_cursor3"`, a
+real, confirmed-live, highly visible UI element (the custom cursor, hit
+#1 in the earlier full-session `FUN_1401bae80` diagnostic). Set
+`TextureRenderRes=4x` live in `mw3ncp_config.ini`. This deliberately
+tests the PLUMBING, not upscale quality/correctness — no ncnn involved at
+all yet — if the substitution hooks work correctly, the mouse cursor
+should render as a solid magenta square instead of its real art the next
+time the game runs. **Not yet live-tested** — needs the user to launch
+and confirm (or report a crash/wrong behavior, either a real, valuable
+result at this stage).
