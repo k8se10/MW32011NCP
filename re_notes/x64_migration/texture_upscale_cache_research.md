@@ -774,3 +774,23 @@ operation using the game's own existing override support, no hook-level
 byte substitution needed at all). That specific question is NOT yet
 answered and is the real, valuable thing to resolve next, rather than
 mapping every branch of `FUN_1402b42c0` itself.
+
+### Both halves done, 2026-09-28 — static confirmed, empirical hook deployed
+
+**Static half, done**: decompiled `FUN_1403ac410` (reached from
+`FUN_1402b42c0`'s mod-folder-prefixed branch) and confirmed it's a
+genuine CRT `fopen`+`fread` wrapper — real `_LocaleUpdate` construction,
+real errno-style checks against `0xfde9`. This is real, standard disk
+file I/O, not zone-archive-only access. Separately confirmed the classic
+CoD `fs_game` mod-folder dvar string exists in the binary
+(`grep`-equivalent byte search, 1 match) — converging evidence this
+engine supports the standard mod-folder override convention.
+
+**Empirical half, deployed**: `Hook_LooseFileOpenX64`/
+`InstallLooseFileOpenDiagHookX64` (`analog_input_hooks_x64.cpp`) hooks
+`FUN_1403ac410` directly, logging the real resolved path string it's
+asked to open for every real image load. Signature independently
+verified unique against the offline binary. Build-verified (x64 Release,
+0 errors), deployed. **Not yet live-tested** — needs a real session so
+the log can show the actual resolved paths, which will reveal whether
+(and how) a loose file could override zone content for this feature.
