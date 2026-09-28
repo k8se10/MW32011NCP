@@ -794,3 +794,26 @@ verified unique against the offline binary. Build-verified (x64 Release,
 0 errors), deployed. **Not yet live-tested** — needs a real session so
 the log can show the actual resolved paths, which will reveal whether
 (and how) a loose file could override zone content for this feature.
+
+### Empirical result, 2026-09-28 — DECISIVE NEGATIVE: the loose-file override does NOT fire under default conditions
+
+Checked `proxy_d3d9.log`: `[x64-loosefileopen-diag]` logged ONLY its own
+"installed" line — `FUN_1403ac410` never fired even once, despite the
+same session logging 4481 real hits on `FUN_1401bae80`
+(`[x64-imagefileload-diag]`), confirming this isn't a broken hook (the
+signature resolved and installed fine; it simply never got called).
+**Real conclusion: the mod-folder/loose-file CRT `fopen` path inside
+`FUN_1402b42c0` is never reached under default play** — almost certainly
+because `fs_game` is empty (the default, no mod folder active), so
+`FUN_1402b42c0`'s own mod-folder-prefixed branch never even attempts a
+path/open in this configuration. **This closes the "maybe substitution
+is free, just drop a file" hope from earlier this session — it is NOT
+free under normal conditions.** Setting `fs_game` ourselves to force this
+path is not a good option either (changes other real engine behavior
+tied to that dvar, a much bigger and riskier lever than intended). **Real
+design conclusion**: the texture-upscale-cache feature needs an ACTIVE
+hook-based substitution after all — most likely at `FUN_1401bae80`
+itself (already hooked, already confirmed to own `param_1` and see the
+real name before the zone-archive read happens), not a passive
+file-drop. This is now the settled design; no more time should be spent
+chasing the loose-file-override shortcut for this feature.
