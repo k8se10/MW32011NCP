@@ -72,6 +72,12 @@ proxy_d3d9/third_party/streamline/lib/
 proxy_d3d9/third_party/ncnn/lib/
 proxy_d3d9/third_party/ncnn/bin/
 
+# 2026-09-28: real, official Real-ESRGAN ncnn model files (realesrgan-x4plus
+# .bin/.param, ~33MB) -- same size-driven gitignore treatment, BSD-3-Clause
+# licensed (verified), fetched via fetch_models.bat.
+proxy_d3d9/third_party/realesrgan_models/*.bin
+proxy_d3d9/third_party/realesrgan_models/*.param
+
 # Never commit a copy of any Microsoft system DLL, even accidentally staged for testing.
 d3d9_orig.dll
 
