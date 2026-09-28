@@ -661,16 +661,54 @@ extracted by static zone-dump analysis alone — directly observed here,
 not just theorized. **This single hook is now the confirmed, real,
 production hook point for the entire texture-upscale-cache feature** —
 the earlier two-phase design (menus now, gameplay later) is obsolete;
-both ship together, off the same mechanism. **Real next steps, updated**:
-(1) design the actual substitution mechanism on `FUN_1401bae80` — decode
-the loaded `.iwi` image, check the upscale cache by real name, and if
-present, get the upscaled pixel data into the eventual `CreateTexture`
-call at the right (larger) dimensions, working within the same
-architectural constraint already established (the real chicken-and-egg
-problem — the destination `DxvkImage`/D3D9 texture size still has to be
-decided before or during this call, not after; the `FindOrLoadAsset`-era
-finding about this remains valid and applies here too, just at a
-different, earlier, more universal hook point), (2) prototype ncnn-vulkan
+both ship together, off the same mechanism.
+
+**Scale factor, locked 2026-09-28: a percentage/multiplier of each
+texture's OWN original resolution, not a fixed absolute target.** Direct
+instruction ("lets do it on a percentage or multiplier of the original
+res") — matches this project's own already-established
+`InternalRenderScalePercent` convention exactly (a relative scale, not a
+hardcoded resolution), and is the only sane design here anyway given
+`GfxImage` assets span everything from 1x1 utility textures to large
+world diffuse maps — a single fixed target resolution would be wrong for
+the vast majority of them. **Real config key, direct instruction: `[Video] TextureRenderRes`, a
+multiplier-string value (e.g. `4x`)** — not a plain percentage integer
+like `InternalRenderScalePercent` uses; a distinct, purpose-fit format
+for this feature specifically. Applied uniformly per-texture at
+cache-build time (every cached texture gets upscaled by this same
+multiplier relative to its own original size, not a fixed absolute
+target).
+
+**Real architectural simplification, found while designing the
+substitution mechanism**: the earlier "chicken-and-egg" problem (the
+destination texture's size has to be decided before its content is known)
+assumed substitution had to happen at or after the D3D9/DXVK
+`CreateTexture` call. **`FUN_1401bae80` runs BEFORE any D3D9 texture
+exists at all** — it's the raw file loader, not the GPU-resource creator.
+This means the real, clean substitution point is the FILE-READ level, not
+the texture-creation level: intercept the raw bytes this function reads
+(or the path it constructs, `"images/<name>"`) and, on a cache hit,
+supply an upscaled `.iwi`-FORMATTED replacement (same real file format,
+larger real dimensions baked into ITS OWN header) instead of the
+original file. `FUN_1401bae80`'s own existing, already-correct decode/
+validate/mip-extract logic then handles everything downstream exactly as
+it already does for any real, larger IWI file — no reimplementation of
+IWI parsing, no DXVK-side image-resize logic, no separate "tell
+`CreateTexture` a bigger size" mechanism needed at all, since whatever
+calls `CreateTexture` further downstream will naturally request the
+larger size because THIS function reported it from the substituted
+file's own real header. **This is a real, load-bearing design win** — it
+was worth re-deriving now that the confirmed hook point sits upstream of
+D3D9 entirely, rather than assuming the old constraint (found against a
+downstream DXVK-layer hook) still applies unchanged. **Not yet fully
+specified**: `FUN_1401bae80`'s exact file-read mechanism (what `param_2`,
+the callback passed to it, actually reads from — presumably the real
+`.iwd`/`.ff` archive path, not a loose disk file) needs its own RE pass
+before a real substitution can be implemented; the local `img
+width/height` field layout (`local_58[...]`) referenced in the existing
+decompile also needs precise mapping. **Real next steps, updated**: (1)
+RE `FUN_1401bae80`'s own file-read callback and header-field layout
+precisely enough to design the real substitution, (2) prototype ncnn-vulkan
 completely standalone (a small test harness, not wired into the mod) to
 confirm it runs against this machine's real GPU via Vulkan, (3) design the
 background-thread queue and cache file format, (4) only then write the
