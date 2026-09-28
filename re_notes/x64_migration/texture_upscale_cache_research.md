@@ -574,10 +574,51 @@ level loading may never cross — resolved to module-relative offsets
 against the real game module for direct Ghidra lookup once dumped.
 Build-verified (x64 Release, 0 errors), deployed; **not yet live-tested**
 — needs a fresh in-level session so the buffer actually fills and dumps.
-Once real caller addresses come back, decompile them (via the confirmed-
-working `-process`-opened full-analysis project) to find the real bulk
-zone-load registration function for level `GfxImage` content — the
-actual Phase 2 target. Original first-draft note, kept for the
+**LIVE-TESTED SAME DAY — major breakthrough, likely resolves Phase 2
+entirely.** The user played a real in-level session; the diagnostic
+fired, all 40 calls captured. Real, decisive finding: **the exact same
+6-frame call chain (`0x1401BA17B → 0x1401BAB85 → 0x1401BADEC`/`0x1401BAE04
+→ 0x1401BAFF0 → 0x1401B949D → 0x14009251B`) is shared by BOTH the tiny
+built-in-default-shaped textures (64x64, 16x16, 1x1) AND real, clearly
+non-default level content (256x256, 1024x256, 512x256, all real DXT1/
+DXT3/DXT5 FourCCs)** — proving this chain is a universal choke point
+every image passes through, regardless of whether it arrived via
+`FindOrLoadAsset` or a separate bulk zone-load path. Decompiling the
+shared frames found the real answer: **`FUN_1401bae80`** (frame[3],
+`0x1401BAFF0` falls inside its body) is a genuine, generic, per-image
+FILE LOADER — not decode/upload plumbing:
+```c
+iVar2 = FUN_1402ca430(local_48, 0x40, "%s%s%s", "images/",
+                       *(undefined8 *)(param_1 + 0x20), &DAT_1404138e4);
+if ((iVar2 < 0) || (lVar3 = (*param_2)(local_48, &local_res8), lVar3 < 0))
+    return 0;
+// ... validates the real "IWi" + version-8 magic header on the loaded file
+if (local_68!='I' || local_67!='W' || local_66!='i' || local_65!='\b') { ... }
+```
+This builds the real `"images/<name>"` file path from a name pointer at
+a FIXED struct offset (`param_1 + 0x20`) and opens/reads the real `.iwi`
+container file from disk, validating its actual magic header before
+decoding. **This is a stronger, more universal hook point than
+`FindOrLoadAsset` for this feature**: it fires for every real image file
+load regardless of caller (default registration, `FindOrLoadAsset`-driven
+lookup, or whatever bulk zone-load path feeds level content into this
+same chain), and gives BOTH the real name (at a known, fixed offset) AND
+direct access to the raw file/decode pipeline in one place — closer to
+"the" real answer than any prior candidate in this document. **Not yet
+confirmed which of frames 0-2 (`0x1401BA17B`/`FUN_1401ba0c0`,
+`0x1401BAB85`/`FUN_1401bab10`, `0x1401BADEC`) is the actual entry point
+worth hooking vs. `FUN_1401bae80` itself** — `FUN_1401ba0c0` turned out to
+be DXT-format-specific mip-decode dispatch (calls different sub-decoders
+per compression type), not name-bearing; `FUN_1401bae80` is the real
+name+file-load function and the strongest current hook candidate. **Real
+next steps**: (1) confirm `param_1 + 0x20`'s real type/lifetime (is it
+safe to read at the hook's own entry, does it outlive the call, is it
+always non-null), (2) build a live diagnostic hook on `FUN_1401bae80`
+logging that name for every real hit — same "verify before building
+further" discipline as the `FindOrLoadAsset` hook got — (3) once
+confirmed, this single hook may cover BOTH phase 1 (menus) and phase 2
+(gameplay textures) at once, since it's upstream of the phase split
+`FindOrLoadAsset` forced. Original first-draft note, kept for the
 record rather than deleted: only built-in defaults were captured this
 session — no real named
 level content (e.g. `images/some_prop_diffuse`) came through yet, most
