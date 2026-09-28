@@ -238,6 +238,53 @@ passed through `FindOrLoadAsset` independently of a material's own load
 image-level cache key for free, same mechanism, no material-index
 guessing needed. Not yet checked.
 
+### First real hunt round, 2026-09-28 — real tooling bug found and fixed, target not yet located
+
+Traced x64's confirmed `SetMenuState` (`FUN_14029f3f0`) and its confirmed
+`OpenMenuByName` twin (`FUN_1402ad950`, per `known_issues_x64.md`) as the
+most promising existing lead, since x86's own trace showed
+`FindOrLoadAsset(0x1a /*menu*/, name, 1)` runs unconditionally just before
+this exact step for every menu open. Fully decompiled `FUN_14029f3f0`
+(confirms all ten `SetMenuState` cases call `FUN_1402ad950(ctx, name)`
+directly, matching the known_issues_x64.md summary exactly) and
+`FUN_1402ad950` itself, which turned out to only call two functions:
+`FUN_1402acef0` (a linear array scan matching x86's own `FUN_00486990`
+"already registered?" check, NOT `FindOrLoadAsset`) and `FUN_1402ad560`
+(real menu-stack push/activate logic, notify chains, screen-focus
+management — also not `FindOrLoadAsset`). **Neither call visibly
+interns/loads anything from a name-keyed asset pool** — `SetMenuState`'s
+real x64 chain, as currently mapped, does not show the
+`FindOrLoadAsset`-equivalent step x86 always takes first. Two real
+possibilities, not yet distinguished: (a) x64 restructured menu-asset
+loading to happen in bulk earlier (e.g. at zone/level load), so by the
+time this runtime open-path runs the menu is already guaranteed resident
+and there's genuinely no per-open intern call left to find here, or (b)
+the call exists but lives inside `FUN_1402acef0` itself in a form not yet
+traced carefully enough, or is reached through a path this pass didn't
+follow.
+
+**Real, durable side-result: found and fixed a genuine bug in this
+project's own `re_notes/ghidra_scripts/FindDirectCallers.java`** — its
+computed call target was masked to 32 bits (`& 0xFFFFFFFFL`), which
+silently zeroed out the real x64 image base (`0x140000000`+) and made
+every x64 target comparison fail with zero matches and no error, even for
+a call independently confirmed to exist by decompiling the caller
+directly (`SetMenuState` visibly calls `FUN_1402ad950` 28 times; the
+buggy script reported 0 before the fix, 28 after). Harmless for x86 (a
+32-bit address masked to 32 bits is a no-op) but a real, previously-
+unnoticed silent-failure trap for any x64 caller-hunt using this script —
+fixed in place, benefits every future RE session using this tool, not
+just this investigation.
+
+**Status: genuinely still open, not a dead end yet, paused here rather
+than dug further this pass.** No `FindOrLoadAsset` x64 twin located.
+Real next angle for whoever picks this up: check the material path
+instead of the menu path (materials are the actually-relevant asset type
+for this feature anyway, per the "cache key" section above) — trace a
+known x64 material-loading entry point the same way, or check possibility
+(a) above directly by searching for a bulk/startup-time asset-registration
+pass on x64 that x86 doesn't have.
+
 ## Blocker resolution, 2026-09-28: hook the engine's own asset-load layer, not DXVK's D3D9 layer (SUPERSEDED by the correction above — a specific GfxImage-realization hook is not confirmed safe to exist; the material-name/CreateTexture correlation approach above is the real plan)
 
 The chicken-and-egg problem above only exists because `D3D9CommonTexture`'s

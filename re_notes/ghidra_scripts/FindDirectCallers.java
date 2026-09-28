@@ -45,7 +45,13 @@ public class FindDirectCallers extends GhidraScript {
                         if ((rel & 0x80000000L) != 0) rel |= 0xFFFFFFFF00000000L;
                         long insnAddr = blockStart + i;
                         long nextInsnAddr = insnAddr + 5;
-                        long callTarget = (nextInsnAddr + rel) & 0xFFFFFFFFL;
+                        // Bug fixed 2026-09-28: this used to mask to 32 bits here,
+                        // which silently zeroed a real x64 image base (0x140000000+)
+                        // and made every x64 comparison fail -- 0 matches even for a
+                        // call confirmed to exist by decompiling the caller directly.
+                        // Fine for x86 (masking a 32-bit address to 32 bits is a
+                        // no-op); broke silently, with no error, for x64.
+                        long callTarget = nextInsnAddr + rel;
                         if (callTarget != target) continue;
                         Address hitAddr = block.getStart().add(i);
                         Function f = fm.getFunctionContaining(hitAddr);
