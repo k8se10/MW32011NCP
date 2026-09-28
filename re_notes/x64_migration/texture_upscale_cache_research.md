@@ -744,3 +744,33 @@ actual hook + substitution code. The `FindOrLoadAsset` hook
 (`Hook_FindOrLoadAssetX64`) stays in the tree as a real, working,
 independently-useful diagnostic/correlation tool, just no longer the
 feature's own primary/only hook point.
+
+### File-read callback traced — genuinely deeper than expected, paused here
+
+`FUN_1401bae80`'s own two real callers (`FUN_1401bae70`/`FUN_1401bb260`,
+both trivial one-line wrappers) supply two different concrete callbacks:
+`FUN_1402b4240` (tries the path as given, and on failure resolves a
+second candidate path via `FUN_1402edc90` — a real, generic
+search-path/prefix-resolution helper — and retries) and `FUN_1402b4180`
+(sets a global flag then calls straight through). **Both ultimately call
+the same real function, `FUN_1402b42c0`** — which turned out to be a
+genuine, non-trivial VIRTUAL FILE SYSTEM layer, not a simple file-open:
+it hashes the requested path, walks a real linked-list hash table
+(`DAT_1426563e0`) of already-loaded zones' own asset entries doing a
+case-insensitive path comparison, and only falls through to (presumably)
+real disk I/O deeper in the function if no zone already owns that path —
+this is a real "check if a zone already has this asset resident before
+touching disk" mechanism, considerably more involved than anticipated.
+**Paused the deep-dive here rather than fully mapping this VFS layer in
+one pass** — real, additional, non-trivial RE scope; a natural
+checkpoint to confirm direction with the user before spending several
+more rounds on general file-system internals that go beyond what the
+substitution design strictly needs. **What's still needed, concretely,
+once resumed**: not necessarily the full VFS mechanism — just confirming
+whether a loose, correctly-named `.iwi` file placed in the right search
+path is picked up by this existing mechanism ahead of the zone's own
+copy (which would mean the substitution could be a simple "drop a file"
+operation using the game's own existing override support, no hook-level
+byte substitution needed at all). That specific question is NOT yet
+answered and is the real, valuable thing to resolve next, rather than
+mapping every branch of `FUN_1402b42c0` itself.
