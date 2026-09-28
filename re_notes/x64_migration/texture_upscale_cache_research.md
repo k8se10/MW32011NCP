@@ -1125,3 +1125,23 @@ should render as a solid magenta square instead of its real art the next
 time the game runs. **Not yet live-tested** — needs the user to launch
 and confirm (or report a crash/wrong behavior, either a real, valuable
 result at this stage).
+
+## Test target corrected, test pattern upgraded to a classic checkerboard
+
+Two direct corrections in a row, both applied: (1) `"3_cursor3"` was a bad
+test target -- this project's own already-shipped cursor-suppression work
+(2026-09-16) already replaces the native cursor draw with the mod's own
+overlay cursor, so that texture never actually renders anymore regardless
+of substitution. Retargeted to `"background_image"` (the real main menu
+background, confirmed live in the earlier full-session diagnostic, nothing
+else in this codebase overlays or suppresses it, visible within seconds of
+launch). (2) The synthetic test payload itself upgraded from a solid
+magenta fill to a classic magenta/black checkerboard (4x4-pixel checker
+squares, the well-known "missing texture" pattern) -- more recognizable as
+a deliberate test than a solid color, which could be mistaken for an
+unrelated render glitch.
+
+Staged: `texture_upscale_cache\background_image_4x.iwi` (32x32 RGBA
+checkerboard), `TextureRenderRes=4x` set live. Ready for a real live test
+-- the main menu background should render as a magenta/black checkerboard
+if the substitution hooks work correctly.
