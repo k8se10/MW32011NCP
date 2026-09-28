@@ -991,3 +991,51 @@ layout just mapped, computing new per-mip sizes for the upscaled
 resolution) and the substitution point (intercepting the raw bytes
 `FUN_1401bae80` reads via `local_res8`/the read callback, before its own
 header-validate/decode logic runs).
+
+## FINAL substitution architecture — clean, two-hook design, no VFS spoofing needed
+
+Resolved the last open question: `local_res8` (the "handle" the read
+callback returns) is a real INTEGER INDEX into a global file-handle table
+(`DAT_1426563f0`/`DAT_142656418`, 0x138-byte stride — the SAME table
+`FUN_1402b42c0`'s own zone-lookup path indexes), not a raw memory pointer.
+`FUN_1402b5ec0(dest, size, handleIndex)` is the shared low-level "read N
+bytes via this handle" primitive both the 32-byte header read and the
+mip-data read (inside `FUN_1401bae80`) call — it dispatches per-handle to
+either a real streaming read (`FUN_14023f680`) or a different, likely
+in-memory-backed path (`FUN_1403157c0`), selected by a flag in the handle
+record. **Real, deliberate design decision: don't try to understand or
+spoof this handle-table's internal record layout at all.** Instead:
+
+1. **`Hook_ImageFileLoadX64`** (already built, currently diagnostic-only)
+   gains real logic: on entry, check the real image name (`param_1+0x20`)
+   against the upscale cache. On a hit, arm a small, scoped "active
+   substitution" state (a pointer+length into the cached, real,
+   correctly-formatted `.iwi` blob, plus a read cursor) before calling
+   through to the unmodified real `FUN_1401bae80`. Cleared again once
+   that call returns.
+2. **A new hook on `FUN_1402b5ec0`** (the shared byte-read primitive):
+   when the "active substitution" state is armed, ignore the real handle
+   entirely and `memcpy` from the cached buffer at the current cursor
+   instead, advancing it and returning the real byte count (matching the
+   real function's own return convention) — otherwise call straight
+   through, unmodified, exactly as today.
+
+This reuses `FUN_1401bae80`'s own already-correct, already-live-verified
+decode/header-validate/mip-dispatch logic completely unmodified — the
+cached `.iwi` blob just needs to be a real, valid, correctly-formatted
+file matching the byte layout mapped above (magic, flags, real upscaled
+width/height/depth at `0xA`/`0xC`/`0xE`, correctly recomputed per-mip
+sizes at `0x10-0x1F`, followed by the real encoded mip data). No
+DXVK/D3D9-layer resize logic, no manual `param_1` field writes, no
+understanding of the real VFS/handle-table internals needed at all — the
+same "hook a shared low-level primitive, gate behavior via outer-scope
+state" pattern this project already uses successfully elsewhere (e.g.
+`asset_capture.cpp`'s own material-name capture-stack correlation).
+
+**This is now a complete, concrete, implementable design** — every open
+architectural question from this entire research effort is resolved.
+Real remaining work is pure implementation: (1) the cache file format on
+disk (keyed by the real image name, storing a ready-to-substitute `.iwi`
+blob), (2) the actual ncnn-based upscale-and-encode pipeline that
+produces those cached blobs (background thread, first-use-miss handling),
+(3) the two hooks described above, wired together.
