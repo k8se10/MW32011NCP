@@ -890,6 +890,15 @@ void WriteDefaultConfig(const char* path)
         "; features in this project, since the one thing it enables out of the box\n"
         "; is cosmetic branding, not a risk-bearing feature.\n"
         "CustomAssetOverrides=%d\n"
+        "; BulkTexturePrecache (2026-09-28) -- real, opt-out escape hatch for the\n"
+        "; first-run bulk pre-cache pass: extracts every real image asset directly\n"
+        "; from the game's own zone\\*.ff files (a real, shipped copy of Unlinker,\n"
+        "; image-only mode) and upscales all of them, rather than waiting for each\n"
+        "; one to be organically re-visited during play. A genuinely heavy, one-time\n"
+        "; background operation (real GPU inference per texture) -- ON by default\n"
+        "; whenever TextureRenderRes > 1, but disable this specifically if you only\n"
+        "; want the lighter, on-demand runtime capture path.\n"
+        "BulkTexturePrecache=%d\n"
         "; --- Recommended companion settings for everything below (FSR/motion blur/\n"
         "; render-scale) -- confirmed live 2026-08-27, known_issues.md issue #99: this\n"
         "; engine's own camera-look pacing gets visibly worse under vsync (a real,\n"
@@ -1343,6 +1352,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.internalRenderScalePercent,
         textureRenderResBuf,
         g_modConfig.customAssetOverridesEnabled ? 1 : 0,
+        g_modConfig.bulkTexturePrecacheEnabled ? 1 : 0,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
         g_modConfig.smaaEnabled ? 1 : 0,
@@ -1744,6 +1754,7 @@ void LoadModConfig()
     }
     ReadTextureRenderRes(path, g_modConfig.textureRenderRes);
     ReadBool(path, "Video", "CustomAssetOverrides", g_modConfig.customAssetOverridesEnabled);
+    ReadBool(path, "Video", "BulkTexturePrecache", g_modConfig.bulkTexturePrecacheEnabled);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
@@ -1817,7 +1828,7 @@ void LoadModConfig()
         "adsSlowdownBaseline=%g adsCloseRangeSlowdownStrength=%g invertLook=%d lookAccelRampMs=%lu proneHoldMs=%lu interactHoldMs=%lu "
         "readyUpHoldMs=%lu "
         "buttonLayout=%s stickLayout=%s flipTriggers=%d glyphStyle=%s glyphStyleAuto=%d "
-        "useCustomOptionsScreen=%d internalRenderScalePercent=%d textureRenderRes=%dx customAssetOverridesEnabled=%d pluginsEnabled=%d "
+        "useCustomOptionsScreen=%d internalRenderScalePercent=%d textureRenderRes=%dx customAssetOverridesEnabled=%d bulkTexturePrecacheEnabled=%d pluginsEnabled=%d "
         "vibrationEnabled=%d vibrationFireIntensity=%g vibrationFireDurationMs=%lu "
         "vibrationDamagePerPoint=%g vibrationDamageMaxIntensity=%g vibrationDamageDurationMs=%lu "
         "overlayFontFamily=%s overlayFontFamilyCondensed=%s overlayFontItalic=%d overlayTestCycleAllVariants=%d "
@@ -1845,6 +1856,7 @@ void LoadModConfig()
         g_modConfig.internalRenderScalePercent,
         g_modConfig.textureRenderRes,
         g_modConfig.customAssetOverridesEnabled ? 1 : 0,
+        g_modConfig.bulkTexturePrecacheEnabled ? 1 : 0,
         g_modConfig.pluginsEnabled ? 1 : 0,
         g_modConfig.vibrationEnabled ? 1 : 0, g_modConfig.vibrationFireIntensity,
         g_modConfig.vibrationFireDurationMs, g_modConfig.vibrationDamagePerPoint,

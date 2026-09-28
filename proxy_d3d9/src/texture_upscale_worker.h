@@ -48,4 +48,29 @@ namespace TextureUpscaleWorker
     // call repeatedly (idempotent) -- QueueUpscaleJob calls this internally,
     // so callers don't need to call it directly in the ordinary case.
     void EnsureWorkerStarted();
+
+    // Real IWI-v8-header-parse + base-mip-extraction + QueueUpscaleJob, all
+    // in one call -- shared logic between the live capture path
+    // (Hook_ImageFileLoadX64's own parse-on-miss step) and the bulk
+    // pre-cache orchestrator (texture_precache_orchestrator.cpp), which both
+    // need to turn "a complete, real, on-disk-or-captured IWI file's raw
+    // bytes" into a queued job (2026-09-28, factored out to avoid the same
+    // header-parse logic drifting between two copies). `iwiFileBytes` is the
+    // COMPLETE file (header + every mip, smallest-first) -- this function
+    // reads the header, validates the format is DXT1/3/5, and extracts the
+    // base (largest) mip using the same "always the trailing
+    // CompressedSize(w,h,format) bytes" trick Hook_ImageFileLoadX64's own
+    // capture path already relies on. Returns false (no-op, no log) on any
+    // real, expected miss (bad magic, unsupported format, truncated file) --
+    // a bulk pass walking real dumped files will hit plenty of these
+    // (raw-bitmap icons, etc.), not worth logging each one individually.
+    bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier);
+
+    // Real, exported check for whether `name` is already queued or
+    // mid-processing this session (2026-09-28) -- lets a high-volume caller
+    // (the bulk pre-cache orchestrator) skip a texture outright instead of
+    // retrying a doomed QueueUpscaleJob call against a name that's already
+    // in flight for an unrelated, unretryable reason (as opposed to a
+    // "queue temporarily full" failure, which IS worth a bounded retry).
+    bool IsNameInFlight(const char* name);
 }

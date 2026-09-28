@@ -45,6 +45,9 @@ void InstallReadBytesSubstitutionHookX64(); // defined in analog_input_hooks_x64
     // 2026-09-28, the second of the texture-upscale-cache feature's two real
     // substitution hooks (FUN_1402b5ec0). SP-only; pass-through unless a
     // substitution is actively armed by Hook_ImageFileLoadX64.
+namespace TexturePrecacheOrchestrator { void EnsurePrecacheStarted(); } // defined in
+    // texture_precache_orchestrator.cpp, 2026-09-28 -- real, opt-out, only starts a
+    // background thread when TextureRenderRes>1 and the on-disk marker is stale/missing.
 #if defined(_M_X64) || defined(_WIN64)
 void InstallRenderScaleHookX64(); // defined in analog_input_hooks_x64.cpp -- 2026-09-23,
     // split out of InstallAnalogInputHooksX64() specifically so it can be called under
@@ -952,6 +955,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallReadBytesSubstitutionHookX64(); // 2026-09-28, the real substitution
                 // mechanism's second hook -- see Hook_ImageFileLoadX64/
                 // Hook_ReadBytesSubstitutionX64's own comments (analog_input_hooks_x64.cpp).
+            TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
+                // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
+                // own header comment. Starts a background thread only when the on-disk
+                // marker is stale/missing; a no-op on every other launch.
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif

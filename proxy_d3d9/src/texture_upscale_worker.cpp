@@ -35,11 +35,18 @@ namespace
     // I/O -- to a dedicated background thread). CRITICAL_SECTION, not
     // std::mutex, matching this project's own established non-STL
     // shipped-code convention.
-    constexpr int kMaxPendingJobs = 16; // deliberately small -- each job is
+    constexpr int kMaxPendingJobs = 48; // deliberately bounded -- each job is
         // real, slow (seconds, not milliseconds) GPU inference work, so a
-        // deep queue would just mean a long, stale backlog, not real
-        // throughput; 16 is generous headroom over how many DISTINCT new
-        // textures a single menu/level visit realistically introduces at
+        // very deep queue would just mean a long, stale backlog, not real
+        // throughput. Widened from an original 16 (2026-09-28) once the bulk
+        // pre-cache orchestrator became a second, much higher-volume
+        // producer than organic per-load capture alone -- 48 is a real
+        // memory/throughput tradeoff (worst case ~20MB/job for a large
+        // captured source texture means up to ~1GB queued at once), paired
+        // with the orchestrator's own bounded retry-with-backoff rather than
+        // growing the queue without limit. 16 remains generous headroom over
+        // how many DISTINCT new textures a single menu/level visit
+        // realistically introduces at
         // once.
     PendingJob g_pendingJobs[kMaxPendingJobs];
     int g_pendingHead = 0, g_pendingTail = 0, g_pendingCount = 0;
@@ -324,6 +331,52 @@ void EnsureWorkerStarted()
     g_workerThreadHandle = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
 }
 
+bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier)
+{
+    // Real IWI-v8 header layout, per texture_upscale_iwi_writer.h's own
+    // documented, disassembly-verified layout -- same parse this project's
+    // own live capture path (Hook_ImageFileLoadX64) already performs;
+    // factored here so both callers share one implementation.
+    constexpr uint32_t kIwiHeaderSize = 0x20;
+    if (!name || !iwiFileBytes || iwiFileSize <= kIwiHeaderSize) return false;
+    if (iwiFileBytes[0] != 'I' || iwiFileBytes[1] != 'W' || iwiFileBytes[2] != 'i' || iwiFileBytes[3] != 8) return false;
+
+    int8_t rawFormat = static_cast<int8_t>(iwiFileBytes[0x08]);
+    uint16_t iwiWidth = *reinterpret_cast<const uint16_t*>(iwiFileBytes + 0x0A);
+    uint16_t iwiHeight = *reinterpret_cast<const uint16_t*>(iwiFileBytes + 0x0C);
+    if (iwiWidth == 0 || iwiHeight == 0) return false;
+
+    TextureUpscaleDxt::BlockFormat blockFmt;
+    switch (static_cast<TextureUpscaleIwi::Format>(rawFormat)) {
+        case TextureUpscaleIwi::Format::DXT1: blockFmt = TextureUpscaleDxt::BlockFormat::BC1; break;
+        case TextureUpscaleIwi::Format::DXT3: blockFmt = TextureUpscaleDxt::BlockFormat::BC2; break;
+        case TextureUpscaleIwi::Format::DXT5: blockFmt = TextureUpscaleDxt::BlockFormat::BC3; break;
+        default: return false; // raw bitmap or unhandled format -- out of
+            // scope for this feature, a routine/expected case, not an error.
+    }
+
+    // The base (largest, full-resolution) mip is always the LAST bytes in
+    // the file -- mip data is smallest-first by construction, and this
+    // format's block compression has no per-mip padding, so the base mip's
+    // own byte size is exactly and unambiguously
+    // CompressedSize(width,height,format), regardless of exact real
+    // mip-count/fileSizeForPicmip-table semantics.
+    uint32_t baseMipSize = TextureUpscaleDxt::CompressedSize(iwiWidth, iwiHeight, blockFmt);
+    if (iwiFileSize < kIwiHeaderSize + baseMipSize) return false;
+
+    uint8_t* mipCopy = static_cast<uint8_t*>(malloc(baseMipSize));
+    if (!mipCopy) return false;
+    memcpy(mipCopy, iwiFileBytes + (iwiFileSize - baseMipSize), baseMipSize);
+
+    if (!QueueUpscaleJob(name, rawFormat, iwiWidth, iwiHeight, mipCopy, baseMipSize, scaleMultiplier)) {
+        free(mipCopy); // already in flight, queue full, or invalid args --
+            // a normal, expected outcome, not an error (QueueUpscaleJob
+            // logs the success case itself).
+        return false;
+    }
+    return true;
+}
+
 bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t height,
                       const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier)
 {
@@ -358,6 +411,11 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
         name, width, height, format, scaleMultiplier);
     LogFromController(buf);
     return true;
+}
+
+bool IsNameInFlight(const char* name)
+{
+    return name ? IsInFlight(name) : false;
 }
 
 }

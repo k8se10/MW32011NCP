@@ -263,6 +263,7 @@
     <ClCompile Include="src\texture_upscale_dxt_codec.cpp" />
     <ClCompile Include="src\texture_upscale_ncnn.cpp" />
     <ClCompile Include="src\texture_upscale_worker.cpp" />
+    <ClCompile Include="src\texture_precache_orchestrator.cpp" />
     <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
@@ -329,6 +330,7 @@
     <ClInclude Include="src\texture_upscale_dxt_codec.h" />
     <ClInclude Include="src\texture_upscale_ncnn.h" />
     <ClInclude Include="src\texture_upscale_worker.h" />
+    <ClInclude Include="src\texture_precache_orchestrator.h" />
     <ClInclude Include="src\vram_diag.h" />
     <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\plugin_loader.h" />
@@ -386,5 +388,19 @@
     <Copy SourceFiles="@(RealesrganModelFiles)" DestinationFolder="$(OutDir)realesrgan_models\" SkipUnchangedFiles="true" Condition="'@(RealesrganModelFiles)' != ''" />
     <MakeDir Directories="$(OutDir)custom_assets" Condition="!Exists('$(OutDir)custom_assets')" />
     <Copy SourceFiles="@(CustomAssetFiles)" DestinationFolder="$(OutDir)custom_assets\" SkipUnchangedFiles="true" Condition="'@(CustomAssetFiles)' != ''" />
+  </Target>
+
+  <!-- 2026-09-28: ships a real, already-built Unlinker.exe (tools/iw5oat's own
+       image-extraction-capable build) alongside d3d9.dll, for the bulk
+       first-run texture pre-cache feature (texture_precache_orchestrator.cpp).
+       Real policy reversal, direct instruction: tools/iw5oat was previously
+       dev-only, never shipped to players; this is the one deliberate
+       exception, invoked at runtime ONLY with the image-only asset filter,
+       never any other dumper. Condition guards against a dev machine that
+       hasn't built iw5oat at all (no Unlinker.exe yet), degrading to a
+       missing precache tool, logged, not a build failure. -->
+  <Target Name="DeployPrecacheTool" AfterTargets="Build" Condition="'$(Platform)'=='x64' And Exists('..\tools\iw5oat\build\bin\Release_x64\Unlinker.exe')">
+    <MakeDir Directories="$(OutDir)precache_tools" Condition="!Exists('$(OutDir)precache_tools')" />
+    <Copy SourceFiles="..\tools\iw5oat\build\bin\Release_x64\Unlinker.exe" DestinationFolder="$(OutDir)precache_tools\" SkipUnchangedFiles="true" />
   </Target>
 </Project>

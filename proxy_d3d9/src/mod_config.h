@@ -929,6 +929,24 @@ struct ModConfig
     // real native asset unmodified.
     bool customAssetOverridesEnabled = true;
 
+    // [Video] BulkTexturePrecache (2026-09-28) -- real, opt-out escape hatch
+    // for the first-run bulk pre-cache pass (texture_precache_orchestrator.cpp):
+    // direct instruction, "we want it to cache all assets from the files
+    // themselves on first run... immediately serving them through the whole
+    // session + next sessions." Extracts every real image asset from the
+    // game's own zone/*.ff files (via a real, shipped copy of tools/iw5oat's
+    // Unlinker.exe, image-only mode) and runs each through the same
+    // decode->upscale->encode->store pipeline the runtime capture path
+    // already uses -- a genuinely heavy, real, potentially multi-hour
+    // background operation (real GPU inference per texture, real disk I/O),
+    // so unlike CustomAssetOverrides above this is a real risk/cost tradeoff,
+    // not a free cosmetic default -- ON by default when TextureRenderRes > 1
+    // (matches the user's own "on first run" framing) but a real toggle to
+    // opt out entirely. Gated the same as every other upscale-cache
+    // mechanism: a no-op whenever TextureRenderRes == 1 (upscaling itself
+    // disabled), regardless of this flag's own value.
+    bool bulkTexturePrecacheEnabled = true;
+
     // [Video] CustomResolutionWidth/CustomResolutionHeight -- REMOVED 2026-08-29,
     // not achieving its actual goal. Shipped 2026-08-28 (issue #102, community
     // request/GitHub issue #3) as an independent W/H override reusing

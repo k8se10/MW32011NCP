@@ -95,11 +95,8 @@
                      // MP anchor signature depending on which real exe loaded this DLL.
 #include "texture_upscale_cache.h" // TryLoadCachedUpscaledIwi -- 2026-09-28, texture-upscale-
                      // cache feature, see Hook_ImageFileLoadX64/Hook_ReadBytesSubstitutionX64.
-#include "texture_upscale_worker.h" // QueueUpscaleJob -- 2026-09-28, real cache-population
-                     // wiring, see the capture logic in the same two hooks.
-#include "texture_upscale_dxt_codec.h" // CompressedSize -- used to locate the real base mip
-                     // inside a captured raw IWI file, see Hook_ImageFileLoadX64's capture path.
-#include "texture_upscale_iwi_writer.h" // TextureUpscaleIwi::Format -- shared with the capture path.
+#include "texture_upscale_worker.h" // QueueUpscaleJobFromIwiFile -- 2026-09-28, real
+                     // cache-population wiring, see the capture logic in the same two hooks.
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -12464,53 +12461,12 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     // case, not logged as an error).
     if (capturingThisLoad) {
         ActiveTextureCapture& cap = g_activeTextureCaptureX64;
-        // Real IWI-v8 header layout, per texture_upscale_iwi_writer.h's own
-        // documented, disassembly-verified layout -- read directly, not via
-        // that header's own encoder-only API.
-        constexpr uint32_t kIwiHeaderSize = 0x20;
-        if (cap.active && cap.buffer && cap.size > kIwiHeaderSize &&
-            cap.buffer[0] == 'I' && cap.buffer[1] == 'W' && cap.buffer[2] == 'i' && cap.buffer[3] == 8) {
-            int8_t rawFormat = static_cast<int8_t>(cap.buffer[0x08]);
-            uint16_t iwiWidth = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0A);
-            uint16_t iwiHeight = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0C);
-
-            TextureUpscaleDxt::BlockFormat blockFmt;
-            bool formatOk = true;
-            switch (static_cast<TextureUpscaleIwi::Format>(rawFormat)) {
-                case TextureUpscaleIwi::Format::DXT1: blockFmt = TextureUpscaleDxt::BlockFormat::BC1; break;
-                case TextureUpscaleIwi::Format::DXT3: blockFmt = TextureUpscaleDxt::BlockFormat::BC2; break;
-                case TextureUpscaleIwi::Format::DXT5: blockFmt = TextureUpscaleDxt::BlockFormat::BC3; break;
-                default: formatOk = false; break; // raw bitmap or an unhandled
-                    // format -- out of scope for this feature (see
-                    // texture_upscale_dxt_codec.h's own header comment),
-                    // silently skipped, not logged (a routine, expected case
-                    // for e.g. small UI bitmap assets, not a real error).
-            }
-
-            if (formatOk && iwiWidth > 0 && iwiHeight > 0) {
-                // The base (largest, full-resolution) mip is always the
-                // LAST bytes in the file regardless of exact real mip-count/
-                // fileSizeForPicmip-table semantics -- mip data is smallest-
-                // first by construction, and this format's block compression
-                // has no per-mip padding, so the base mip's own byte size is
-                // exactly and unambiguously CompressedSize(width,height,format).
-                uint32_t baseMipSize = TextureUpscaleDxt::CompressedSize(iwiWidth, iwiHeight, blockFmt);
-                if (cap.size >= kIwiHeaderSize + baseMipSize) {
-                    uint8_t* mipCopy = static_cast<uint8_t*>(malloc(baseMipSize));
-                    if (mipCopy) {
-                        memcpy(mipCopy, cap.buffer + (cap.size - baseMipSize), baseMipSize);
-                        if (!TextureUpscaleWorker::QueueUpscaleJob(cap.name, rawFormat, iwiWidth, iwiHeight,
-                                                                    mipCopy, baseMipSize, g_modConfig.textureRenderRes)) {
-                            free(mipCopy); // already in flight, queue full, or
-                                // invalid args -- QueueUpscaleJob logs the
-                                // success case itself; a rejection here is a
-                                // normal, expected outcome (e.g. this exact
-                                // name is already queued from an earlier load
-                                // this session), not an error.
-                        }
-                    }
-                }
-            }
+        if (cap.active && cap.buffer) {
+            // Shared parse-and-queue (2026-09-28) -- same real IWI-v8
+            // header-parse + base-mip-extraction logic the bulk pre-cache
+            // orchestrator also uses (texture_upscale_worker.h), factored
+            // out to a single implementation once both callers existed.
+            TextureUpscaleWorker::QueueUpscaleJobFromIwiFile(cap.name, cap.buffer, cap.size, g_modConfig.textureRenderRes);
         }
         free(cap.buffer);
         cap.buffer = nullptr;
