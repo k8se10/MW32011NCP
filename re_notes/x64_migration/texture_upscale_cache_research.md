@@ -125,6 +125,61 @@ upscale step itself; not scoped further here.
    `mw3ncp_config.ini`'s own convention) or under the project's own APPDATA-
    style location — not yet decided.
 
+## Sequencing decision, 2026-09-28
+
+**Texture upscaling goes first, RT after.** Direct instruction. Starting
+the real next steps below now.
+
+## Real upload path found (`D3D9DeviceEx::UpdateTextureFromBuffer`) — and a genuine architectural blocker it surfaces
+
+Read `dxvk/src/d3d9/d3d9_device.cpp`'s real upload chain in full:
+`FlushImage` → `UpdateTextureFromBuffer` (~line 5286) is the actual place
+D3D9-application-provided texel data reaches the GPU: it reads the raw
+source bytes via `MapTexture`, and for the common (non-converted) path —
+**confirmed to include DXT/BC-compressed formats, which flow through this
+same generic path using `formatInfo->blockSize`/`elementSize`, not a
+separate compressed-specific branch** — packs them (`util::packImageData`)
+into a staging buffer and issues `ctx->copyBufferToImage` into the
+destination `DxvkImage`. This settles the compressed-texture question from
+item 1 below: **the bytes seen at this hook point for a DXT texture are
+still compressed blocks**, not decoded pixels — any upscaler needs its own
+decode step first, confirming the original concern was real, not
+hypothetical.
+
+**Real, previously-unidentified blocker, more significant than the
+compressed-format question**: the destination `DxvkImage` (`pResource->
+GetImage()`) is **not created here** — it's created once, up front, at
+`D3D9CommonTexture` CONSTRUCTION time (`CreatePrimaryImage`, confirmed the
+only assignment site for the `m_image` member in
+`d3d9_common_texture.cpp`, no recreate/resize path found anywhere in that
+file), sized directly from the D3D9 application's own requested
+`pDesc->Width`/`Height`. By the time `UpdateTextureFromBuffer` runs and
+the actual pixel/block content (and therefore any content-hash cache key)
+is even knowable, **the image is already allocated at the ORIGINAL,
+non-upscaled dimensions** — texture sampling itself doesn't care about
+absolute resolution (a bigger image sampled with the same 0..1 UV space is
+exactly how real texture upscaling already works at the GPU level, so
+that part is fine), but there is no existing mechanism in this fork to
+allocate the image bigger than what D3D9 asked for, because the size
+decision happens before the content that would drive a cache lookup is
+ever seen. **This is a real chicken-and-egg problem, not a detail to wave
+past**: caching keyed by content hash (item 2 below) can only be resolved
+AFTER the first upload, but the image size has to be decided BEFORE it.
+Three honest options, none yet chosen: (a) recreate/replace the
+`DxvkImage` at upscaled size on a cache hit detected during the first
+upload (real, nontrivial new DXVK-internal-resource-recreation code — no
+existing precedent for it in this fork was found this pass), (b) accept
+this feature can only re-detail textures AT THEIR ORIGINAL DECLARED SIZE
+(sharper/denoised, not actually higher pixel-count) unless (a) is solved
+— which undercuts the actual stated goal ("cache them then have 2k+
+assets"), or (c) key the cache off something knowable before upload (e.g.
+a stable per-resource identifier this layer doesn't currently have
+visibility into, not a content hash) so the upscaled size can be decided
+at creation time instead of after the fact. **Real next step, before any
+further design work here: determine which of (a)/(c) is actually
+buildable** — this changes the entire shape of the feature and needs to
+be resolved before the cache-key design in item 2 below is finalized.
+
 ## Status
 
 **Scoping only.** No code written. Real next steps, in order: (1) verify
