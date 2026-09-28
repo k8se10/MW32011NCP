@@ -610,15 +610,26 @@ confirmed which of frames 0-2 (`0x1401BA17B`/`FUN_1401ba0c0`,
 worth hooking vs. `FUN_1401bae80` itself** — `FUN_1401ba0c0` turned out to
 be DXT-format-specific mip-decode dispatch (calls different sub-decoders
 per compression type), not name-bearing; `FUN_1401bae80` is the real
-name+file-load function and the strongest current hook candidate. **Real
-next steps**: (1) confirm `param_1 + 0x20`'s real type/lifetime (is it
-safe to read at the hook's own entry, does it outlive the call, is it
-always non-null), (2) build a live diagnostic hook on `FUN_1401bae80`
-logging that name for every real hit — same "verify before building
-further" discipline as the `FindOrLoadAsset` hook got — (3) once
-confirmed, this single hook may cover BOTH phase 1 (menus) and phase 2
-(gameplay textures) at once, since it's upstream of the phase split
-`FindOrLoadAsset` forced. Original first-draft note, kept for the
+name+file-load function and the strongest current hook candidate.
+
+**(2) DONE, deployed, awaiting live confirmation.**
+`Hook_ImageFileLoadX64`/`InstallImageFileLoadDiagHookX64`
+(`analog_input_hooks_x64.cpp`) hooks `FUN_1401bae80` directly (signature
+independently verified unique via a wildcard-aware regex scan against
+the offline binary — two genuine RIP-relative LEA operands wildcarded,
+the RSP-relative stack-spill MOVs kept fixed per the same false-positive
+lesson already documented elsewhere in this project). Reads the real
+name pointer at `param_1 + 0x20` SEH-guarded before calling through
+(matching `PLUGIN_API.md`'s own `ReadMemory` convention for raw-offset
+struct reads whose safety isn't yet independently proven for every
+caller), logs the first 400 hits. Confirmed standard MS x64 fastcall via
+the prologue's own `mov rbx,rdx` — plain MinHook C++ detour. Build-
+verified (x64 Release, 0 errors), deployed. **(1) and (3) still open**:
+needs a real in-level session to confirm the name pointer reads back
+real, sane strings (not garbage) for both menu and gameplay textures —
+if confirmed, this single hook is the real answer for BOTH phase 1 and
+phase 2 at once, since it sits upstream of the split `FindOrLoadAsset`
+forced. Original first-draft note, kept for the
 record rather than deleted: only built-in defaults were captured this
 session — no real named
 level content (e.g. `images/some_prop_diffuse`) came through yet, most
