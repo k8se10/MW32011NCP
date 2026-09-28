@@ -475,49 +475,54 @@ further design work here: determine which of (a)/(c) is actually
 buildable** — this changes the entire shape of the feature and needs to
 be resolved before the cache-key design in item 2 below is finalized.
 
-## Status — scoping complete, hook point FOUND and CONFIRMED, no implementation code written yet
+## Status — scoping complete, REAL production hook point FOUND and LIVE-CONFIRMED, no substitution/upscale code written yet
 
-**Locked design (2026-09-28, updated after the third RE round and the
-live-test scope split):**
-- **Target, phase 1 (confirmed viable, real next implementation
-  target): menu/UI `GfxImage` assets**, via the confirmed-live
-  `FindOrLoadAsset(assetType==0xa)` correlation. **Target, phase 2
-  (genuinely unresolved, separate RE target): real in-level gameplay
-  textures** (world diffuse/normal maps etc.), which most likely load
-  through a separate bulk zone-load path this `FindOrLoadAsset` hook does
-  not see — not blocking phase 1. Neither phase ever touches the
-  backbuffer/render targets (already handled by
+**Locked design (2026-09-28, final update after live-testing
+`FUN_1401bae80` against a real, full session):**
+- **Target: ALL real `GfxImage` assets, menu/UI AND gameplay world/
+  character/weapon content alike, in one unified feature — the earlier
+  phase 1 (menus)/phase 2 (gameplay) split is OBSOLETE.** Live-confirmed:
+  a 3636-hit real session captured both UI/HUD names
+  (`scrollbar_arrow_up`, `flashbangicon`) AND real gameplay material
+  names (`chemwar_russian_headgear_b_nml`/`_col`,
+  `russian_military_shotgun_a_nml`/`_col`) through the exact same hook.
+  Never touches the backbuffer/render targets (already handled by
   `InternalRenderScalePercent`, a separate mechanism).
 - **Never modify `.iwd`/`.ff` on disk, ever** — runtime interception only,
   same "read-only game install, only our own injected code writes
   anything" policy as the rest of this project.
-- **Hook point: CONFIRMED.** `FUN_1400a5a20` in `iw5sp.exe` (x64) is
-  `FindOrLoadAsset`'s real x64 twin — verified via signature match
-  (`int assetType, const char* name, int flag`), an identical
-  `InterlockedIncrement`+spin-wait lock pattern to x86's documented
-  behavior, and a 58-caller count matching x86's confirmed 59. Its
-  per-type dispatch callee `FUN_1400a54c0` (x86's `FUN_004b6b70` twin) was
-  independently confirmed via a real embedded error string and a real,
-  dumped `assetType`→name table (`0x1404c2430`) that also revealed
-  **`assetType 0xa` = `"image"`** — images get their own independent
-  `FindOrLoadAsset(0xa, name, flag)` calls, giving a real, individual,
-  free cache key (no material-name/slot-index compromise needed). Hook
-  `FUN_1400a5a20`, push the real name while `assetType==0xa`, correlate
-  against `CreateTexture` exactly as `asset_capture.cpp` already does for
-  materials (`assetType==5`) on x86 — same mechanism, now confirmed
-  portable to x64.
-- **Cache key**: the real `GfxImage` name (confirmed available) + a
-  model-version/scale-factor stamp (exact format still open, small
-  remaining design work).
+- **Hook point: CONFIRMED LIVE, this is the real production target —
+  `FUN_1401bae80`** in `iw5sp.exe` (x64), a genuine, universal, per-image
+  FILE LOADER (not the asset-interning layer): builds a real
+  `"images/<name>"` path from a name pointer at a fixed struct offset
+  (`param_1 + 0x20`), opens/reads the real `.iwi` container file,
+  validates its own real magic header. Found by tracing real
+  `CreateTexture` callers backward (not forward from asset-loading);
+  live-tested across two real sessions (3636 hits in the fuller one) —
+  every name read back clean and correct, covering both UI and gameplay
+  content in one universal chain. `FindOrLoadAsset`'s own real x64 twin
+  (`FUN_1400a5a20`, confirmed via signature/lock-pattern/caller-count
+  match, `assetType 0xa`=`"image"` dumped from a real table at
+  `0x1404c2430`) is ALSO real and working, and stays in the tree as an
+  independently useful diagnostic/correlation tool — just no longer the
+  feature's primary hook, since it only ever sees the smaller subset of
+  images requested by name at runtime, not the universal set
+  `FUN_1401bae80` sees.
+- **Cache key**: the real image name read at `FUN_1401bae80`'s own
+  `param_1 + 0x20` (confirmed available and correct) + a model-version/
+  scale-factor stamp (exact format still open, small remaining design
+  work).
 - **Upscaler**: Real-ESRGAN-ncnn-vulkan (MIT/BSD, model weights BSD-3-Clause,
   both verified), Vulkan-compute-native, no CUDA/ONNX dependency — vendor
   as a nested subtree, same pattern as `MW32011DXVK`/MinHook/Streamline.
   NVIDIA RTX Neural Texture Compression checked and ruled out as a
   competing primary path (solves VRAM footprint, not detail addition) —
   possible later complementary use for compressing the cache itself.
-- **Compressed (DXT/BC) source textures**: decode once at the
-  `FindOrLoadAsset(0xa, ...)` hook layer before upscaling; re-encode vs.
-  upload-uncompressed is a real open cost/quality tradeoff, not a blocker.
+- **Compressed (DXT/BC) source textures**: `FUN_1401bae80` reads and
+  validates the raw `.iwi` file itself, so the real decode/decompression
+  step is right there in the same function — decode once at this layer
+  before upscaling; re-encode vs. upload-uncompressed is a real open
+  cost/quality tradeoff, not a blocker.
 - **First-use cost**: background-thread upscale queue (serve original
   texture until the cached upscale is ready, swap in on completion),
   reusing this project's own established one-thread-per-job convention —
@@ -624,25 +629,52 @@ name pointer at `param_1 + 0x20` SEH-guarded before calling through
 struct reads whose safety isn't yet independently proven for every
 caller), logs the first 400 hits. Confirmed standard MS x64 fastcall via
 the prologue's own `mov rbx,rdx` — plain MinHook C++ detour. Build-
-verified (x64 Release, 0 errors), deployed. **(1) and (3) still open**:
-needs a real in-level session to confirm the name pointer reads back
-real, sane strings (not garbage) for both menu and gameplay textures —
-if confirmed, this single hook is the real answer for BOTH phase 1 and
-phase 2 at once, since it sits upstream of the split `FindOrLoadAsset`
-forced. Original first-draft note, kept for the
-record rather than deleted: only built-in defaults were captured this
-session — no real named
-level content (e.g. `images/some_prop_diffuse`) came through yet, most
-likely because this capture window was a short startup/menu-only session
-rather than a full gameplay session with a level loaded. **Next
-confirmation needed**: a real in-level playtest to confirm real, named
-per-level texture assets also flow through this same hook the same way —
-not yet done. (2) confirm
-the existing x64 `CreateTexture` vtable hook wiring (`asset_capture.cpp`)
-is correctly installed on x64 (likely already fine, not independently
-re-verified this pass), (3) port `Hook_FindOrLoadAsset` from
-`analog_input_hooks.cpp` (x86-only) to `analog_input_hooks_x64.cpp`, (4)
-prototype ncnn-vulkan completely standalone (a small test harness, not
-wired into the mod) to confirm it runs against this machine's real GPU via
-Vulkan, (5) design the background-thread queue and cache file format, (6)
-only then write the actual hook + substitution code.
+verified (x64 Release, 0 errors), deployed.
+
+**(1) and (3) CONFIRMED, 2026-09-28 — this is the headline result of the
+whole texture-upscale-cache scoping effort.** Two real sessions checked.
+First (400-hit cap, since removed): all real, clean, sane names, but
+every one UI/HUD/menu-adjacent (`scrollbar_arrow_up`, `checkbox_current`,
+`flashbangicon`, `rain_drop`) — the cap had filled during early UI/HUD
+population. Cap removed (`Hook_ImageFileLoadX64`, same "unbound it for
+dev data" treatment `Hook_FindOrLoadAssetX64` already got), then a fuller
+session captured 3636 real hits. **Real, unambiguous GAMEPLAY
+character/weapon material names appear throughout**: `chemwar_russian_
+headgear_b_nml`/`_col`, `chemwar_russian_alpha_a_nml`/`_col`,
+`russian_military_shotgun_a_nml`/`_col`, `russian_naval_eye_a_col` —
+`_nml`=normal map, `_col`=diffuse/color map, the standard real-asset
+naming convention for actual game-content character/weapon skins, not
+UI. **This resolves the phase 1/phase 2 split entirely — `FUN_1401bae80`
+is confirmed live to be the universal answer for BOTH menu/UI textures
+AND real gameplay world/character/weapon content, in a single hook.** No
+separate mechanism is needed for gameplay textures after all; the
+earlier `FindOrLoadAsset`-only design's inability to see level content
+was a real limitation of THAT specific mechanism, not of the feature as
+a whole — this hook sits upstream of it and sees everything.
+**Genuine bonus confirmation, same data**: `~`-prefixed, hash-suffixed
+names (`~chemwar_russian_alpha_a_spc-~b33ebc5a`,
+`~russian_military_shotgun_a_s~f7f003ff`) are real, live proof of this
+project's own earlier prediction (`re_notes/iw5sp.md`'s "Runtime
+material/texture capture" section, 2026-08-17) that some real material/
+image names are procedurally generated at runtime and can never be
+extracted by static zone-dump analysis alone — directly observed here,
+not just theorized. **This single hook is now the confirmed, real,
+production hook point for the entire texture-upscale-cache feature** —
+the earlier two-phase design (menus now, gameplay later) is obsolete;
+both ship together, off the same mechanism. **Real next steps, updated**:
+(1) design the actual substitution mechanism on `FUN_1401bae80` — decode
+the loaded `.iwi` image, check the upscale cache by real name, and if
+present, get the upscaled pixel data into the eventual `CreateTexture`
+call at the right (larger) dimensions, working within the same
+architectural constraint already established (the real chicken-and-egg
+problem — the destination `DxvkImage`/D3D9 texture size still has to be
+decided before or during this call, not after; the `FindOrLoadAsset`-era
+finding about this remains valid and applies here too, just at a
+different, earlier, more universal hook point), (2) prototype ncnn-vulkan
+completely standalone (a small test harness, not wired into the mod) to
+confirm it runs against this machine's real GPU via Vulkan, (3) design the
+background-thread queue and cache file format, (4) only then write the
+actual hook + substitution code. The `FindOrLoadAsset` hook
+(`Hook_FindOrLoadAssetX64`) stays in the tree as a real, working,
+independently-useful diagnostic/correlation tool, just no longer the
+feature's own primary/only hook point.
