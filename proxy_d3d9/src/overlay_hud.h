@@ -192,6 +192,27 @@ void ShowOverlayMessage(const char* text, unsigned long durationMs, OverlayAnimS
 // queued is not added again. Safe to call from DllMain.
 void ShowOverlayMessageUntilDismissed(const char* text, OverlayAnimStyle style = OverlayAnimStyle::Plain);
 
+// Real one-time "texture cache is building, expect hitching" notice
+// (2026-09-29, direct instruction) -- shown by texture_upscale_worker.cpp's
+// own QueueUpscaleJob the first time the real session-wide queued count
+// crosses 100. Declared here (not file-local to texture_upscale_worker.cpp)
+// so overlay_hud.cpp's own auto-pause logic (Hook_EndScene) can recognize
+// this SPECIFIC modal by exact text match, without a second, separate
+// notify-me-when-shown callback -- both files reference the one real string.
+constexpr const char* kCacheBuildNoticeText =
+    "\x03" "Texture Cache Building\n\n"
+    "\x01" "\xE2\x9A\xA0 A large number of textures are queued for one-time AI "
+    "upscaling in the background. This can cause noticeable hitching while it runs.\n\n"
+    "\x02" "\xE2\x9C\x94 Pausing (or sitting at a menu) is recommended -- it lets the "
+    "cache catch up with less impact on your framerate. If this stays on screen for "
+    "5 seconds, the game will pause automatically.\n\n"
+    "This is a genuine ONE-TIME process, per texture: once a texture is cached, it's "
+    "served instantly forever after, this session and every future one.\n\n"
+    "\x01" "\xE2\x9A\xA0 A texture already loaded this session won't visually update "
+    "until you restart the level or the game -- once the cache finishes building, "
+    "restart to see the results.\n\n"
+    "Enter / Space / Click to continue:";
+
 // STRICTLY A TESTING AID (2026-07-31, [Overlay] TestCycleAllVariants in
 // mw3ncp_config.ini, default off). Call every tick (analog_input_hooks.cpp's
 // InjectMenuInputTick already does) -- a no-op unless that config toggle is on, in

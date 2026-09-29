@@ -7795,6 +7795,46 @@ void DrawBuildWatermark(void* device)
                               kWmColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
 }
 
+extern "C" void SendSyntheticEscX64(); // analog_input_hooks_x64.cpp -- real
+    // native ESC synthesis; the same key the real engine's own key handler
+    // already treats as pause-open when unpaused (and resume when paused).
+
+// Real, one-time auto-pause for the texture-cache-building notice
+// (2026-09-29, direct instruction: "also pause the game (after 5s delay -
+// unless modal dismissed)"). kCacheBuildNoticeText (overlay_hud.h) already
+// tells the player pausing is recommended and that staying up 5s triggers
+// an automatic pause -- this is that trigger, checked every frame
+// alongside the status bar. Deliberately keyed off the modal actually being
+// the CURRENT on-screen dismiss-required modal (not merely "was ever
+// shown"), so the 5s clock starts when the player actually SEES it, not
+// when it was first queued behind some other modal.
+void CheckCacheBuildAutoPause()
+{
+    static bool s_wasActiveLastFrame = false;
+    static DWORD s_activeSinceMs = 0;
+    static bool s_fired = false; // real, permanent one-shot -- once fired,
+        // never re-armed. Without this, every frame after the 5s mark
+        // (while the modal is still undismissed, which is expected --
+        // pausing doesn't auto-dismiss it) would re-send ESC and erratically
+        // toggle pause on/off.
+    if (s_fired) return;
+
+    AcquireSRWLockExclusive(&g_overlayLock);
+    bool isActiveNow = g_overlayActive && g_overlayRequiresDismiss &&
+        strcmp(g_overlayText, kCacheBuildNoticeText) == 0;
+    ReleaseSRWLockExclusive(&g_overlayLock);
+
+    if (isActiveNow && !s_wasActiveLastFrame) s_activeSinceMs = GetTickCount();
+    s_wasActiveLastFrame = isActiveNow;
+
+    if (isActiveNow && (GetTickCount() - s_activeSinceMs) >= 5000) {
+        s_fired = true;
+        if (!IsMenuActiveX64_Exported()) SendSyntheticEscX64(); // don't fire
+            // if the player already paused (or opened any other menu)
+            // themselves in the meantime -- ESC would then RESUME instead.
+    }
+}
+
 // Real, persistent, live-updating texture-upscale-cache progress bar
 // (2026-09-29, direct instruction: "we need parralellism and proper modal
 // caching dfollowing our popup modal pecednent but with a proper status bar
@@ -8066,6 +8106,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     g_lastKnownRenderDevice = device;
     DrawBuildWatermark(device);
     DrawTextureCacheStatusBar(device);
+    CheckCacheBuildAutoPause();
     DrawJitterProbeOverlayIfEnabled(device);
 #if defined(_M_X64) || defined(_WIN64)
     // Real, direct QueryPerformanceCounter timing (2026-09-24) -- NOT wrapped

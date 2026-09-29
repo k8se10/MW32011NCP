@@ -3669,7 +3669,12 @@ void SendSyntheticF5X64()
 // (SendSyntheticF5X64 above) and Jump/scoreboard, lets that already-correct,
 // already-battle-tested native logic do 100% of the work -- no flag, no
 // open/close asymmetry, no clcState branch to get wrong.
-void SendSyntheticEscX64()
+// extern "C" (2026-09-29) -- now called cross-file (overlay_hud.cpp's own
+// auto-pause-for-texture-caching logic), matching this codebase's established
+// defensive convention for every other cross-file accessor/action function
+// (GetGameWindow, IsMenuActiveX64_Exported, etc.) rather than relying on
+// plain (mangled but technically-external) C++ linkage.
+extern "C" void SendSyntheticEscX64()
 {
     HWND hwnd = GetGameWindow();
     if (!hwnd) return;

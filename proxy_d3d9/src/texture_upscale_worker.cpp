@@ -9,6 +9,11 @@
 #include "texture_upscale_iwi_writer.h"
 #include "texture_upscale_ncnn.h"
 #include "texture_upscale_cache.h"
+#include "overlay_hud.h" // ShowOverlayMessageUntilDismissed -- the one-time
+    // "caching is building, expect hitching" notice below, real player-facing
+    // warning-modal use, not per-job toast spam (see the 2026-09-29 removal
+    // of ProcessJob's own per-job toasts, still real progress feedback via
+    // DrawTextureCacheStatusBar instead).
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -477,7 +482,23 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     LeaveCriticalSection(&g_pendingLock);
 
     MarkInFlight(name);
-    InterlockedIncrement(&g_totalQueued);
+    LONG newQueuedCount = InterlockedIncrement(&g_totalQueued);
+
+    // Real one-time "expect hitching, restart to see results" notice
+    // (2026-09-29, direct instruction) -- fires exactly once, the first time
+    // the real session-wide queued count crosses 100.
+    // InterlockedCompareExchange (not a plain bool check) so two worker...
+    // no wait, this runs on the QUEUING side (the load-time/viewport capture
+    // threads), which genuinely can call QueueUpscaleJob concurrently from
+    // more than one thread -- the same race class InitOnceExecuteOnce above
+    // already had to be introduced for, guarded the same way here rather
+    // than risking two threads both crossing 100 at once and double-firing.
+    constexpr LONG kCacheBuildNoticeThreshold = 100;
+    static volatile LONG s_cacheBuildNoticeShown = 0;
+    if (newQueuedCount >= kCacheBuildNoticeThreshold &&
+        InterlockedCompareExchange(&s_cacheBuildNoticeShown, 1, 0) == 0) {
+        ShowOverlayMessageUntilDismissed(kCacheBuildNoticeText, OverlayAnimStyle::Plain);
+    }
 
     char buf[300];
     sprintf_s(buf, "[texture-upscale-worker] queued '%.200s' (%ux%u, format=%d, target=%dx, source=%s)",
