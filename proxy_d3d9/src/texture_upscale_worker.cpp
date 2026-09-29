@@ -456,6 +456,31 @@ namespace
         }
     }
 
+    // Real raw-bitmap (uncompressed) format support (2026-09-29), direct
+    // request: "i also think we should support all textures the game
+    // serves." TextureUpscaleIwi::Format::BitmapRGBA/BitmapRGB were already
+    // defined in the format enum but never actually decoded -- this
+    // project's own capture-outcome diagnostic showed these are real,
+    // sometimes large, visible assets (main-menu backgrounds, mission-select
+    // thumbnails, loading screens -- e.g. `background_image_blur_less` at
+    // 2.76MB, `mission_sel1/2/3`) rejected outright as "unsupported" the
+    // whole time. No block compression involved -- `bytesPerPixel` straight
+    // pixel data, row-major, no padding (matches how this project's own IWI
+    // writer/reader already treats DXT mip data: no per-mip padding
+    // either). Other observed-but-uncharacterized raw formats (rawFormat
+    // 3/4/6/7/9 in live logs) are a real, separate, NOT-yet-identified gap
+    // -- would need dedicated RE work (this project has no confirmed
+    // mapping for what those actually are) to support; left open rather
+    // than guessed at.
+    bool RawBitmapBytesPerPixel(int iwiFormat, int* outBpp)
+    {
+        switch (static_cast<TextureUpscaleIwi::Format>(iwiFormat)) {
+            case TextureUpscaleIwi::Format::BitmapRGBA: *outBpp = 4; return true;
+            case TextureUpscaleIwi::Format::BitmapRGB: *outBpp = 3; return true;
+            default: return false;
+        }
+    }
+
     // Processes one job end to end: decode -> upscale (real Real-ESRGAN
     // inference, tiled internally for large images) -> re-encode -> write to
     // the on-disk cache. Every real failure is logged and simply abandons
@@ -471,26 +496,62 @@ namespace
         // single persistent, live-updating status bar
         // (overlay_hud.cpp's own DrawTextureCacheStatusBar, driven by
         // GetProgressSnapshot) that shows real aggregate progress instead.
+        // Real, always-DXT5 output regardless of source format (2026-09-29) --
+        // every source this feature can now decode (BC1/BC2/BC3 block-
+        // compressed, or raw uncompressed RGBA/RGB) converges on the same
+        // real RGBA buffer before inference, so there's no reason the OUTPUT
+        // encoding needs to track the input's own format at all -- DXT5 is a
+        // real, strictly reasonable, storage-efficient choice for any content
+        // (already the existing precedent for BC2's own "re-encode as BC3"
+        // upgrade below). Simplifies what would otherwise need a real
+        // "encode raw bitmap back to raw bitmap" path for zero real benefit.
+        TextureUpscaleDxt::BlockFormat encodeFmt = TextureUpscaleDxt::BlockFormat::BC3;
+        TextureUpscaleIwi::Format iwiEncodeFmt = TextureUpscaleIwi::Format::DXT5;
+
+        uint8_t* rgba = nullptr;
         TextureUpscaleDxt::BlockFormat blockFmt;
-        if (!IwiFormatToBlockFormat(job.format, &blockFmt)) {
+        int rawBpp = 0;
+        if (IwiFormatToBlockFormat(job.format, &blockFmt)) {
+            rgba = TextureUpscaleDxt::DecodeToRGBA(job.compressedData, job.width, job.height, blockFmt);
+        } else if (RawBitmapBytesPerPixel(job.format, &rawBpp)) {
+            // Real, direct request: "i also think we should support all
+            // textures the game serves." No block decompression needed --
+            // the captured bytes already ARE row-major pixel data. Expand to
+            // RGBA (inserting full alpha=255) if the source was 3-byte RGB;
+            // a 4-byte RGBA source is used as-is via a plain copy, keeping
+            // ownership/lifetime handling identical to the decoded-DXT path
+            // below (this function always owns and frees `rgba` itself).
+            uint64_t pixelCount = static_cast<uint64_t>(job.width) * job.height;
+            uint64_t expectedSize = pixelCount * static_cast<uint64_t>(rawBpp);
+            if (static_cast<uint64_t>(job.compressedSize) < expectedSize) {
+                char buf[300];
+                sprintf_s(buf, "[texture-upscale-worker] '%.200s': raw bitmap source truncated "
+                    "(have %u bytes, need %llu for %ux%u at %d bpp)",
+                    job.name, job.compressedSize, static_cast<unsigned long long>(expectedSize),
+                    job.width, job.height, rawBpp);
+                LogFromController(buf);
+                return;
+            }
+            rgba = static_cast<uint8_t*>(malloc(static_cast<size_t>(pixelCount) * 4));
+            if (rgba) {
+                if (rawBpp == 4) {
+                    memcpy(rgba, job.compressedData, static_cast<size_t>(pixelCount) * 4);
+                } else { // rawBpp == 3
+                    for (uint64_t i = 0; i < pixelCount; ++i) {
+                        rgba[i * 4 + 0] = job.compressedData[i * 3 + 0];
+                        rgba[i * 4 + 1] = job.compressedData[i * 3 + 1];
+                        rgba[i * 4 + 2] = job.compressedData[i * 3 + 2];
+                        rgba[i * 4 + 3] = 255;
+                    }
+                }
+            }
+        } else {
             char buf[300];
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': unsupported source format %d, skipping", job.name, job.format);
             LogFromController(buf);
             return;
         }
 
-        // BC2 (DXT3) decode is real and supported (texture_upscale_dxt_codec.h),
-        // but its own encoder is deliberately NOT implemented (this feature has
-        // never needed to round-trip BC2 -- real source textures observed live
-        // so far are BC1/BC3 only, per that header's own comment) -- re-encode
-        // as BC3 instead, a strictly equal-or-better format for the same real
-        // alpha content, rather than failing outright.
-        TextureUpscaleDxt::BlockFormat encodeFmt = (blockFmt == TextureUpscaleDxt::BlockFormat::BC2)
-            ? TextureUpscaleDxt::BlockFormat::BC3 : blockFmt;
-        TextureUpscaleIwi::Format iwiEncodeFmt = (encodeFmt == TextureUpscaleDxt::BlockFormat::BC1)
-            ? TextureUpscaleIwi::Format::DXT1 : TextureUpscaleIwi::Format::DXT5;
-
-        uint8_t* rgba = TextureUpscaleDxt::DecodeToRGBA(job.compressedData, job.width, job.height, blockFmt);
         if (!rgba) {
             char buf[300];
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': DecodeToRGBA failed", job.name);
@@ -728,22 +789,24 @@ bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, u
     uint16_t iwiHeight = *reinterpret_cast<const uint16_t*>(iwiFileBytes + 0x0C);
     if (iwiWidth == 0 || iwiHeight == 0) return false;
 
-    TextureUpscaleDxt::BlockFormat blockFmt;
-    switch (static_cast<TextureUpscaleIwi::Format>(rawFormat)) {
-        case TextureUpscaleIwi::Format::DXT1: blockFmt = TextureUpscaleDxt::BlockFormat::BC1; break;
-        case TextureUpscaleIwi::Format::DXT3: blockFmt = TextureUpscaleDxt::BlockFormat::BC2; break;
-        case TextureUpscaleIwi::Format::DXT5: blockFmt = TextureUpscaleDxt::BlockFormat::BC3; break;
-        default: return false; // raw bitmap or unhandled format -- out of
-            // scope for this feature, a routine/expected case, not an error.
-    }
-
     // The base (largest, full-resolution) mip is always the LAST bytes in
-    // the file -- mip data is smallest-first by construction, and this
-    // format's block compression has no per-mip padding, so the base mip's
-    // own byte size is exactly and unambiguously
-    // CompressedSize(width,height,format), regardless of exact real
-    // mip-count/fileSizeForPicmip-table semantics.
-    uint32_t baseMipSize = TextureUpscaleDxt::CompressedSize(iwiWidth, iwiHeight, blockFmt);
+    // the file -- mip data is smallest-first by construction, so the base
+    // mip's own byte size is exactly and unambiguously the real per-format
+    // size for (width,height), regardless of exact real mip-count/
+    // fileSizeForPicmip-table semantics -- true for both DXT block
+    // compression (no per-mip padding) and raw bitmap data (no row padding).
+    uint32_t baseMipSize = 0;
+    TextureUpscaleDxt::BlockFormat blockFmt;
+    int rawBpp = 0;
+    if (IwiFormatToBlockFormat(rawFormat, &blockFmt)) {
+        baseMipSize = TextureUpscaleDxt::CompressedSize(iwiWidth, iwiHeight, blockFmt);
+    } else if (RawBitmapBytesPerPixel(rawFormat, &rawBpp)) {
+        baseMipSize = static_cast<uint32_t>(iwiWidth) * iwiHeight * static_cast<uint32_t>(rawBpp);
+    } else {
+        return false; // genuinely unidentified format (rawFormat 3/4/6/7/9 --
+            // see this file's own RawBitmapBytesPerPixel header comment) --
+            // out of scope, a routine/expected case, not an error.
+    }
     if (iwiFileSize < kIwiHeaderSize + baseMipSize) return false;
 
     uint8_t* mipCopy = static_cast<uint8_t*>(malloc(baseMipSize));
