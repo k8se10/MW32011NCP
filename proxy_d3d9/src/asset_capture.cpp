@@ -8,6 +8,7 @@
 
 #include "mod_config.h"
 #include "frame_benchmark.h"
+#include "texture_viewport_capture.h" // 2026-09-29, OnCreateTexture -- see its own header comment.
 #include "../third_party/minhook/include/MinHook.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
@@ -563,6 +564,13 @@ HRESULT WINAPI Hook_CreateTexture(void* This, UINT Width, UINT Height, UINT Leve
     // header comment above g_firstNCalls -- fast, in-memory-only, same safety
     // shape as the storm-diag call above.
     AssetCapture_RecordCreateTextureFirstNCaller(Width, Height, Format);
+    // 2026-09-29: viewport-capture correlation -- fast, in-memory-only table
+    // insert (no-op unless a texture-upscale-cache load is actively in
+    // flight on this thread), see texture_viewport_capture.h's own header
+    // comment. Unconditional, same safety shape as the two calls above.
+    if (SUCCEEDED(hr) && ppTexture && *ppTexture) {
+        TextureViewportCapture::OnCreateTexture(*ppTexture, Width, Height, Format);
+    }
 
     // Timer below starts AFTER the real call above, deliberately: that call's own
     // duration is now accounted separately (above), not overhead THIS project's
@@ -659,7 +667,13 @@ void AssetCapture_InstallHookIfEnabled(void* realDevice)
     // EVERY real texture creation unconditionally for the benchmark CSV (see its own
     // header comment), not just material-capture-tagged ones, so the benchmark needs
     // this hook installed even when the actual capture-to-disk feature isn't in use.
-    if (!g_modConfig.captureRuntimeMenuAssets && !g_modConfig.frametimeBenchmarkLogging) return;
+    // 2026-09-29: also installs when TextureRenderRes>1 by itself (both the
+    // other two flags off) -- the viewport-capture feature's OnCreateTexture
+    // correlation (called unconditionally from Hook_CreateTexture below)
+    // needs this hook installed regardless of whether the disk-capture or
+    // benchmark features are in use.
+    if (!g_modConfig.captureRuntimeMenuAssets && !g_modConfig.frametimeBenchmarkLogging
+        && g_modConfig.textureRenderRes <= 1) return;
     if (!realDevice || g_hookInstalled) return; // one real device for this game's
         // lifetime, same convention as overlay_hud.cpp's InstallEndSceneHook.
     g_hookInstalled = true;

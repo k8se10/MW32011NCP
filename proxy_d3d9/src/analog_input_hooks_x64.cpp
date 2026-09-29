@@ -97,6 +97,8 @@
                      // cache feature, see Hook_ImageFileLoadX64/Hook_ReadBytesSubstitutionX64.
 #include "texture_upscale_worker.h" // QueueUpscaleJobFromIwiFile -- 2026-09-28, real
                      // cache-population wiring, see the capture logic in the same two hooks.
+#include "texture_viewport_capture.h" // SetCurrentlyLoadingName/ClearCurrentlyLoadingName --
+                     // 2026-09-29, the third capture path, see that header's own comment.
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -12442,7 +12444,16 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     void* effectiveCallback = g_activeTextureSubstitutionX64.armed
         ? reinterpret_cast<void*>(&FakeSubstitutionReadCallback)
         : param_2;
+
+    // Viewport-capture correlation (2026-09-29) -- see
+    // TextureViewportCapture's own header comment. Armed regardless of
+    // hit/miss (a hit still needs correlating, so the created texture is
+    // marked already-handled instead of a real capture candidate).
+    if (name) TextureViewportCapture::SetCurrentlyLoadingName(name, g_activeTextureSubstitutionX64.armed);
+
     long long result = g_realImageFileLoadX64(param_1, effectiveCallback);
+
+    TextureViewportCapture::ClearCurrentlyLoadingName();
 
     if (g_activeTextureSubstitutionX64.armed) {
         g_activeTextureSubstitutionX64.armed = false;

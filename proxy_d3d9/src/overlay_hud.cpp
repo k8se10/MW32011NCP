@@ -43,6 +43,7 @@
 #include "controller_input.h"
 #include "vanilla_settings_table.h"
 #include "asset_capture.h"
+#include "texture_viewport_capture.h" // 2026-09-29, InstallSetTextureHook -- see its own header comment.
 #include "vram_diag.h"
 #include "frame_benchmark.h"
 #if defined(_M_X64) || defined(_WIN64)
@@ -8572,6 +8573,12 @@ void InstallEndSceneHook(void* realDevice)
     // renderer -- see asset_capture.h's own header comment. No-op internally when
     // g_modConfig.captureRuntimeMenuAssets is off.
     AssetCapture_InstallHookIfEnabled(realDevice);
+
+    // 2026-09-29: viewport-triggered texture capture (the third real capture
+    // path for the texture-upscale-cache feature) -- see
+    // texture_viewport_capture.h's own header comment. No-op internally when
+    // TextureRenderRes==1.
+    TextureViewportCapture::InstallSetTextureHook(realDevice);
 }
 
 namespace {
