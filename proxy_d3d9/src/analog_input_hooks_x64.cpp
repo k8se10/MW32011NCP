@@ -99,6 +99,8 @@
                      // cache-population wiring, see the capture logic in the same two hooks.
 #include "texture_viewport_capture.h" // SetCurrentlyLoadingName/ClearCurrentlyLoadingName --
                      // 2026-09-29, the third capture path, see that header's own comment.
+#include "texture_upscale_dxt_codec.h" // TextureUpscaleDxt::CompressedSize -- 2026-09-29,
+                     // [x64-capture-outcome] diagnostic only, see Hook_ImageFileLoadX64.
 
 extern void LogFromController(const char* msg);  // dllmain.cpp, shared log file (see analog_input_hooks.cpp's
                                     // own identical convention)
@@ -12500,6 +12502,44 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     if (capturingThisLoad) {
         ActiveTextureCapture& cap = g_activeTextureCaptureX64;
         if (cap.active && cap.buffer) {
+            // [x64-capture-outcome] (2026-09-29, temporary) -- world-geometry
+            // material names (ch_concretewall02_col etc.) reach this hook's
+            // own name-logging but never produce a "queued" line downstream.
+            // Bounded to 500 fires; logs exactly what
+            // QueueUpscaleJobFromIwiFile's own real rejection points check --
+            // magic bytes, declared format/width/height, and the computed
+            // base-mip size against the real captured size -- so a live
+            // in-level playthrough can show which one actually trips for
+            // these assets, rather than guessing further.
+            static int s_captureOutcomeDiagCount = 0;
+            if (s_captureOutcomeDiagCount < 500) {
+                ++s_captureOutcomeDiagCount;
+                bool magicOk = cap.size > 0x20 && cap.buffer[0] == 'I' && cap.buffer[1] == 'W'
+                    && cap.buffer[2] == 'i' && cap.buffer[3] == 8;
+                char buf[400];
+                if (!magicOk) {
+                    sprintf_s(buf, "[x64-capture-outcome] '%.200s': capSize=%u magicOk=0 (bytes %02X %02X %02X %02X)",
+                        cap.name, cap.size, cap.size > 0 ? cap.buffer[0] : 0, cap.size > 1 ? cap.buffer[1] : 0,
+                        cap.size > 2 ? cap.buffer[2] : 0, cap.size > 3 ? cap.buffer[3] : 0);
+                } else {
+                    int8_t rawFormat = static_cast<int8_t>(cap.buffer[0x08]);
+                    uint16_t w = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0A);
+                    uint16_t h = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0C);
+                    uint32_t baseMipSize = 0;
+                    bool formatOk = (rawFormat == 0 || rawFormat == 1 || rawFormat == 3); // DXT1/DXT3/DXT5
+                        // real enum values per TextureUpscaleIwi::Format -- kept as raw ints here to
+                        // avoid pulling in that header just for this diagnostic.
+                    if (formatOk && w > 0 && h > 0) {
+                        TextureUpscaleDxt::BlockFormat bf = (rawFormat == 0) ? TextureUpscaleDxt::BlockFormat::BC1
+                            : (rawFormat == 1) ? TextureUpscaleDxt::BlockFormat::BC2 : TextureUpscaleDxt::BlockFormat::BC3;
+                        baseMipSize = TextureUpscaleDxt::CompressedSize(w, h, bf);
+                    }
+                    sprintf_s(buf, "[x64-capture-outcome] '%.200s': capSize=%u magicOk=1 rawFormat=%d formatOk=%d w=%u h=%u baseMipSize=%u sizeOk=%d",
+                        cap.name, cap.size, rawFormat, formatOk ? 1 : 0, w, h, baseMipSize,
+                        (baseMipSize > 0 && cap.size >= 0x20 + baseMipSize) ? 1 : 0);
+                }
+                LogFromController(buf);
+            }
             // Shared parse-and-queue (2026-09-28) -- same real IWI-v8
             // header-parse + base-mip-extraction logic the bulk pre-cache
             // orchestrator also uses (texture_upscale_worker.h), factored
