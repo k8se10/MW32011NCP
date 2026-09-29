@@ -25,17 +25,19 @@
 // a stall" design.
 namespace TextureUpscaleWorker
 {
-    // Queues a real captured source texture for background upscaling, if:
-    //  - `name` isn't already queued or mid-processing this session (a
-    //    simple in-flight dedup set -- separate from the on-disk cache check
-    //    in Hook_ImageFileLoadX64, which only ever catches a PRIOR session's
-    //    completed work, not a job already in flight THIS session), and
-    //  - the queue has room (a fixed-capacity ring buffer, matching
-    //    asset_capture.cpp's own kMaxPendingWrites precedent -- degrades
-    //    gracefully by dropping the request, not blocking the caller).
-    // Takes ownership of `compressedData` (malloc'd) on success -- the
-    // worker thread frees it once processed. On failure (already queued, or
-    // queue full), the caller must free it instead.
+    // Queues a real captured source texture for background upscaling, if
+    // `name` isn't already queued or mid-processing this session (a simple
+    // in-flight dedup set -- separate from the on-disk cache check in
+    // Hook_ImageFileLoadX64, which only ever catches a PRIOR session's
+    // completed work, not a job already in flight THIS session). The queue
+    // itself is unbounded (2026-09-29 -- an earlier fixed-capacity ring
+    // buffer silently dropped jobs with no log line once full, a real,
+    // plausible source of "why didn't this texture ever get queued"
+    // mysteries; see texture_upscale_worker.cpp's own comment) -- the only
+    // realistic failure mode left is genuine OOM. Takes ownership of
+    // `compressedData` (malloc'd) on success -- the worker thread frees it
+    // once processed. On failure (already in flight, or real OOM), the
+    // caller must free it instead.
     //
     // `format` is the real TextureUpscaleIwi::Format the source data is
     // encoded in (DXT1/DXT3/DXT5 only -- other formats are the caller's

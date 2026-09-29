@@ -25,31 +25,29 @@ namespace
         uint8_t* compressedData; // malloc'd, owned by the queue until the worker frees it
         uint32_t compressedSize;
         int scaleMultiplier;
+        PendingJob* next; // intrusive singly-linked FIFO node -- see the
+            // queue-depth note below for why this replaced a fixed-capacity
+            // ring buffer.
     };
 
-    // Fixed-capacity ring buffer + dedicated background thread -- same
-    // established shape as asset_capture.cpp's own WriteThreadProc/
-    // g_pendingWrites (see this project's own precedent there for the full
-    // rationale: keep the FAST in-memory work on the calling thread, hand
-    // only the SLOW work -- here, real neural-network inference, not disk
-    // I/O -- to a dedicated background thread). CRITICAL_SECTION, not
-    // std::mutex, matching this project's own established non-STL
-    // shipped-code convention.
-    constexpr int kMaxPendingJobs = 48; // deliberately bounded -- each job is
-        // real, slow (seconds, not milliseconds) GPU inference work, so a
-        // very deep queue would just mean a long, stale backlog, not real
-        // throughput. Widened from an original 16 (2026-09-28) once the bulk
-        // pre-cache orchestrator became a second, much higher-volume
-        // producer than organic per-load capture alone -- 48 is a real
-        // memory/throughput tradeoff (worst case ~20MB/job for a large
-        // captured source texture means up to ~1GB queued at once), paired
-        // with the orchestrator's own bounded retry-with-backoff rather than
-        // growing the queue without limit. 16 remains generous headroom over
-        // how many DISTINCT new textures a single menu/level visit
-        // realistically introduces at
-        // once.
-    PendingJob g_pendingJobs[kMaxPendingJobs];
-    int g_pendingHead = 0, g_pendingTail = 0, g_pendingCount = 0;
+    // Unbounded, malloc-backed singly-linked FIFO + dedicated background
+    // thread (2026-09-29, direct instruction: "caching and cache logging
+    // (dev only) shouldnt be bounded" -- replaces an original fixed-capacity
+    // ring buffer, kMaxPendingJobs=48). The prior design silently DROPPED a
+    // job with ZERO log line whenever the ring buffer was full
+    // (QueueUpscaleJob returned false with no diagnostic at all) -- a real,
+    // plausible explanation for captures that never show up as "queued" in
+    // the log during a busy level load where the bulk pre-cache orchestrator
+    // and organic load-time capture could both be feeding the same queue at
+    // once. A node is simply malloc'd per job and linked in; the only real
+    // limit is available memory, the same honest limit every other
+    // real-world queue in this project already has (matching
+    // asset_capture.cpp's own established "dedicated background thread"
+    // shape, just without that one's own fixed-capacity choice). Still
+    // CRITICAL_SECTION-guarded, not std::mutex, matching this project's own
+    // established non-STL shipped-code convention.
+    PendingJob* g_pendingHead = nullptr;
+    PendingJob* g_pendingTail = nullptr;
     CRITICAL_SECTION g_pendingLock;
     bool g_pendingLockInit = false;
     HANDLE g_workerThreadHandle = nullptr;
@@ -60,14 +58,22 @@ namespace
     // same name being requested again THIS session while a job for it is
     // still queued or mid-processing (e.g. the same background texture
     // re-requested on a menu re-open before the first upscale finishes).
-    // Fixed-size, matching this project's own established "degrade
-    // gracefully, don't overflow" convention (asset_capture.cpp's own
-    // g_capturedNames) -- 256 covers this feature's own real config-key
-    // scope (a single session realistically touches a bounded set of menu/
-    // HUD textures, not thousands).
-    constexpr int kMaxInFlightNames = 256;
-    char g_inFlightNames[kMaxInFlightNames][256];
-    int g_inFlightCount = 0;
+    //
+    // Unbounded singly-linked list (2026-09-29, same instruction as above --
+    // replaces an original fixed 256-entry array, kMaxInFlightNames). The
+    // prior design silently stopped TRACKING new names past 256 for the
+    // rest of the session (MarkInFlight simply did nothing once full) --
+    // real world-geometry-heavy levels/sessions can genuinely exceed 256
+    // distinct textures, at which point every name past the cap loses its
+    // dedup protection with no log trail explaining why. Lookup stays O(n)
+    // either way (the old array was already linearly scanned), so a linked
+    // list costs nothing extra here.
+    struct InFlightNode
+    {
+        char name[256];
+        InFlightNode* next;
+    };
+    InFlightNode* g_inFlightHead = nullptr;
     CRITICAL_SECTION g_inFlightLock;
     bool g_inFlightLockInit = false;
 
@@ -75,8 +81,8 @@ namespace
     {
         EnterCriticalSection(&g_inFlightLock);
         bool found = false;
-        for (int i = 0; i < g_inFlightCount; ++i) {
-            if (_stricmp(g_inFlightNames[i], name) == 0) { found = true; break; }
+        for (InFlightNode* n = g_inFlightHead; n; n = n->next) {
+            if (_stricmp(n->name, name) == 0) { found = true; break; }
         }
         LeaveCriticalSection(&g_inFlightLock);
         return found;
@@ -84,11 +90,13 @@ namespace
 
     void MarkInFlight(const char* name)
     {
+        InFlightNode* node = static_cast<InFlightNode*>(malloc(sizeof(InFlightNode)));
+        if (!node) return; // real OOM -- nothing sane to do but skip dedup
+            // tracking for this one name; the job itself still queues fine.
+        strncpy_s(node->name, name, _TRUNCATE);
         EnterCriticalSection(&g_inFlightLock);
-        if (g_inFlightCount < kMaxInFlightNames) {
-            strncpy_s(g_inFlightNames[g_inFlightCount], name, _TRUNCATE);
-            ++g_inFlightCount;
-        }
+        node->next = g_inFlightHead;
+        g_inFlightHead = node;
         LeaveCriticalSection(&g_inFlightLock);
     }
 
@@ -105,13 +113,11 @@ namespace
     void ClearInFlightOnFailure(const char* name)
     {
         EnterCriticalSection(&g_inFlightLock);
-        for (int i = 0; i < g_inFlightCount; ++i) {
-            if (_stricmp(g_inFlightNames[i], name) == 0) {
-                // Swap-remove -- order doesn't matter for this set. Manual
-                // copy (not std::swap) to avoid an extra STL header
-                // dependency in this otherwise non-STL shipped file.
-                strncpy_s(g_inFlightNames[i], g_inFlightNames[g_inFlightCount - 1], _TRUNCATE);
-                --g_inFlightCount;
+        InFlightNode* prev = nullptr;
+        for (InFlightNode* n = g_inFlightHead; n; prev = n, n = n->next) {
+            if (_stricmp(n->name, name) == 0) {
+                if (prev) prev->next = n->next; else g_inFlightHead = n->next;
+                free(n);
                 break;
             }
         }
@@ -281,16 +287,21 @@ namespace
         for (;;) {
             PendingJob job{};
             bool have = false;
+            PendingJob* node = nullptr;
             EnterCriticalSection(&g_pendingLock);
-            if (g_pendingCount > 0) {
-                job = g_pendingJobs[g_pendingHead];
-                g_pendingHead = (g_pendingHead + 1) % kMaxPendingJobs;
-                --g_pendingCount;
+            if (g_pendingHead) {
+                node = g_pendingHead;
+                g_pendingHead = node->next;
+                if (!g_pendingHead) g_pendingTail = nullptr;
                 have = true;
             }
             LeaveCriticalSection(&g_pendingLock);
 
             if (have) {
+                job = *node; // shallow copy -- job.compressedData ownership
+                    // transfers with it, node itself is just the queue-link
+                    // wrapper and is freed right after.
+                free(node);
                 ProcessJob(job);
                 if (job.compressedData) free(job.compressedData);
                 // Failure paths inside ProcessJob already logged; whether to
@@ -386,23 +397,27 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
 
     if (IsInFlight(name)) return false;
 
-    EnterCriticalSection(&g_pendingLock);
-    if (g_pendingCount >= kMaxPendingJobs) {
-        LeaveCriticalSection(&g_pendingLock);
-        return false;
-    }
-    PendingJob& job = g_pendingJobs[g_pendingTail];
-    strncpy_s(job.name, name, _TRUNCATE);
-    job.format = format;
-    job.width = width;
-    job.height = height;
-    job.compressedData = const_cast<uint8_t*>(compressedData); // ownership
+    // Unbounded (2026-09-29) -- see the struct/queue comment above for why a
+    // hard cap here was actively dangerous (silent job loss, no log trail).
+    // The only failure mode now is real OOM, which is worth keeping the
+    // original bool-return contract for even though it should never
+    // realistically trip.
+    PendingJob* node = static_cast<PendingJob*>(malloc(sizeof(PendingJob)));
+    if (!node) return false;
+    strncpy_s(node->name, name, _TRUNCATE);
+    node->format = format;
+    node->width = width;
+    node->height = height;
+    node->compressedData = const_cast<uint8_t*>(compressedData); // ownership
         // transfers to the queue/worker on success, per this function's own
         // declared contract.
-    job.compressedSize = compressedSize;
-    job.scaleMultiplier = scaleMultiplier;
-    g_pendingTail = (g_pendingTail + 1) % kMaxPendingJobs;
-    ++g_pendingCount;
+    node->compressedSize = compressedSize;
+    node->scaleMultiplier = scaleMultiplier;
+    node->next = nullptr;
+
+    EnterCriticalSection(&g_pendingLock);
+    if (g_pendingTail) g_pendingTail->next = node; else g_pendingHead = node;
+    g_pendingTail = node;
     LeaveCriticalSection(&g_pendingLock);
 
     MarkInFlight(name);

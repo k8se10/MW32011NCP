@@ -12384,13 +12384,16 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
     // currently unhooked path entirely, not a capture-side bug. Remove once
     // this is confirmed or ruled out.
     if (name) {
+        // Dev-only diagnostic -- unbounded (2026-09-29, direct instruction:
+        // "caching and cache logging (dev only) shouldnt be bounded"). A
+        // real session's own unique-name count is the only limit; nothing
+        // this feature does should ever silently stop being logged partway
+        // through a real playthrough.
         static int s_allNameLogCount = 0;
-        if (s_allNameLogCount < 20000) {
-            ++s_allNameLogCount;
-            char nbuf[400];
-            sprintf_s(nbuf, "[x64-allname-diag] \"%.300s\" (hit #%d)", name, s_allNameLogCount);
-            LogFromController(nbuf);
-        }
+        ++s_allNameLogCount;
+        char nbuf[400];
+        sprintf_s(nbuf, "[x64-allname-diag] \"%.300s\" (hit #%d)", name, s_allNameLogCount);
+        LogFromController(nbuf);
     }
 
     // Real cache-check logic (2026-09-28) -- replaces the earlier diagnostic-
@@ -12516,14 +12519,18 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
             // consumed by main-menu UI assets (cardicon_*/ammo_counter_*
             // killstreak/prestige icons -- hundreds of them) before a single
             // Dome level texture was ever captured -- confirmed via the real
-            // log, zero world-geometry names among the 500. Widened to 20000
-            // (matching [x64-allname-diag]'s own bound) and UI-prefix names
-            // already confirmed uninteresting are skipped so budget goes
-            // toward whatever's actually still unexplained.
+            // log, zero world-geometry names among the 500.
+            //
+            // Round 3 (2026-09-29, direct instruction: "caching and cache
+            // logging (dev only) shouldnt be bounded") -- the numeric cap
+            // itself is removed entirely, not just widened; a dev-only
+            // diagnostic must never silently stop covering the rest of a
+            // real playthrough. The UI-prefix skip stays -- that's relevance
+            // filtering (already-confirmed-correct names), not a bound.
             bool looksLikeKnownUiAsset = (_strnicmp(cap.name, "cardicon_", 9) == 0)
                 || (_strnicmp(cap.name, "ammo_counter_", 13) == 0);
             static int s_captureOutcomeDiagCount = 0;
-            if (!looksLikeKnownUiAsset && s_captureOutcomeDiagCount < 20000) {
+            if (!looksLikeKnownUiAsset) {
                 ++s_captureOutcomeDiagCount;
                 bool magicOk = cap.size > 0x20 && cap.buffer[0] == 'I' && cap.buffer[1] == 'W'
                     && cap.buffer[2] == 'i' && cap.buffer[3] == 8;
