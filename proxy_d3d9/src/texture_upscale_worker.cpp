@@ -18,6 +18,21 @@
     // DrawTextureCacheStatusBar instead).
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
+extern bool IsMemorySafeToContinueX64(); // defined in analog_input_hooks_x64.cpp --
+    // real RAM/VRAM pressure gate, shared with the name-driven fetch pump.
+    // 2026-09-29 (round 2): the ORIGINAL wiring only gated that one pump, not
+    // this file's own shared QueueUpscaleJob choke point every OTHER capture
+    // path (viewport capture, bulk precache, load-time capture) funnels
+    // through -- a real, live-confirmed gap. A full session with
+    // ImagePoolRealExpansion=1 (removing the native pool's own incidental
+    // ceiling on how much content could ever be processed) pushed real
+    // system RAM to 96-99% used (sysMemLoad, availPhysMB down to single
+    // digits at points) and the game HUNG entering a weapon viewport --
+    // exactly the moment Hook_SetTexture's viewport-capture path would fire
+    // and queue more work on an already critically memory-starved system.
+    // Gating the shared choke point itself (QueueUpscaleJob, below) closes
+    // this for every current and future caller at once, rather than
+    // patching one more call site.
 
 namespace TextureUpscaleWorker
 {
@@ -871,6 +886,27 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
             "genuinely finished loading this session, not a real texture size.",
             name, width, height, kMaxSaneDim);
         LogFromController(buf);
+        return false;
+    }
+
+    // Real RAM/VRAM pressure gate (2026-09-29, round 2) -- see this file's
+    // own extern declaration comment above for the full incident this
+    // closes. Checked here, at the one real shared choke point every
+    // capture path (load-time, viewport, bulk precache, name-driven fetch)
+    // already funnels through, rather than at each caller individually.
+    if (!IsMemorySafeToContinueX64()) {
+        static DWORD s_lastDeclineLogMs = 0;
+        DWORD nowMs = GetTickCount();
+        if (nowMs - s_lastDeclineLogMs >= 5000) { // real, deliberate rate limit --
+            // this gate can be checked many times per second under real
+            // memory pressure (every SetTexture call, every precache zone
+            // file); an unthrottled log here would itself become the next
+            // instance of this project's own already-documented
+            // unthrottled-per-frame-log bug class (issue #87).
+            s_lastDeclineLogMs = nowMs;
+            LogFromController("[texture-upscale-worker] memory ceiling reached -- declining new "
+                "upscale work until real RAM/VRAM pressure eases (see MaxMemoryUsagePercentForProactiveFeatures)");
+        }
         return false;
     }
 
