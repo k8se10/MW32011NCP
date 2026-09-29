@@ -29,3 +29,15 @@ void LogRealVramDiagIfDue();
 // (outputs left untouched) if the real DXGI query isn't available/fails --
 // callers should treat that as "unknown," not "safe" or "unsafe."
 bool TryGetRealVramInfo(double* outBudgetMB, double* outUsageMB);
+
+// Same real, on-demand query, but for the NON_LOCAL segment group -- the
+// real, distinct segment a discrete-GPU system's HOST-VISIBLE (shared
+// system-memory) heap draws its budget from. See this function's own
+// implementation comment (vram_diag.cpp) for the real, twice-repeated
+// incident (DXVK's own "Heap 1" hitting 99% full while the LOCAL segment
+// sat at 57%) that made this a real, necessary second check, not just
+// belt-and-suspenders. Returns false (outputs untouched) if unavailable
+// (e.g. a unified-memory system with no real NON_LOCAL segment) --
+// callers should treat that as "unknown," not "safe" or "unsafe," same as
+// TryGetRealVramInfo's own contract.
+bool TryGetRealNonLocalVramInfo(double* outBudgetMB, double* outUsageMB);

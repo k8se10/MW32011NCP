@@ -12435,6 +12435,20 @@ bool IsMemorySafeToContinueX64()
         if (usagePercent >= static_cast<double>(maxPercent)) return false;
     }
 
+    // Real, second segment check (2026-09-29, round 2) -- a twice-repeated
+    // live incident showed DXVK's own "Heap 1" (the NON_LOCAL/host-visible
+    // segment) hitting 99% full (13224MB/13364MB) while the LOCAL segment
+    // checked above sat at a healthy 57%. The LOCAL-only check was blind to
+    // the actual segment under real pressure; this is the same real,
+    // driver-authoritative DXGI query, just the other segment group. See
+    // TryGetRealNonLocalVramInfo's own header comment (vram_diag.h) for the
+    // full incident.
+    double nonLocalBudgetMB = 0.0, nonLocalUsageMB = 0.0;
+    if (TryGetRealNonLocalVramInfo(&nonLocalBudgetMB, &nonLocalUsageMB) && nonLocalBudgetMB > 0.0) {
+        double nonLocalUsagePercent = (nonLocalUsageMB / nonLocalBudgetMB) * 100.0;
+        if (nonLocalUsagePercent >= static_cast<double>(maxPercent)) return false;
+    }
+
     return true;
 }
 

@@ -89,6 +89,27 @@ bool TryGetRealVramInfo(double* outBudgetMB, double* outUsageMB)
     return true;
 }
 
+// Real, on-demand query of the NON_LOCAL segment group (2026-09-29) -- the
+// real, distinct DXGI memory segment a discrete-GPU system's HOST-VISIBLE
+// (shared/system) heap draws its budget from. Added after a real, live,
+// twice-repeated incident: iw5sp_d3d9.log's own DXVK diagnostic output
+// showed its "Heap 1" (host-visible) at 13224MB/13364MB (99% full) while
+// "Heap 0" (dedicated VRAM, the LOCAL segment TryGetRealVramInfo above
+// already checks) sat comfortably at 57% -- the existing LOCAL-only VRAM
+// check was blind to the actual segment under real pressure, so
+// IsMemorySafeToContinueX64's own "is it safe" verdict never reflected the
+// real danger DXVK was already hitting. Same real, driver-authoritative
+// QueryVideoMemoryInfo API, just the other segment group.
+bool TryGetRealNonLocalVramInfo(double* outBudgetMB, double* outUsageMB)
+{
+    if (!EnsureDxgiAdapter()) return false;
+    DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+    if (FAILED(g_dxgiAdapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info))) return false;
+    if (outBudgetMB) *outBudgetMB = static_cast<double>(info.Budget) / (1024.0 * 1024.0);
+    if (outUsageMB) *outUsageMB = static_cast<double>(info.CurrentUsage) / (1024.0 * 1024.0);
+    return true;
+}
+
 void LogRealVramDiagIfDue()
 {
     DWORD nowMs = GetTickCount();
