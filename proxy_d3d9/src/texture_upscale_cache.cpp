@@ -131,6 +131,20 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
     return ReadWholeFile(path, outSize);
 }
 
+// Lightweight existence check (2026-09-29) -- GetFileAttributesA, never a
+// real file open/read, for the session-continuity basemap's own startup
+// coverage count (texture_upscale_worker.cpp's LoadPendingManifest), which
+// needs to check up to ~17,000 names quickly without paying a real open+read
+// cost per name the way TryLoadCachedUpscaledIwi above does.
+bool CacheEntryExists(const char* imageName, int scaleMultiplier)
+{
+    if (!EnsureCacheDir()) return false;
+    char path[MAX_PATH];
+    if (!BuildCacheFilePath(imageName, scaleMultiplier, path, sizeof(path))) return false;
+    DWORD attrs = GetFileAttributesA(path);
+    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t* iwiData, uint32_t iwiSize)
 {
     if (!EnsureCacheDir()) return false;

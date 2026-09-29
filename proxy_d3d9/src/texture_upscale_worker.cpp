@@ -159,6 +159,18 @@ namespace
         LeaveCriticalSection(&g_inFlightLock);
     }
 
+    // Real, live session-wide progress counters (2026-09-29) -- see this
+    // file's own header (GetProgressSnapshot) for the full rationale. Plain
+    // LONG + Interlocked* -- cheaper and simpler than a critical section for
+    // three independent monotonic counters nothing else ever needs to read
+    // atomically together. Declared here (moved up from further down the
+    // file) so the session-continuity baseline code below -- which needs to
+    // pre-seed these at startup -- can reference them without a forward-
+    // declaration issue.
+    volatile LONG g_totalQueued = 0;
+    volatile LONG g_totalProcessed = 0;
+    volatile LONG g_totalFailed = 0;
+
     // ---- Cross-session continuity (2026-09-29) -----------------------------
     // Direct request: "we should have session continuity so cacheing knows
     // what to cache from last runs." The on-disk upscale cache itself already
@@ -303,6 +315,39 @@ namespace
                 basemapCount, pendingCount);
             LogFromController(buf);
         }
+
+        // Real-progress baseline (2026-09-29, live-reported gap: "the progress
+        // indicator doesn't show the loaded progress and it looks like it
+        // starts fresh"). Without this, DrawTextureCacheStatusBar's own
+        // queued/processed counters only ever reflected THIS session's own
+        // increments, starting at 0/0 regardless of how much of the known
+        // game was already cached from prior sessions -- a real, misleading
+        // gap now that a comprehensive bundled basemap exists. Pre-seeds
+        // g_totalQueued/g_totalProcessed with the REAL known total and how
+        // many of those already have a real cache file (a cheap
+        // GetFileAttributesA check per name, not a real read -- see
+        // TextureUpscaleCache::CacheEntryExists), so the status bar shows
+        // genuine overall completion (e.g. "9802/17008 (58%)") from the very
+        // first frame instead of appearing to start from scratch.
+        // QueueUpscaleJob's own `wasKnown` check (see that function's own
+        // comment) prevents double-counting any of these names again once
+        // they're actually queued this session.
+        if (g_carriedOverHead) {
+            int totalKnown = 0, alreadyCached = 0;
+            int scale = g_modConfig.textureRenderRes;
+            for (CarriedOverNode* n = g_carriedOverHead; n; n = n->next) {
+                ++totalKnown;
+                if (TextureUpscaleCache::CacheEntryExists(n->name, scale)) ++alreadyCached;
+            }
+            InterlockedExchange(&g_totalQueued, totalKnown);
+            InterlockedExchange(&g_totalProcessed, alreadyCached);
+            char buf[220];
+            sprintf_s(buf, "[texture-upscale-continuity] real coverage baseline: %d/%d known textures "
+                "already cached at %dx (%.1f%%).",
+                alreadyCached, totalKnown, scale,
+                totalKnown > 0 ? (100.0 * alreadyCached / totalKnown) : 0.0);
+            LogFromController(buf);
+        }
     }
 
     // Called periodically (from WorkerThreadProc's own loop, never per-event)
@@ -337,15 +382,6 @@ namespace
 
         fclose(f);
     }
-
-    // Real, live session-wide progress counters (2026-09-29) -- see this
-    // file's own header (GetProgressSnapshot) for the full rationale. Plain
-    // LONG + Interlocked* -- cheaper and simpler than a critical section for
-    // three independent monotonic counters nothing else ever needs to read
-    // atomically together.
-    volatile LONG g_totalQueued = 0;
-    volatile LONG g_totalProcessed = 0;
-    volatile LONG g_totalFailed = 0;
 
     // Real DXT format -> TextureUpscaleDxt::BlockFormat mapping -- these two
     // enums intentionally mirror each other 1:1 for the three formats both
@@ -706,12 +742,16 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     // fine here -- this runs once per texture LOAD EVENT (not per frame), and
     // real sessions queue in the hundreds/low thousands, not a hot path.
     // Session-continuity priority boost (2026-09-29) -- a name a PRIOR
-    // session left pending (never got cached before that session ended)
-    // jumps straight to the very front, ahead of even same-size new work,
-    // so genuinely interrupted work actually finishes instead of getting
-    // re-queued and re-interrupted at a similar point every session.
+    // session left pending (never got cached before that session ended), OR
+    // a name from the bundled basemap, jumps straight to the very front,
+    // ahead of even same-size new work, so genuinely interrupted/known work
+    // actually finishes instead of getting re-queued and re-interrupted at a
+    // similar point every session. Captured ONCE, before the lock, and
+    // reused below for the progress-counter decision too -- see that
+    // comment for why.
+    bool wasKnown = IsCarriedOver(name);
     EnterCriticalSection(&g_pendingLock);
-    if (IsCarriedOver(name)) {
+    if (wasKnown) {
         node->next = g_pendingHead;
         g_pendingHead = node;
         if (!g_pendingTail) g_pendingTail = node;
@@ -730,11 +770,26 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     LeaveCriticalSection(&g_pendingLock);
 
     MarkInFlight(name);
-    LONG newQueuedCount = InterlockedIncrement(&g_totalQueued);
+
+    // Progress-counter accounting (2026-09-29): g_totalQueued/g_totalProcessed
+    // are pre-seeded at startup (LoadPendingManifest) with the REAL total
+    // known-basemap count and how many of those are already cached, so the
+    // status bar reflects genuine overall progress against the whole known
+    // game, not just this session's own increments (see that function's own
+    // header comment). A `wasKnown` name (basemap or carried-over) is
+    // already counted in that startup baseline -- incrementing g_totalQueued
+    // again here would double-count it. Only a genuinely NEW name (never
+    // part of the known baseline) grows the total.
+    if (!wasKnown) InterlockedIncrement(&g_totalQueued);
+    LONG currentQueuedCount = InterlockedCompareExchange(&g_totalQueued, 0, 0); // atomic read
 
     // Real one-time "expect hitching, restart to see results" notice
     // (2026-09-29, direct instruction) -- fires exactly once, the first time
-    // the real session-wide queued count crosses 100.
+    // the real session-wide queued count crosses 100. Checked against the
+    // CURRENT total (which can already be well past 100 from the startup
+    // baseline alone, not just this call's own increment) rather than only
+    // InterlockedIncrement's own return value, since a wasKnown item never
+    // increments at all.
     // InterlockedCompareExchange (not a plain bool check) so two worker...
     // no wait, this runs on the QUEUING side (the load-time/viewport capture
     // threads), which genuinely can call QueueUpscaleJob concurrently from
@@ -743,7 +798,7 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     // than risking two threads both crossing 100 at once and double-firing.
     constexpr LONG kCacheBuildNoticeThreshold = 100;
     static volatile LONG s_cacheBuildNoticeShown = 0;
-    if (newQueuedCount >= kCacheBuildNoticeThreshold &&
+    if (currentQueuedCount >= kCacheBuildNoticeThreshold &&
         InterlockedCompareExchange(&s_cacheBuildNoticeShown, 1, 0) == 0) {
         ShowOverlayMessageUntilDismissed(kCacheBuildNoticeText, OverlayAnimStyle::Plain);
     }

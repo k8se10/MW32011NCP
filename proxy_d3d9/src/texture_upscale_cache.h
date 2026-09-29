@@ -48,6 +48,13 @@ namespace TextureUpscaleCache
     // "corrupt cache file" behaviorally beyond logging.
     uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, uint32_t* outSize);
 
+    // Lightweight existence check (2026-09-29) -- a plain GetFileAttributesA
+    // call, never a real file open/read. For callers that only need to know
+    // WHETHER a cache entry exists, not its contents (e.g. the session-
+    // continuity basemap's own startup coverage count, which checks up to
+    // ~17,000 names and can't afford a real read per name).
+    bool CacheEntryExists(const char* imageName, int scaleMultiplier);
+
     // Writes a complete, already-encoded .iwi buffer (as produced by
     // TextureUpscaleIwi::EncodeIwi8) to the cache under the same
     // name+scaleMultiplier key TryLoadCachedUpscaledIwi will later look up.
