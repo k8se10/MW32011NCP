@@ -339,18 +339,44 @@ namespace
     }
 }
 
-void EnsureWorkerStarted()
+namespace
 {
-    if (g_workerThreadHandle) return;
-    if (!g_pendingLockInit) {
+    // Real, live-reported crash fix (2026-09-29): EnsureWorkerStarted's own
+    // `if (g_workerThreadHandle) return;` early-out is NOT atomic, and this
+    // function is now genuinely reachable from more than one thread at
+    // once -- the render thread (Hook_SetTexture -> IsNameInFlight, the
+    // viewport capture path) and the load-time capture thread
+    // (Hook_ImageFileLoadX64 -> QueueUpscaleJob) can both call in
+    // concurrently. Two real bugs stemmed from this: (1) IsNameInFlight
+    // (texture_viewport_capture.cpp's own caller) could reach
+    // EnterCriticalSection(&g_inFlightLock) before ANY thread had ever run
+    // this function's body at all -- a genuine crash (null-class-ptr write
+    // inside ntdll's critical-section code, confirmed via a real WER crash
+    // dump: IsInFlight -> EnterCriticalSection on a still-zeroed
+    // CRITICAL_SECTION); (2) even once fixed to always call this function
+    // first, two threads racing the old non-atomic check could both pass it
+    // and double-initialize the same critical sections concurrently with
+    // the other thread actively inside one -- real, separate UB.
+    // InitOnceExecuteOnce is the standard, real WinAPI primitive for
+    // exactly this ("run this body exactly once, block every other
+    // concurrent caller until it's done") -- replaces the racy manual
+    // check entirely rather than patching around it.
+    INIT_ONCE g_workerInitOnce = INIT_ONCE_STATIC_INIT;
+
+    BOOL CALLBACK InitWorkerOnceCallback(PINIT_ONCE, PVOID, PVOID*)
+    {
         InitializeCriticalSection(&g_pendingLock);
         g_pendingLockInit = true;
-    }
-    if (!g_inFlightLockInit) {
         InitializeCriticalSection(&g_inFlightLock);
         g_inFlightLockInit = true;
+        g_workerThreadHandle = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
+        return TRUE;
     }
-    g_workerThreadHandle = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
+}
+
+void EnsureWorkerStarted()
+{
+    InitOnceExecuteOnce(&g_workerInitOnce, InitWorkerOnceCallback, nullptr, nullptr);
 }
 
 bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier, const char* source)
