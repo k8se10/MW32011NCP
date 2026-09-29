@@ -171,6 +171,15 @@ namespace
     volatile LONG g_totalProcessed = 0;
     volatile LONG g_totalFailed = 0;
 
+    // Real "is a job actively being worked on right now" signal (2026-09-29,
+    // for CheckAutoExitOnCacheCompleteIfDue below) -- distinct from the
+    // queued/processed counters above, which only capture completed events,
+    // not in-progress ones. Incremented right before ProcessJob runs,
+    // decremented right after -- a single large/slow job (real GPU inference
+    // can genuinely take a while) must count as "active," not "idle," for
+    // the whole time it's running, not just at its start/end instants.
+    volatile LONG g_activeWorkerCount = 0;
+
     // ---- Cross-session continuity (2026-09-29) -----------------------------
     // Direct request: "we should have session continuity so cacheing knows
     // what to cache from last runs." The on-disk upscale cache itself already
@@ -383,6 +392,53 @@ namespace
         fclose(f);
     }
 
+    // Real dev/QoL feature (2026-09-29, direct request): "end process on
+    // texture cache completion (no cache activity for 2+mins (this means no
+    // active i.o not just a task taking a while)." Default OFF --
+    // [Experimental] AutoExitOnCacheComplete.
+    //
+    // "Idle" is deliberately defined as NO job currently in flight
+    // (g_activeWorkerCount == 0) AND the queue empty (nothing left
+    // unprocessed, via the same queued/processed counters the status bar
+    // uses) -- checked EVERY call (cheap, four atomic reads), not just
+    // periodically, so a single large/slow job (real GPU inference can
+    // genuinely take a while at bigger tile sizes) never gets mistaken for
+    // "done" just because no job has FINISHED recently. The moment either
+    // condition goes false, the idle timer resets to zero -- only a truly
+    // continuous 2 real minutes of nothing happening triggers the exit.
+    void CheckAutoExitOnCacheCompleteIfDue()
+    {
+        if (!g_modConfig.autoExitOnCacheCompleteEnabled) return;
+
+        LONG queued = InterlockedCompareExchange(&g_totalQueued, 0, 0);
+        LONG processed = InterlockedCompareExchange(&g_totalProcessed, 0, 0);
+        LONG activeNow = InterlockedCompareExchange(&g_activeWorkerCount, 0, 0);
+        bool idleNow = (activeNow == 0) && (processed >= queued);
+
+        static DWORD s_idleSinceMs = 0;
+        DWORD now = GetTickCount();
+        if (!idleNow) {
+            s_idleSinceMs = 0;
+            return;
+        }
+        if (s_idleSinceMs == 0) {
+            s_idleSinceMs = now; // just became idle -- start the real timer
+            return;
+        }
+
+        constexpr DWORD kIdleExitDelayMs = 2 * 60 * 1000; // 2 real minutes
+        if ((now - s_idleSinceMs) < kIdleExitDelayMs) return;
+
+        char buf[220];
+        sprintf_s(buf, "[texture-upscale-continuity] AutoExitOnCacheComplete: no cache activity for 2+ "
+            "minutes (%d/%d processed, 0 active) -- closing the process now.",
+            processed, queued);
+        LogFromController(buf);
+        ExitProcess(0); // real, deliberate self-termination -- this feature's
+            // entire purpose is to end the process once there's genuinely
+            // nothing left to do.
+    }
+
     // Real DXT format -> TextureUpscaleDxt::BlockFormat mapping -- these two
     // enums intentionally mirror each other 1:1 for the three formats both
     // understand (see texture_upscale_iwi_writer.h's own header comment),
@@ -562,7 +618,9 @@ namespace
                     // transfers with it, node itself is just the queue-link
                     // wrapper and is freed right after.
                 free(node);
+                InterlockedIncrement(&g_activeWorkerCount);
                 ProcessJob(job);
+                InterlockedDecrement(&g_activeWorkerCount);
                 if (job.compressedData) free(job.compressedData);
                 // Failure paths inside ProcessJob already logged; whether to
                 // allow a re-queue on a future load is decided here, once,
@@ -592,6 +650,9 @@ namespace
                 // check), called unconditionally (not just in the idle branch)
                 // so a continuously busy backlog-draining session still gets
                 // periodic snapshots, not just an idle one.
+            CheckAutoExitOnCacheCompleteIfDue(); // 2026-09-29, dev/QoL --
+                // real no-op unless enabled; cheap (four atomic reads) even
+                // when enabled, safe to call every iteration.
         }
         return 0;
     }

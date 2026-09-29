@@ -941,6 +941,21 @@ struct ModConfig
     // project has no live throughput data yet justifying more than that).
     int textureUpscaleWorkerThreads = 3;
 
+    // [Experimental] AutoExitOnCacheComplete (2026-09-29) -- real dev/QoL
+    // toggle, direct request: "end process on texture cache completion (no
+    // cache activity for 2+mins (this means no active i.o not just a task
+    // taking a while)." Lets a session be left running unattended (e.g.
+    // overnight) to grind through the texture-upscale-cache backlog, then
+    // closes the game process automatically once there's genuinely nothing
+    // left to do -- not just "no job finished recently" (a single large,
+    // slow job wouldn't finish in that window either), but no job actively
+    // in flight AND the queue empty, sustained continuously for 2 real
+    // minutes (see CheckAutoExitOnCacheCompleteIfDue's own comment,
+    // texture_upscale_worker.cpp). Default OFF -- forcibly closing the game
+    // process is a significant enough behavior change that it should never
+    // surprise an ordinary player; this is squarely a dev/power-user tool.
+    bool autoExitOnCacheCompleteEnabled = false;
+
     // [Video] CustomAssetOverrides (2026-09-28, generalized same day) --
     // real, general, zero-code-change custom asset substitution: any real,
     // correctly-formatted .iwi file dropped into custom_assets\ (named

@@ -1297,6 +1297,15 @@ void WriteDefaultConfig(const char* path)
         "; run more concurrent submissions than this conservative default. Default 3,\n"
         "; clamped 1..16.\n"
         "TextureUpscaleWorkerThreads=%d\n"
+        "; Real dev/QoL toggle (2026-09-29): closes the game process automatically\n"
+        "; once the texture-upscale-cache backlog is genuinely finished -- no job\n"
+        "; actively in flight AND the queue empty, sustained continuously for 2 real\n"
+        "; minutes (not just \"no job finished recently\" -- a single large, slow job\n"
+        "; wouldn't trip that either). Lets a session be left running unattended (e.g.\n"
+        "; overnight) to grind through a real backlog, then close itself when there's\n"
+        "; nothing left to do. 0 = off (default -- forcibly closing the game should\n"
+        "; never surprise an ordinary player), 1 = on.\n"
+        "AutoExitOnCacheComplete=%d\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
         "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
@@ -1435,6 +1444,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.dlssModeX64,
         g_modConfig.imageScratchMB,
         g_modConfig.textureUpscaleWorkerThreads,
+        g_modConfig.autoExitOnCacheCompleteEnabled ? 1 : 0,
         g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
         g_modConfig.gpuCaptureEnabled ? 1 : 0,
         g_modConfig.gpuSyncTimingLogging ? 1 : 0,
@@ -1793,6 +1803,7 @@ void LoadModConfig()
         ClampIntSetting("Experimental", "TextureUpscaleWorkerThreads", v, 1, 16, 3);
         g_modConfig.textureUpscaleWorkerThreads = v;
     }
+    ReadBool(path, "Experimental", "AutoExitOnCacheComplete", g_modConfig.autoExitOnCacheCompleteEnabled);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);
