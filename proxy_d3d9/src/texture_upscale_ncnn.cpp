@@ -341,6 +341,15 @@ uint8_t* UpscaleRGBA4x(const uint8_t* rgba, uint32_t width, uint32_t height, uin
             // unconditional behavior, rather than leaving alpha
             // uninitialized garbage.
     }
+    // Real, critical leak fix (2026-09-29): srcAlpha was allocated at the top
+    // of this function and used above, but was only ever freed on the early
+    // (!ok) failure path -- every real SUCCESSFUL call leaked the entire
+    // source alpha plane (width*height bytes, several MB for large real
+    // world textures). Live-reported: privateBytesMB climbed from 263MB to
+    // over 10GB in one real session, eventually surfacing as the native
+    // engine's own "Needed to allocate at least 32.0 MB to load images"
+    // error on a Dome level load -- this is the real root cause.
+    free(srcAlpha);
 
     if (outWidth) *outWidth = static_cast<uint32_t>(outW);
     if (outHeight) *outHeight = static_cast<uint32_t>(outH);
