@@ -1097,12 +1097,33 @@ bool ResolveAndTagCurrentImageX64(void* surface, sl::BufferType bufferType, VkIm
 
 HRESULT STDMETHODCALLTYPE Hook_SetDepthStencilSurfaceX64(void* device, void* pNewZStencil)
 {
+    // Real bug fix (2026-09-29) -- see SetLastKnownRenderDevice's own header
+    // comment (overlay_hud.h) for the real crash this closes: this hook can
+    // fire on a freshly-recreated device before that device's first
+    // EndScene ever runs, and TagDepthResourceForFrame's own downstream
+    // resolution lookups (via GetRealScreenSize) would otherwise use the
+    // OLD, already-destroyed device that g_lastKnownRenderDevice still
+    // pointed at.
+    SetLastKnownRenderDevice(device);
     if (pNewZStencil) TagDepthResourceForFrame(pNewZStencil);
     return g_origSetDepthStencilSurface(device, pNewZStencil);
 }
 
 HRESULT STDMETHODCALLTYPE Hook_SetRenderTargetX64(void* device, DWORD renderTargetIndex, void* pRenderTarget)
 {
+    // Real, live-confirmed crash fix (2026-09-29): see
+    // SetLastKnownRenderDevice's own header comment (overlay_hud.h) --
+    // TagColorResourceForFrame's own resolution lookups (via
+    // ComputeExpectedInternalResolutionX64 -> GetRealScreenSize) used
+    // GetLastKnownRenderDevice(), which was only ever refreshed in
+    // Hook_EndScene. A real WER crash dump confirmed this hook firing on a
+    // freshly-recreated device (a display-mode switch, fullscreen <->
+    // windowed-borderless) BEFORE that device's own first EndScene call --
+    // GetLastKnownRenderDevice() still returned the OLD, already-destroyed
+    // device at that exact moment, and calling GetViewport on it crashed.
+    // This hook already receives the real, live, current device as its own
+    // first argument -- refreshing the global here closes the gap.
+    SetLastKnownRenderDevice(device);
     // Only render target 0 (the primary color buffer) is relevant for DLSS
     // scaling input -- other indices are MRT slots (normals, velocity
     // buffers the game's own renderer might use internally, etc.), not the

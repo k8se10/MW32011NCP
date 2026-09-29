@@ -51,6 +51,23 @@ void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY);
 // cancels out by coincidence -- confirmed live: using the mismatched nullptr
 // fallback "broke 16:9" even though the math was correct in isolation.
 void* GetLastKnownRenderDevice();
+// Real bug fix (2026-09-29): g_lastKnownRenderDevice was previously only ever
+// refreshed inside Hook_EndScene -- fine for anything that only ever runs
+// per-frame after EndScene, but streamline_resources_x64.cpp's own
+// Hook_SetRenderTargetX64 fires EARLIER in a frame (during scene setup) and
+// already receives a real, live, current device pointer as its own first
+// argument. On a real device recreation (this engine destroys and fully
+// recreates the D3D9 device on any display-mode change), a SetRenderTarget
+// call can land on the brand-new device before that new device's first
+// EndScene has ever run -- GetLastKnownRenderDevice() at that exact moment
+// still returns the OLD, already-destroyed device, and calling a real vtable
+// method (GetViewport, via GetRealScreenSize) on it is a genuine crash, not
+// a hypothetical one (confirmed via a live WER crash dump: fullscreen ->
+// windowed-borderless triggered exactly this). Exposed so
+// Hook_SetRenderTargetX64 can refresh this global itself, closing the real
+// window between device recreation and this project's own first per-frame
+// EndScene refresh.
+void SetLastKnownRenderDevice(void* device);
 
 // Phase E (motion blur), visual-suite plan -- thin forwarder so
 // analog_input_hooks.cpp's engine-level Hook_FUN_00497210 (the real per-frame

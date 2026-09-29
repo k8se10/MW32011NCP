@@ -8463,15 +8463,32 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
     DWORD vpX = 0, vpY = 0; // logged below, not yet applied as a draw offset anywhere -- see this
                              // function's own diagnostic-log comment for why.
     if (deviceIn) {
-        void** deviceVtbl = *reinterpret_cast<void***>(deviceIn);
-        auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
-        D3DViewport9 vp = {};
-        if (SUCCEEDED(getViewport(deviceIn, &vp)) && vp.Width > 0 && vp.Height > 0) {
-            outWidth = static_cast<int>(vp.Width);
-            outHeight = static_cast<int>(vp.Height);
-            vpX = vp.X;
-            vpY = vp.Y;
-            gotViewport = true;
+        // SEH-guarded (2026-09-29) -- real, live-confirmed crash (WER dump):
+        // a caller can still legitimately pass a device pointer that's
+        // fresh at the call site but races a real device-recreation event
+        // (this engine destroys and fully recreates the D3D9 device on any
+        // display-mode change) landing between the caller reading it and
+        // this vtable call actually executing. The real, root-cause fix is
+        // each such caller keeping its own device tracking current (see
+        // SetLastKnownRenderDevice's own callers) -- this guard is real,
+        // cheap defense-in-depth on top of that, matching this project's
+        // own established "engine memory is on the other side of every
+        // call, guard it" convention (e.g. dvar_write_x64.cpp's ApplyOne):
+        // a crash here degrades to the same window-rect fallback below,
+        // never takes the whole process down.
+        __try {
+            void** deviceVtbl = *reinterpret_cast<void***>(deviceIn);
+            auto getViewport = reinterpret_cast<GetViewport_t>(deviceVtbl[kGetViewportVtableIndex]);
+            D3DViewport9 vp = {};
+            if (SUCCEEDED(getViewport(deviceIn, &vp)) && vp.Width > 0 && vp.Height > 0) {
+                outWidth = static_cast<int>(vp.Width);
+                outHeight = static_cast<int>(vp.Height);
+                vpX = vp.X;
+                vpY = vp.Y;
+                gotViewport = true;
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            gotViewport = false;
         }
     }
     if (!gotViewport) {
@@ -8530,6 +8547,11 @@ void GetRealScreenSize(void* deviceIn, int& outWidth, int& outHeight)
 void* GetLastKnownRenderDevice()
 {
     return g_lastKnownRenderDevice;
+}
+
+void SetLastKnownRenderDevice(void* device)
+{
+    if (device) g_lastKnownRenderDevice = device;
 }
 
 void GetResolutionScale(void* deviceIn, float& outScaleX, float& outScaleY)
