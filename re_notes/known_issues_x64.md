@@ -11904,3 +11904,37 @@ Two real, independent, compounding cost drivers, both now confirmed with hard nu
 **Real fix shipped, same day, following the RE above.** Direct instruction: "lets try that." Implemented exactly the redesign the conclusion above called for -- `Hook_ImagePoolInitX64` (`analog_input_hooks_x64.cpp`) hooks `FUN_1400a4e50` itself (signature independently verified as EXACTLY 1 match in the whole binary via `WildcardByteSearch`, `re_notes/x64_migration/pool_init_sig_uniqueness.txt`), discriminating on `headAddrPtr` the same way the old allocator hook did (the function is shared by a second, unrelated 40-byte-stride asset type -- confirmed via the function-pointer table, `re_notes/x64_migration/pool_init_fntable.txt`, which has `0x1400a4e50` at both index 10 and index 24 -- every other type's call passes through completely untouched). When `[Experimental] ImagePoolRealExpansion` is on, the hook `VirtualAlloc`s a new buffer sized for `count + ImagePoolExtraCapacity` objects (default +4000), builds the IDENTICAL intrusive free-list chain the real function builds (same 40-byte stride, same next-pointer-in-first-8-bytes layout, same NULL-terminated last object), and repoints the head pointer at it -- the real static array is simply left unused. Every object the engine ever sees for the rest of the session is still part of one real, single, genuinely contiguous array; nothing foreign or out-of-range is ever handed out. **Installs and logs a firing confirmation (`[x64-image-pool-expand]`) unconditionally, regardless of whether real expansion is enabled** -- deliberately, so this hook's own timing (does it actually fire before the real one-time bootstrap loop consumes the original array?) can be verified live on a completely ordinary launch with zero risk, before the real expansion is ever relied on for actual play. `imagePoolOverflowFallbackEnabled`/`ImagePoolOverflowFallback` (the old, now-understood-unsafe mechanism) is removed from the codebase entirely, not just disabled. Build-verified (x64 Release, 0 errors), deployed; **`ImagePoolRealExpansion=0` in the live config** -- left off deliberately, pending a live check that `[x64-image-pool-expand]` actually fires with `headAddrPtr` matching the already-resolved image head address and `count=4448` on an ordinary launch, given this exact feature's own incident history. Not yet independently live-tested with real expansion turned on.
 
 **Player-facing workaround, until this fix is independently re-confirmed over an extended session**: if you hit a black screen (or a crash) around a display-mode switch or right at launch, **just restart the game -- up to two times if needed.** This is a rare, real engine issue; a clean relaunch has reliably cleared it in testing so far, and the real root cause is now believed fixed, not just worked around.
+
+## 14. CRITICAL: the raw-bitmap texture-upscale decode path had a real channel-order bug -- black skybox, inverted UI icon, fixed via real RE
+
+**Status: Root-caused (static-only, no live attach) and fixed same day, build-verified, deployed. Every cache file that could have gone through the buggy path was purged. Not yet independently re-confirmed live.**
+
+**Direct live report, 2026-09-29, same day as PATCHNOTES.md item 13 (raw-bitmap/uncompressed source texture support) shipped**: "graphics corruption present (black skybox and armor ui symbol inverted)." The user directly identified item 13 as the responsible toggle from memory (a prior warning about its own risk, given earlier in this same session but outside this entry's own visible context) -- confirmed, not assumed.
+
+**Real RE, static-only (no live attach)**: traced the real native image-loading chain for a raw-bitmap-format `.iwi` (format byte 1 = `BitmapRGBA`, 2 = `BitmapRGB`) from the already-known generic file loader (`FUN_1401bae80`) forward, rather than guessing at byte order. `FUN_1401bae80` hands the read file (header + raw pixel bytes) to `FUN_1401bac70`, a real per-format dispatcher:
+
+```c
+switch (*(undefined1*)(param_2 + 8)) {   // the IWI format byte
+  case 1: FUN_1401ba910(); return;        // BitmapRGBA
+  case 2: FUN_1401ba910(); return;        // BitmapRGB
+  ...
+  case 0xb: case 0xc: case 0xd: FUN_1401bab10(); ...  // DXT1/3/5
+}
+```
+
+Decompiled `FUN_1401ba910` (the real function both raw-bitmap formats route to): for the 3-byte-source case (`param_4 == 0x16`, i.e. `D3DFMT_X8R8G8B8`), it copies source bytes straight through with **zero reordering**:
+
+```c
+puVar6[-2] = puVar10[-2];   // dst[0] = src[0]
+puVar6[-1] = puVar10[-1];   // dst[1] = src[1]
+*puVar6    = *puVar10;      // dst[2] = src[2]
+puVar6[1]  = 0xff;          // dst[3] = 0xFF (padding, D3DFMT_X8R8G8B8 has no real alpha)
+```
+
+`D3DFMT_X8R8G8B8`/`D3DFMT_A8R8G8B8` (the 4-byte case's real target format) are both **little-endian B,G,R,(A)** in memory, per the standard D3D9 convention -- and since the native code applies zero reordering on the way in, the real source `.iwi` raw-bitmap byte order is therefore **B,G,R,(A) as well, not R,G,B,(A)**.
+
+**This project's own item-13 decode assumed R,G,B,(A) source order** (`rgba[i*4+0] = src[i*3+0]`, treating byte 0 as red) -- a real, confirmed channel-swap bug, not a guess. This class of bug produces exactly the reported symptom shape: wrong-looking/"inverted" colors for most content, and can read as fully black for content whose real blue-channel data (now misplaced into the red slot, or vice versa) happens to be low-intensity in the swapped position.
+
+**Fixed** (`texture_upscale_worker.cpp`, `ProcessJob`'s raw-bitmap decode branch): both the 3-byte and 4-byte cases now explicitly swap R and B (`rgba[R] = src[2]`, `rgba[B] = src[0]`), leaving G (and A, for the 4-byte case) unchanged. Build-verified (x64 Release, 0 errors), deployed.
+
+**Scope note, honestly bounded**: the two SPECIFIC textures named in the live report (`equipment_body_armor`, `sky_sp_af_chase_ft`) have on-disk cache files whose own modification timestamps (01:57 and 10:45 the same day) PREDATE item 13's own commit (17:51) -- meaning those two specific cache files were almost certainly generated by the OLD, DXT-only decode path, not the new raw-bitmap path this fix addresses. The channel-swap bug fixed here is real and confirmed regardless (via direct decompile, not inference), and is a completely legitimate, independent fix -- but it may not fully explain these two specific reports on its own. **Every cache file with a modification time after 17:51 today (294 files) was purged** as a blanket, conservative measure (any of them COULD have gone through the buggy raw-bitmap path; cheap to regenerate, not cheap to leave silently wrong) -- they will recapture and re-encode correctly (now with the real fix in place) the next time each is naturally referenced in play. If corruption on these two specific textures persists after a fresh capture with the fix live, that would point to a second, still-unidentified cause independent of this one, worth a fresh investigation rather than assuming this fix alone closes the report.

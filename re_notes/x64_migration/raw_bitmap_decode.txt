@@ -1,0 +1,95 @@
+================================================================
+Function: FUN_1401ba910 @ 1401ba910
+----------------------------------------------------------------
+
+void FUN_1401ba910(longlong param_1,longlong param_2,longlong param_3,int param_4,int param_5)
+
+{
+  byte bVar1;
+  int iVar2;
+  undefined4 uVar3;
+  longlong lVar4;
+  longlong lVar5;
+  undefined1 *puVar6;
+  uint uVar7;
+  uint uVar8;
+  uint uVar9;
+  undefined1 *puVar10;
+  uint uVar11;
+  int iVar12;
+  int iVar13;
+  int iVar14;
+  
+  bVar1 = *(byte *)(param_1 + 0xc);
+  uVar9 = (uint)(int)*(short *)(param_2 + 0xc) >> (bVar1 & 0x1f);
+  uVar11 = (uint)(int)*(short *)(param_2 + 0xe) >> (bVar1 & 0x1f);
+  uVar7 = (uint)(int)*(short *)(param_2 + 10) >> (bVar1 & 0x1f);
+  if ((int)uVar11 < 2) {
+    uVar11 = 1;
+  }
+  if ((int)uVar9 < 2) {
+    uVar9 = 1;
+  }
+  if ((int)uVar7 < 2) {
+    uVar7 = 1;
+  }
+  FUN_1401ba0c0(param_1,uVar7,uVar9,uVar11,*(undefined4 *)(param_2 + 4),param_4,"<file>");
+  uVar11 = 6;
+  if (*(char *)(param_1 + 8) != '\x05') {
+    uVar11 = 1;
+  }
+  lVar4 = 0;
+  iVar13 = (uint)*(ushort *)(param_1 + 0x1a) * (uint)*(ushort *)(param_1 + 0x18);
+  if (param_4 == 0x16) {
+    lVar4 = FUN_1401ba830(iVar13 * 4);
+  }
+  iVar2 = FUN_1401b9f40(*(undefined4 *)(param_2 + 4),(int)*(short *)(param_2 + 10),
+                        (int)*(short *)(param_2 + 0xc),(int)*(short *)(param_2 + 0xe));
+  bVar1 = *(byte *)(param_1 + 0xc);
+  iVar2 = iVar2 + -1;
+  if ((int)(uint)bVar1 <= iVar2) {
+    iVar14 = iVar2 - (uint)bVar1;
+    do {
+      uVar9 = (uint)(int)*(short *)(param_2 + 10) >> ((byte)iVar2 & 0x1f);
+      if ((int)uVar9 < 2) {
+        uVar9 = 1;
+      }
+      uVar7 = (uint)(int)*(short *)(param_2 + 0xc) >> ((byte)iVar2 & 0x1f);
+      if ((int)uVar7 < 2) {
+        uVar7 = 1;
+      }
+      uVar8 = 0;
+      do {
+        uVar3 = FUN_1401b9f70(uVar8);
+        lVar5 = param_3;
+        if (param_4 == 0x16) {
+          puVar6 = (undefined1 *)(lVar4 + 2);
+          puVar10 = (undefined1 *)(param_3 + 2);
+          iVar12 = uVar7 * uVar9;
+          do {
+            puVar6[-2] = puVar10[-2];
+            puVar6[-1] = puVar10[-1];
+            *puVar6 = *puVar10;
+            puVar6[1] = 0xff;
+            iVar12 = iVar12 + -1;
+            lVar5 = lVar4;
+            puVar6 = puVar6 + 4;
+            puVar10 = puVar10 + 3;
+          } while (iVar12 != 0);
+        }
+        FUN_1401ba6d0(param_1,param_4,uVar3,iVar14,lVar5);
+        param_3 = param_3 + (int)(uVar7 * uVar9 * param_5);
+        uVar8 = uVar8 + 1;
+      } while (uVar8 < uVar11);
+      iVar14 = iVar14 + -1;
+      iVar2 = iVar2 + -1;
+    } while ((int)(uint)bVar1 <= iVar2);
+  }
+  if (lVar4 != 0) {
+    DAT_1418853fc = DAT_1418853fc + iVar13 * -4;
+  }
+  return;
+}
+
+
+

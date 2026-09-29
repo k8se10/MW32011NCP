@@ -1,0 +1,74 @@
+================================================================
+Function: FUN_1401bae80 @ 1401bae80
+----------------------------------------------------------------
+
+undefined8 FUN_1401bae80(longlong param_1,code *param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  longlong lVar3;
+  longlong lVar4;
+  undefined8 uVar5;
+  int iVar6;
+  uint uVar7;
+  ulonglong uVar8;
+  undefined8 local_res8;
+  char local_68;
+  char local_67;
+  char local_66;
+  char local_65;
+  byte local_64;
+  short local_5e;
+  short local_5c;
+  int local_58 [4];
+  undefined1 local_48 [64];
+  
+  iVar2 = FUN_1402ca430(local_48,0x40,"%s%s%s","images/",*(undefined8 *)(param_1 + 0x20),
+                        &DAT_1404138e4);
+  if ((iVar2 < 0) || (lVar3 = (*param_2)(local_48,&local_res8), lVar3 < 0)) {
+    return 0;
+  }
+  lVar4 = FUN_1402b5ec0(&local_68,0x20,local_res8);
+  if ((((lVar4 != 0x20) || (local_68 != 'I')) || (local_67 != 'W')) ||
+     ((local_66 != 'i' || (local_65 != '\b')))) {
+    FUN_1402b3e90(local_res8);
+    return 0;
+  }
+  if ((local_64 & 3) == 0) {
+    if (local_5e <= local_5c) {
+      local_5c = local_5e;
+    }
+    if (0x1f < local_5c) goto LAB_1401baf59;
+  }
+  *(byte *)(param_1 + 0xb) = *(byte *)(param_1 + 0xb) | 2;
+LAB_1401baf59:
+  FUN_1401ba0a0(param_1,param_1 + 0xc);
+  cVar1 = FUN_140009ea0(*(undefined8 *)(param_1 + 0x20));
+  if (cVar1 == '\0') {
+    uVar8 = (ulonglong)*(byte *)(param_1 + 0xc);
+  }
+  else {
+    uVar8 = 0;
+  }
+  if (local_58[0] != lVar3) {
+    FUN_14023c700(0,"Image file corrupt.");
+  }
+  iVar2 = local_58[uVar8];
+  iVar6 = iVar2 + -0x20;
+  uVar5 = FUN_1401ba830(iVar6);
+  uVar7 = iVar2 - 0x1dU & 0xfffffffc;
+  lVar3 = FUN_1402b5ec0(uVar5,(longlong)iVar6,local_res8);
+  if (lVar3 == iVar6) {
+    FUN_1402b3e90(local_res8);
+    FUN_1401bac70(param_1,&local_68,uVar5);
+    DAT_1418853fc = DAT_1418853fc - uVar7;
+    return 1;
+  }
+  DAT_1418853fc = DAT_1418853fc - uVar7;
+  FUN_1402b3e90(local_res8);
+  return 0;
+}
+
+
+

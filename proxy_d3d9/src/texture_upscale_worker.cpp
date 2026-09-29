@@ -534,13 +534,30 @@ namespace
             }
             rgba = static_cast<uint8_t*>(malloc(static_cast<size_t>(pixelCount) * 4));
             if (rgba) {
+                // Real, RE-confirmed channel order (2026-09-29, known_issues_x64.md
+                // issue #14): decompiling the native raw-bitmap image processor
+                // (FUN_1401ba910, reached for both BitmapRGBA=1 and BitmapRGB=2
+                // via FUN_1401bac70's own format dispatch) shows it copies source
+                // bytes straight through into a D3DFMT_X8R8G8B8/D3DFMT_A8R8G8B8
+                // buffer with ZERO reordering -- and those D3D9 formats are
+                // little-endian B,G,R,(A) in memory. The real source byte order
+                // is therefore BGR(A), not RGB(A) -- this project's own first
+                // attempt assumed RGB(A) and shipped a real, live-confirmed
+                // channel-swap bug (reported as a black skybox and an inverted
+                // UI icon). Both cases below now swap R and B explicitly; G (and
+                // A, for the 4bpp case) are unchanged.
                 if (rawBpp == 4) {
-                    memcpy(rgba, job.compressedData, static_cast<size_t>(pixelCount) * 4);
+                    for (uint64_t i = 0; i < pixelCount; ++i) {
+                        rgba[i * 4 + 0] = job.compressedData[i * 4 + 2]; // R = src[2] (BGRA -> RGBA)
+                        rgba[i * 4 + 1] = job.compressedData[i * 4 + 1]; // G unchanged
+                        rgba[i * 4 + 2] = job.compressedData[i * 4 + 0]; // B = src R-slot
+                        rgba[i * 4 + 3] = job.compressedData[i * 4 + 3]; // A unchanged
+                    }
                 } else { // rawBpp == 3
                     for (uint64_t i = 0; i < pixelCount; ++i) {
-                        rgba[i * 4 + 0] = job.compressedData[i * 3 + 0];
-                        rgba[i * 4 + 1] = job.compressedData[i * 3 + 1];
-                        rgba[i * 4 + 2] = job.compressedData[i * 3 + 2];
+                        rgba[i * 4 + 0] = job.compressedData[i * 3 + 2]; // R = src[2]
+                        rgba[i * 4 + 1] = job.compressedData[i * 3 + 1]; // G unchanged
+                        rgba[i * 4 + 2] = job.compressedData[i * 3 + 0]; // B = src[0]
                         rgba[i * 4 + 3] = 255;
                     }
                 }
