@@ -145,6 +145,12 @@ extern "C" void QueueLevelImagePreloadX64_Exported(); // analog_input_hooks_x64.
     // [Video] ProactiveLevelTexturePreload=1 (default OFF -- see that function's own header comment).
 extern "C" void PumpLevelImagePreloadX64_Exported(); // analog_input_hooks_x64.cpp -- drains a few queued
     // entries per frame, called unconditionally every frame (cheap early-out when disabled/empty).
+extern "C" void PumpLevelImageNameResolveX64_Exported(); // analog_input_hooks_x64.cpp -- 2026-09-29,
+    // name-driven fetch: resolves a few known basemap/carried-over names per frame via the real
+    // FindOrLoadAsset, feeding the SAME trigger queue PumpLevelImagePreloadX64 drains. This is the
+    // real fix for "the list is supposed to negate this by telling our mod what to pull" -- driven by
+    // our own known-name list, not by walking the current level's own (possibly-not-yet-populated)
+    // native asset table.
     // is genuinely at its own in-game pause menu" signal (the existing `menuActive`/`IsMenuActiveX64_Exported`
     // flags are a blanket "some menu/UI is active" bit that also fires for the main menu and loading screens,
     // per this issue's own already-documented correction), which repeatedly forced guessing pause-vs-live state
@@ -8144,6 +8150,8 @@ HRESULT WINAPI Hook_EndScene(void* device)
         // (see QueueLevelImagePreloadX64_Exported above) -- a real no-op, cheap
         // early-out when the feature is disabled or the queue is empty.
         PumpLevelImagePreloadX64_Exported();
+        PumpLevelImageNameResolveX64_Exported(); // 2026-09-29, name-driven fetch --
+            // see its own header comment (analog_input_hooks_x64.cpp).
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
             // 2026-09-26: direct user report -- "cl paused flag doesnt work

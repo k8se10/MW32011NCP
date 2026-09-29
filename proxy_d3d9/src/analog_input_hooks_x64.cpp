@@ -12522,6 +12522,122 @@ extern "C" void ResolveImageLoadTriggerX64_Exported() { ResolveImageLoadTriggerX
 extern "C" void QueueLevelImagePreloadX64_Exported() { QueueLevelImagePreloadX64(); }
 extern "C" void PumpLevelImagePreloadX64_Exported() { PumpLevelImagePreloadX64(); }
 
+// ---- Name-driven proactive fetch (2026-09-29) ------------------------------------
+// Direct correction: "the list is supposed to negate this by telling our mod what
+// to pull." QueueLevelImagePreloadX64 above only ever discovers work by walking the
+// CURRENT level's own already-populated native asset table -- a live overnight
+// session showed this can report ZERO candidates (the table hadn't finished
+// populating yet at the exact instant checked) while thousands of real basemap
+// names sat uncached for the rest of the session, since the native table-walk
+// only ever fires once per real map change. This is the real fix: drive fetching
+// from OUR OWN known-name list (the bundled basemap + carried-over pending names,
+// TextureUpscaleWorker::ForEachCarriedOverName) instead of the native table --
+// decoupled entirely from level-transition timing, since the real per-image file
+// lookup (FUN_1401bae80, reached via the load trigger) resolves by NAME against
+// the game's own VFS, not against whichever zone happens to be currently loaded.
+//
+// Two-stage pipeline, both rate-limited per frame (never a synchronous burst):
+//   Stage A (this section): name -> real asset-table pointer, via the already-
+//     hooked FindOrLoadAsset (g_realFindOrLoadAssetX64, flag=1 = create-if-missing,
+//     confirmed via FUN_1400a54c0's own decompile). Feeds resolved pointers into
+//     the EXACT SAME g_levelPreloadQueueHead/Tail list QueueLevelImagePreloadX64
+//     already populates -- Stage B (PumpLevelImagePreloadX64 above, unchanged)
+//     drains that list into the real load-trigger exactly as before.
+struct PendingNameNode
+{
+    char name[256];
+    PendingNameNode* next;
+};
+PendingNameNode* g_pendingNameHead = nullptr;
+PendingNameNode* g_pendingNameTail = nullptr;
+bool g_pendingNamesPopulated = false; // one-shot -- populated once per session,
+    // not per map change, since this is now decoupled from level transitions.
+int g_pendingNameResolvedCount = 0;
+
+void CollectCarriedOverNameCallback(const char* name, void* userData)
+{
+    (void)userData;
+    PendingNameNode* node = static_cast<PendingNameNode*>(malloc(sizeof(PendingNameNode)));
+    if (!node) return; // real OOM -- stop silently, keep whatever's already collected
+    strncpy_s(node->name, name, _TRUNCATE);
+    node->next = nullptr;
+    if (g_pendingNameTail) g_pendingNameTail->next = node; else g_pendingNameHead = node;
+    g_pendingNameTail = node;
+}
+
+// Called once, the first time PumpLevelImageNameResolveX64 below runs -- builds
+// the full name backlog from the carried-over set in one cheap pass (just string
+// copies, no engine calls yet). SP-only/opt-in gated by the caller.
+void PopulatePendingNamesFromCarriedOverX64()
+{
+    if (g_pendingNamesPopulated) return;
+    g_pendingNamesPopulated = true;
+    TextureUpscaleWorker::ForEachCarriedOverName(CollectCarriedOverNameCallback, nullptr);
+    int count = 0;
+    for (PendingNameNode* n = g_pendingNameHead; n; n = n->next) ++count;
+    char buf[200];
+    sprintf_s(buf, "[x64-level-preload] name-driven fetch: %d known name(s) queued for real "
+        "FindOrLoadAsset resolution.", count);
+    LogFromController(buf);
+}
+
+// Called every frame. Drains a few known names per frame, resolves each via the
+// real native FindOrLoadAsset (a lightweight hash-table lookup/create, not disk
+// I/O itself -- the real file read only happens later, rate-limited separately by
+// PumpLevelImagePreloadX64's own trigger pump), and feeds successfully-resolved
+// pointers into that same trigger queue. A name that fails to resolve (e.g. the
+// real image genuinely doesn't exist in this build) is silently dropped -- not
+// logged individually, to avoid spamming the log across a real multi-thousand-name
+// backlog for an expected, non-error case.
+void PumpLevelImageNameResolveX64()
+{
+    if (!g_modConfig.proactiveLevelTexturePreloadEnabled) return;
+    if (g_realFindOrLoadAssetX64 == nullptr) return;
+
+    PopulatePendingNamesFromCarriedOverX64();
+    if (g_pendingNameHead == nullptr) return;
+
+    constexpr int kMaxPerFrame = 5; // lighter per-item cost than the trigger pump's
+        // own kMaxPerFrame=2 (this is a lookup/create, not a real file read), but
+        // still deliberately rate-limited -- see this section's own header comment.
+    for (int i = 0; i < kMaxPerFrame && g_pendingNameHead != nullptr; ++i) {
+        PendingNameNode* node = g_pendingNameHead;
+        g_pendingNameHead = node->next;
+        if (g_pendingNameHead == nullptr) g_pendingNameTail = nullptr;
+
+        void* dataPtr = nullptr;
+        __try {
+            dataPtr = g_realFindOrLoadAssetX64(kFindOrLoadAssetImageTypeX64, node->name, 1);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            dataPtr = nullptr;
+        }
+
+        if (dataPtr != nullptr) {
+            bool alreadyLoaded = true;
+            __try {
+                alreadyLoaded = (*reinterpret_cast<void* const*>(dataPtr) != nullptr);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                alreadyLoaded = true; // can't safely inspect -- skip rather than guess
+            }
+            if (!alreadyLoaded) {
+                LevelPreloadQueueNode* qnode = static_cast<LevelPreloadQueueNode*>(malloc(sizeof(LevelPreloadQueueNode)));
+                if (qnode) {
+                    qnode->imageStructPtr = dataPtr;
+                    qnode->next = nullptr;
+                    if (g_levelPreloadQueueTail) g_levelPreloadQueueTail->next = qnode;
+                    else g_levelPreloadQueueHead = qnode;
+                    g_levelPreloadQueueTail = qnode;
+                    ++g_levelPreloadQueuedCount;
+                    ++g_pendingNameResolvedCount;
+                }
+            }
+        }
+        free(node);
+    }
+}
+
+extern "C" void PumpLevelImageNameResolveX64_Exported() { PumpLevelImageNameResolveX64(); }
+
 // ---- Universal per-image file-load diagnostic (2026-09-28) ----------------------
 // Found by tracing REAL callers back from the already-established, already-hooked
 // CreateTexture device call (asset_capture.cpp's first-N caller trace), per direct

@@ -764,6 +764,36 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
                       const char* source)
 {
     if (!name || !compressedData || compressedSize == 0 || width == 0 || height == 0) return false;
+
+    // Real sanity cap (2026-09-29), live-reported: "if the requested
+    // asset/texture isnt then called by the engine it will infinitely stall
+    // on that item (i left overnight and it stopped scannin around 11800."
+    // Leading theory: a proactively-triggered or otherwise-forced capture for
+    // a name the real engine never genuinely finished loading this session
+    // can hand back garbage/uninitialized width/height -- a corrupted huge
+    // dimension pair (not literally infinite, but effectively so: tiled
+    // inference cost scales with pixel count, so a garbage 60000x60000
+    // "texture" could take unrealistically, practically-forever-feeling
+    // hours on a single job) would silently occupy the one serialized GPU
+    // slot (RunInferenceOnTileRgb's own header comment) for the rest of the
+    // session, exactly matching "stopped scanning" -- nothing behind it
+    // could ever run. No real texture this feature has ever captured live
+    // (from either Campaign or Survival, across this project's own extensive
+    // testing) has exceeded 2048 on either axis -- 4096 is a real, generous
+    // ceiling with margin, not a tight guess. Rejected loudly (not silently)
+    // so a genuinely-new, legitimately-larger real texture would be caught
+    // and reported rather than quietly dropped forever.
+    constexpr uint32_t kMaxSaneDim = 4096;
+    if (width > kMaxSaneDim || height > kMaxSaneDim) {
+        char buf[300];
+        sprintf_s(buf, "[texture-upscale-worker] '%.200s': REJECTED, %ux%u exceeds the real sanity "
+            "cap (%u) -- likely garbage/uninitialized dimensions from a texture the engine never "
+            "genuinely finished loading this session, not a real texture size.",
+            name, width, height, kMaxSaneDim);
+        LogFromController(buf);
+        return false;
+    }
+
     EnsureWorkerStarted();
 
     if (IsInFlight(name)) return false;
@@ -869,6 +899,16 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
         name, width, height, format, scaleMultiplier, source ? source : "unknown");
     LogFromController(buf);
     return true;
+}
+
+void ForEachCarriedOverName(void (*callback)(const char* name, void* userData), void* userData)
+{
+    if (!callback) return;
+    EnterCriticalSection(&g_carriedOverLock);
+    for (CarriedOverNode* n = g_carriedOverHead; n; n = n->next) {
+        callback(n->name, userData);
+    }
+    LeaveCriticalSection(&g_carriedOverLock);
 }
 
 bool IsNameInFlight(const char* name)

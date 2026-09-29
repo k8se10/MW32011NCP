@@ -84,6 +84,27 @@ namespace TextureUpscaleWorker
     // "queue temporarily full" failure, which IS worth a bounded retry).
     bool IsNameInFlight(const char* name);
 
+    // Real, read-only snapshot walk over every name currently in the
+    // carried-over set (2026-09-29) -- the union of the bundled basemap and
+    // whatever a prior session left genuinely pending, MINUS anything
+    // already confirmed cached (RemoveCarriedOver clears a name the moment
+    // it's stored). This is, precisely, "every known name this mod still
+    // needs to fetch" -- direct instruction: "the list is supposed to negate
+    // this by telling our mod what to pull," i.e. the basemap should DRIVE
+    // proactive fetching by name, not just reorder priority once the game
+    // organically happens to load something. Used by
+    // analog_input_hooks_x64.cpp's own level-preload populator to call the
+    // real native FindOrLoadAsset/force-load chain directly by name, instead
+    // of only ever discovering work by walking the current level's own
+    // already-populated asset table (which live testing showed can report
+    // zero candidates even when thousands of real names are still
+    // uncached -- the table simply hadn't finished populating yet at the
+    // moment it was checked). Calls `callback(name, userData)` once per
+    // name, under the same lock QueueUpscaleJob's own priority check uses --
+    // keep the callback itself fast (e.g. copy the name out), never call
+    // back into this module from inside it.
+    void ForEachCarriedOverName(void (*callback)(const char* name, void* userData), void* userData);
+
     // Real, live session-wide progress counters (2026-09-29) -- backs the
     // status-bar overlay (overlay_hud.cpp's own DrawTextureCacheStatusBar).
     // `queued` = every real job ever accepted by QueueUpscaleJob this
