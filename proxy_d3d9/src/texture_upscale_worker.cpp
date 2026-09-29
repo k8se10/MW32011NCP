@@ -331,7 +331,7 @@ void EnsureWorkerStarted()
     g_workerThreadHandle = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
 }
 
-bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier)
+bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier, const char* source)
 {
     // Real IWI-v8 header layout, per texture_upscale_iwi_writer.h's own
     // documented, disassembly-verified layout -- same parse this project's
@@ -368,7 +368,7 @@ bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, u
     if (!mipCopy) return false;
     memcpy(mipCopy, iwiFileBytes + (iwiFileSize - baseMipSize), baseMipSize);
 
-    if (!QueueUpscaleJob(name, rawFormat, iwiWidth, iwiHeight, mipCopy, baseMipSize, scaleMultiplier)) {
+    if (!QueueUpscaleJob(name, rawFormat, iwiWidth, iwiHeight, mipCopy, baseMipSize, scaleMultiplier, source)) {
         free(mipCopy); // already in flight, queue full, or invalid args --
             // a normal, expected outcome, not an error (QueueUpscaleJob
             // logs the success case itself).
@@ -378,7 +378,8 @@ bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, u
 }
 
 bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t height,
-                      const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier)
+                      const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier,
+                      const char* source)
 {
     if (!name || !compressedData || compressedSize == 0 || width == 0 || height == 0) return false;
     EnsureWorkerStarted();
@@ -407,8 +408,8 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     MarkInFlight(name);
 
     char buf[300];
-    sprintf_s(buf, "[texture-upscale-worker] queued '%.200s' (%ux%u, format=%d, target=%dx)",
-        name, width, height, format, scaleMultiplier);
+    sprintf_s(buf, "[texture-upscale-worker] queued '%.200s' (%ux%u, format=%d, target=%dx, source=%s)",
+        name, width, height, format, scaleMultiplier, source ? source : "unknown");
     LogFromController(buf);
     return true;
 }

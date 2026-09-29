@@ -166,7 +166,7 @@ namespace
         if (!tightBuf) return;
 
         if (!TextureUpscaleWorker::QueueUpscaleJob(name, static_cast<int>(iwiFmt), width, height,
-                                                    tightBuf, static_cast<uint32_t>(tightSize), g_modConfig.textureRenderRes)) {
+                                                    tightBuf, static_cast<uint32_t>(tightSize), g_modConfig.textureRenderRes, "viewport")) {
             free(tightBuf); // already in flight, queue full, or invalid --
                 // QueueUpscaleJob logs the success case itself.
         }
@@ -209,12 +209,37 @@ namespace
     }
 }
 
+// Temporary, bounded thread-correlation diagnostic (2026-09-29) -- real,
+// live-reported suspicion that large pools of assets never get captured at
+// all. Leading hypothesis: SetCurrentlyLoadingName (called from
+// Hook_ImageFileLoadX64, thread_local) and OnCreateTexture (called from
+// asset_capture.cpp's Hook_CreateTexture) may run on genuinely different
+// threads -- this project's own already-confirmed x64 backend-thread
+// architecture (render-thread-diag: "EndScene calling thread... DIFFERENT
+// from main") makes this a real, plausible root cause, not a guess. If
+// confirmed, thread_local correlation is fundamentally broken for any asset
+// whose CreateTexture call is deferred to a different thread than the one
+// that loaded it. Remove once this is confirmed or ruled out.
+int g_setNameLogCount = 0;
+int g_createTextureCorrelationLogCount = 0;
+long g_totalCreateTextureCalls = 0;
+long g_correlatedCreateTextureCalls = 0;
+DWORD g_lastCoverageLogMs = 0;
+
 void SetCurrentlyLoadingName(const char* name, bool wasHit)
 {
     if (!name) { g_loadingState.active = false; return; }
     strncpy_s(g_loadingState.name, name, _TRUNCATE);
     g_loadingState.active = true;
     g_loadingState.wasHit = wasHit;
+
+    if (g_setNameLogCount < 30) {
+        ++g_setNameLogCount;
+        char buf[300];
+        sprintf_s(buf, "[x64-viewport-thread-diag] SetCurrentlyLoadingName('%.200s') on thread %lu",
+            name, GetCurrentThreadId());
+        LogFromController(buf);
+    }
 }
 
 void ClearCurrentlyLoadingName()
@@ -224,7 +249,34 @@ void ClearCurrentlyLoadingName()
 
 void OnCreateTexture(void* texturePtr, UINT width, UINT height, DWORD format)
 {
-    if (!g_loadingState.active || !texturePtr) return;
+    if (!texturePtr) return;
+    ++g_totalCreateTextureCalls;
+    if (g_loadingState.active) ++g_correlatedCreateTextureCalls;
+
+    DWORD nowMs = GetTickCount();
+    if (nowMs - g_lastCoverageLogMs > 10000) { // periodic, real coverage-ratio
+        // evidence -- answers "are we missing huge pools of assets" directly:
+        // a low correlated/total ratio means most real CreateTexture calls
+        // happen with no "currently loading" name active at all, i.e. outside
+        // any window Hook_ImageFileLoadX64 opened for them.
+        g_lastCoverageLogMs = nowMs;
+        char buf[300];
+        sprintf_s(buf, "[x64-viewport-thread-diag] coverage: %ld/%ld real CreateTexture calls had an active load-name correlation window (%.1f%%)",
+            g_correlatedCreateTextureCalls, g_totalCreateTextureCalls,
+            g_totalCreateTextureCalls > 0 ? (100.0 * g_correlatedCreateTextureCalls / g_totalCreateTextureCalls) : 0.0);
+        LogFromController(buf);
+    }
+
+    if (!g_loadingState.active) return;
+
+    if (g_createTextureCorrelationLogCount < 30) {
+        ++g_createTextureCorrelationLogCount;
+        char buf[300];
+        sprintf_s(buf, "[x64-viewport-thread-diag] OnCreateTexture('%.200s') on thread %lu (%ux%u fmt=0x%08lX)",
+            g_loadingState.name, GetCurrentThreadId(), width, height, static_cast<unsigned long>(format));
+        LogFromController(buf);
+    }
+
     EnsureTableLockInit();
     EnterCriticalSection(&g_tableLock);
     int idx = FindSlot(texturePtr);

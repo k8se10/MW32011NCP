@@ -162,7 +162,7 @@ namespace
                                 for (int attempt = 0; attempt < 20 && !queued; ++attempt) {
                                     if (attempt > 0) Sleep(250);
                                     queued = TextureUpscaleWorker::QueueUpscaleJobFromIwiFile(
-                                        assetName, buf, static_cast<uint32_t>(size), scaleMultiplier);
+                                        assetName, buf, static_cast<uint32_t>(size), scaleMultiplier, "precache");
                                 }
                             }
                             if (queued) ++queuedCount;

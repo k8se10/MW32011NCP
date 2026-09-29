@@ -12477,7 +12477,7 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
             // header-parse + base-mip-extraction logic the bulk pre-cache
             // orchestrator also uses (texture_upscale_worker.h), factored
             // out to a single implementation once both callers existed.
-            TextureUpscaleWorker::QueueUpscaleJobFromIwiFile(cap.name, cap.buffer, cap.size, g_modConfig.textureRenderRes);
+            TextureUpscaleWorker::QueueUpscaleJobFromIwiFile(cap.name, cap.buffer, cap.size, g_modConfig.textureRenderRes, "loadtime");
         }
         free(cap.buffer);
         cap.buffer = nullptr;

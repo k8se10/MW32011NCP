@@ -41,8 +41,15 @@ namespace TextureUpscaleWorker
     // encoded in (DXT1/DXT3/DXT5 only -- other formats are the caller's
     // responsibility to filter out before calling this). `scaleMultiplier`
     // is the real g_modConfig.textureRenderRes value at capture time (2/3/4).
+    // `source` (2026-09-29) -- a short, fixed literal identifying which of
+    // this feature's real capture mechanisms called in (e.g. "loadtime",
+    // "precache", "viewport") -- included in the success log line so a live
+    // session can be checked to see which mechanism(s) are actually
+    // contributing real captures, not just whether the pipeline as a whole
+    // is working. Diagnostic only, never affects behavior.
     bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t height,
-                          const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier);
+                          const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier,
+                          const char* source = "unknown");
 
     // Starts the background worker thread if not already running. Safe to
     // call repeatedly (idempotent) -- QueueUpscaleJob calls this internally,
@@ -64,7 +71,8 @@ namespace TextureUpscaleWorker
     // real, expected miss (bad magic, unsupported format, truncated file) --
     // a bulk pass walking real dumped files will hit plenty of these
     // (raw-bitmap icons, etc.), not worth logging each one individually.
-    bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier);
+    bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, uint32_t iwiFileSize, int scaleMultiplier,
+                                     const char* source = "unknown");
 
     // Real, exported check for whether `name` is already queued or
     // mid-processing this session (2026-09-28) -- lets a high-volume caller
