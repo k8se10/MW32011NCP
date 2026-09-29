@@ -1069,6 +1069,30 @@ void InstallWndProcHook(HWND hwnd)
     }
     g_wndProcHooked = true;
     g_gameHwnd = hwnd;
+
+    // Real, well-documented community fix for a known DXVK/Windows-DWM
+    // interaction (2026-09-29, direct live report: "windowed borderless is
+    // breaking the game for some reason also its forcing fullscreen?").
+    // Windows' own DWM can re-interpret a borderless window sized to cover
+    // the entire monitor as a special "maximized windowed" flip-mode state
+    // (part of Windows' "Fullscreen Optimizations" feature) -- a real,
+    // documented interaction with DXVK specifically (doitsujin/dxvk issues
+    // #2177/#3331: DXVK's own Vulkan swapchain presentation doesn't always
+    // agree with what that DWM state expects), and this project's own
+    // `GraphicsApi` now defaults to Vulkan/DXVK on SP. `__COMPAT_LAYER =
+    // DisableDXMaximizedWindowedMode` is the established, low-risk, purely
+    // additive community fix for exactly this class of symptom (the same
+    // technique Special-K and other DXVK-adjacent injection projects use) --
+    // one window property, no game-logic change, trivially reversible.
+    // Applied wherever this hook subclasses a window (initial launch AND any
+    // later display-mode-change recreation), matching its own existing
+    // "fires whenever the real hwnd changes" scope. NOT independently
+    // live-tested yet as of this fix -- a real, reasoned, low-risk attempt
+    // per direct instruction to try a fix rather than isolate the layer
+    // first, not a confirmed root-cause fix.
+    static const char kCompatLayerDisableMaxWindowed[] = "DisableDXMaximizedWindowedMode";
+    SetPropA(hwnd, "__COMPAT_LAYER", reinterpret_cast<HANDLE>(const_cast<char*>(kCompatLayerDisableMaxWindowed)));
+
     g_origWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrA(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&HookWndProc)));
     char buf[128];
