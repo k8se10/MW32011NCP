@@ -8259,7 +8259,21 @@ HRESULT WINAPI Hook_EndScene(void* device)
         double msDobj = ms(t0, t1), msFrameTick = ms(t1, t2);
         double msTotal = msDobj + msFrameTick;
         if (msTotal >= 1.0) {
-            char buf[200];
+            // CRITICAL FIX, 2026-09-29 -- real, guaranteed sprintf_s buffer overflow
+            // (FAST_FAIL_INVALID_ARG, the same recurring bug class this project has
+            // now hit five times: 2026-09-05, twice on 2026-09-13/14, 2026-09-16, and
+            // this one), confirmed via a live WER crash dump's own call stack
+            // (Hook_EndScene -> sprintf_s<200>). The literal format string below is
+            // 277 bytes on its own, BEFORE any %.3f substitution -- guaranteed to
+            // overflow a 200-byte buffer on every single call, not an edge case. Only
+            // fires when msTotal >= 1.0 (a real frame-timing hitch), which explains
+            // why this went unnoticed for a while and why it surfaced specifically
+            // during a cutscene/loading transition -- exactly when a frame is most
+            // likely to spike above 1ms for the first time in a session. Widened with
+            // real margin (400, not just barely enough) per this project's own
+            // standing lesson: a buffer-safety sweep never retroactively covers a
+            // string that grows later -- verify the actual byte count, don't guess.
+            char buf[400];
             sprintf_s(buf, "[x64-streamline-timing] dobjCapture=%.3fms frameTick=%.3fms total=%.3fms "
                 "(outputTag/mvecTag/evaluate/composite timing now logged separately by "
                 "[x64-streamline-composite]/[x64-streamline-evaluate] -- moved to the earlier "
