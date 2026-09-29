@@ -11,6 +11,8 @@
 #include "../third_party/minhook/include/MinHook.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
+extern "C" HWND GetGameWindow(); // defined in d3d9_hook.cpp -- 2026-09-29, real
+    // alt-tab/minimize safety check, see Hook_SetTexture's own comment.
 
 namespace TextureViewportCapture
 {
@@ -178,6 +180,25 @@ namespace
         // matching this feature's own "never alter real behavior" standard.
         HRESULT hr = reinterpret_cast<SetTexture_t>(g_origSetTexture)(This, stage, texture);
         if (!texture || g_modConfig.textureRenderRes <= 1) return hr;
+
+        // Real safety fix (2026-09-29): a live-reported long hang, alt-
+        // tabbing out while paused. CaptureAndQueue calls LockRect
+        // SYNCHRONOUSLY on this same thread (the real render thread --
+        // SetTexture only ever fires there) -- if the window has lost focus
+        // or is minimized, the D3D9/DXVK device can be lost or suspended,
+        // and LockRect on a real texture in that state can block far longer
+        // than normal GPU-sync latency, hanging the entire render thread
+        // (and with it, the whole game, since nothing else pumps while it's
+        // stuck). The pause menu keeps redrawing (and re-binding textures)
+        // even while alt-tabbed, so this fires exactly in the reported
+        // scenario. Checked BEFORE touching the correlation table at all
+        // (not just before the LockRect call) so a texture bound while
+        // unfocused is never marked `handled` -- a later SetTexture call,
+        // once the window is focused again, still gets a real chance to
+        // capture it, rather than being permanently skipped.
+        HWND gameHwnd = GetGameWindow();
+        bool windowSafe = gameHwnd && GetForegroundWindow() == gameHwnd && !IsIconic(gameHwnd);
+        if (!windowSafe) return hr;
 
         EnsureTableLockInit();
         EnterCriticalSection(&g_tableLock);
