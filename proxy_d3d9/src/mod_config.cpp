@@ -1306,6 +1306,17 @@ void WriteDefaultConfig(const char* path)
         "; nothing left to do. 0 = off (default -- forcibly closing the game should\n"
         "; never surprise an ordinary player), 1 = on.\n"
         "AutoExitOnCacheComplete=%d\n"
+        "; Real dev/QoL toggle (2026-09-29): the native engine's own real 4448-image\n"
+        "; fixed-size asset pool hits a hard fatal error once exhausted -- this can\n"
+        "; genuinely happen with ProactiveLevelTexturePreload's own aggressive\n"
+        "; name-driven fetch. When on, a signature-scanned hook on the real per-type\n"
+        "; pool allocator serves a generously-sized heap-backed fallback object\n"
+        "; instead of the native fatal error, ONLY for images -- every other asset\n"
+        "; type is completely unaffected. Default OFF: this project has NOT confirmed\n"
+        "; the real GfxImage struct size or ruled out other code assuming pool-array\n"
+        "; contiguity, so this is a real, reasoned, but not risk-free mitigation --\n"
+        "; watch [x64-image-pool-overflow] in the log before trusting it long-term.\n"
+        "ImagePoolOverflowFallback=%d\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
         "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
@@ -1445,6 +1456,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.imageScratchMB,
         g_modConfig.textureUpscaleWorkerThreads,
         g_modConfig.autoExitOnCacheCompleteEnabled ? 1 : 0,
+        g_modConfig.imagePoolOverflowFallbackEnabled ? 1 : 0,
         g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
         g_modConfig.gpuCaptureEnabled ? 1 : 0,
         g_modConfig.gpuSyncTimingLogging ? 1 : 0,
@@ -1804,6 +1816,7 @@ void LoadModConfig()
         g_modConfig.textureUpscaleWorkerThreads = v;
     }
     ReadBool(path, "Experimental", "AutoExitOnCacheComplete", g_modConfig.autoExitOnCacheCompleteEnabled);
+    ReadBool(path, "Experimental", "ImagePoolOverflowFallback", g_modConfig.imagePoolOverflowFallbackEnabled);
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);

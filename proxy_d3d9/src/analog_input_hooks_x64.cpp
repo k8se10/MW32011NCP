@@ -12350,6 +12350,155 @@ void LogAssetPoolImageStatsX64()
 extern "C" void ResolveAssetPoolGlobalsX64_Exported() { ResolveAssetPoolGlobalsX64(); }
 extern "C" void LogAssetPoolImageStatsX64_Exported() { LogAssetPoolImageStatsX64(); }
 
+// ---- Image asset-pool exhaustion overflow (2026-09-29) ---------------------------
+// Live-reported: a real native fatal dialog, "Exceeded limit of 4448 'image'
+// assets," directly caused by this project's own name-driven proactive fetch
+// (above) forcing far more image registrations than organic play ever would.
+// Direct instruction: "no just fix the limit (expand it its from x86 era)."
+//
+// Real mechanism, confirmed via decompile + disassembly (not guessed): each
+// asset type has its own fixed-size, statically-allocated object pool, managed
+// as a classic intrusive free list. `FUN_1400a52b0` (the per-type object
+// allocator, called from the same asset-creation path FindOrLoadAsset's own
+// create-if-missing flag reaches) does, per its own real disassembly:
+//   MOV RCX, [moduleBase + assetType*8 + 0x4c2f60]   ; &freeListHead[type]
+//   MOV RAX, [moduleBase + assetType*8 + 0x4c2c80]   ; allocator fn[type]
+//   CALL RAX                                          ; -> FUN_1400a52a0 for images
+//   TEST RAX,RAX ; JNZ success
+//   ; RAX==0 (pool exhausted) falls through to the fatal FUN_1402ee570 call,
+//   ; which reads a DISPLAY-ONLY count from [moduleBase + assetType*4 + 0x4c2a50]
+//   ; -- that table is only ever used to format the error message text, NOT to
+//   ; size or bound the real pool, so patching it would change what number the
+//   ; error reports without changing when it actually fires. Not touched here.
+// `FUN_1400a52a0` itself is the REAL, tiny, generic per-type free-list pop:
+//   MOV RAX,[RCX]; TEST RAX,RAX; JZ empty; MOV RDX,[RAX]; MOV [RCX],RDX; RET
+//   empty: RET  (RAX still holds the original *RCX, i.e. 0 -- the real
+//   "pool exhausted" signal every caller checks)
+// This function has NO side effects beyond the pop itself and, critically, NO
+// fatal-error call inside it (that only lives in ITS CALLER) -- meaning a
+// MinHook call-through here safely returns control to us either way, unlike
+// hooking FUN_1400a52b0 itself (which would need its ENTIRE logic replicated,
+// since the real fatal call never returns control to a caller).
+//
+// Fix: hook FUN_1400a52a0. Call the real original first (unconditionally, so
+// every OTHER asset type sharing this same generic allocator -- sounds,
+// materials, etc. -- is completely unaffected). Only if it returns null AND
+// the call was for the IMAGE type's own specific free-list head (resolved once
+// at startup via the same fixed-RVA-from-module-base table read the real code
+// itself performs -- moduleBase+0x4c2fb0, the image-type/0xa slot of the same
+// per-type head-address table above -- never a hardcoded VA), substitute a
+// fresh, generously-sized (8KB, a large safety margin -- this project has no
+// confirmed real GfxImage struct size, so this errs deliberately oversized
+// rather than risk an undersized buffer) zeroed heap allocation instead of the
+// real pool's own exhausted node.
+//
+// REAL, NOT FULLY ELIMINATED RESIDUAL RISK, documented honestly rather than
+// glossed over: this assumes nothing else in the engine performs pointer-
+// arithmetic bounds/contiguity checks against the original fixed array (e.g.
+// "is this pointer within my own pool's address range" -- a real pattern this
+// project has NOT ruled out for this specific pool). If such a check exists
+// anywhere and is ever reached for one of these fallback-allocated images,
+// it would misbehave in a way this project can't yet characterize. Ships
+// opt-in for exactly this reason -- watch [x64-image-pool-overflow] in a real
+// session before trusting this long-term.
+constexpr const char* kImagePoolAllocatorSignature =
+    "48 8B 01 48 85 C0 ?? ?? 48 8B 10 48 89 11 C3 C3";
+constexpr uintptr_t kPerTypeHeadAddrTableRvaX64 = 0x4c2f60; // qword[assetType] -> &freeListHead
+constexpr size_t kImagePoolFallbackSize = 8192; // real, generous safety margin -- see
+    // this section's own header comment for why no smaller, "exact" size is used.
+
+using ImagePoolAllocatorFnX64 = void*(__fastcall*)(void* headAddrPtr);
+ImagePoolAllocatorFnX64 g_realImagePoolAllocatorX64 = nullptr;
+void* g_imageTypeFreeListHeadAddrX64 = nullptr; // resolved once at startup -- the
+    // REAL per-type head-address, read from the same table the native code itself
+    // indexes, never hardcoded.
+int g_imagePoolOverflowCount = 0;
+
+void* __fastcall Hook_ImagePoolAllocatorX64(void* headAddrPtr)
+{
+    void* result = g_realImagePoolAllocatorX64(headAddrPtr); // ALWAYS call through
+        // first -- every other asset type sharing this generic allocator must see
+        // completely unmodified behavior.
+    if (result != nullptr) return result; // real pop succeeded -- nothing to do
+    if (g_imageTypeFreeListHeadAddrX64 == nullptr || headAddrPtr != g_imageTypeFreeListHeadAddrX64) {
+        return result; // null, but NOT the image type (or we never resolved which
+            // address that is) -- pass the real null through unchanged, exactly as
+            // the original engine behavior already handles it for every other type.
+    }
+
+    void* fallback = malloc(kImagePoolFallbackSize);
+    if (fallback == nullptr) return result; // real OOM -- fall through to the
+        // native fatal error rather than return a null we can't back with memory.
+    memset(fallback, 0, kImagePoolFallbackSize);
+    ++g_imagePoolOverflowCount;
+    char buf[200];
+    sprintf_s(buf, "[x64-image-pool-overflow] real image pool (4448) exhausted -- "
+        "served fallback #%d (%zu-byte heap allocation) instead of the native fatal error.",
+        g_imagePoolOverflowCount, kImagePoolFallbackSize);
+    LogFromController(buf);
+    return fallback;
+}
+
+void InstallImagePoolOverflowHookX64()
+{
+    if (!g_modConfig.imagePoolOverflowFallbackEnabled) return;
+
+    SigScan::Result r = SigScan::FindPatternInMainModule(kImagePoolAllocatorSignature);
+    if (!r.found) {
+        LogFromController("[x64-image-pool-overflow] FATAL: allocator signature did not resolve -- "
+            "the real 4448-image native limit stays fully enforced this session.");
+        return;
+    }
+    HMODULE mainModule = GetModuleHandleA(nullptr);
+    if (mainModule == nullptr) {
+        LogFromController("[x64-image-pool-overflow] FATAL: GetModuleHandleA(nullptr) returned null.");
+        return;
+    }
+    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(mainModule);
+    // Real, non-hardcoded resolution: reads the SAME per-type head-address table
+    // entry (moduleBase + 0x4c2f60 + imageType*8) the native code itself indexes
+    // at line "MOV RCX,[moduleBase+assetType*8+0x4c2f60]" -- this is a genuine
+    // runtime memory READ, not a static guess, so it stays correct even if this
+    // table's own base address ever shifts in a future build (only the fixed RVA
+    // 0x4c2f60 itself would need re-verifying then, matching this project's own
+    // standing signature-scanning policy).
+    void** headAddrTable = reinterpret_cast<void**>(moduleBase + kPerTypeHeadAddrTableRvaX64);
+    __try {
+        g_imageTypeFreeListHeadAddrX64 = headAddrTable[kFindOrLoadAssetImageTypeX64];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_imageTypeFreeListHeadAddrX64 = nullptr;
+    }
+    if (g_imageTypeFreeListHeadAddrX64 == nullptr) {
+        LogFromController("[x64-image-pool-overflow] FATAL: could not resolve the real image-type "
+            "free-list head address -- the fallback will never activate this session.");
+        return;
+    }
+
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ImagePoolAllocatorX64),
+                                            reinterpret_cast<void**>(&g_realImagePoolAllocatorX64));
+    if (createStatus != MH_OK) {
+        char buf[220];
+        sprintf_s(buf, "[x64-image-pool-overflow] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+            static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[220];
+        sprintf_s(buf, "[x64-image-pool-overflow] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+            static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    char buf[240];
+    sprintf_s(buf, "[x64-image-pool-overflow] installed -- allocator @ 0x%llX, image free-list head @ %p. "
+        "Native 4448-image limit now has a real (8KB-per-overflow, heap-backed) fallback instead of a fatal error.",
+        static_cast<unsigned long long>(r.address), g_imageTypeFreeListHeadAddrX64);
+    LogFromController(buf);
+}
+
 // ---- Proactive level-load texture preload (2026-09-29) -- the real "hijack" step
 // ---------------------------------------------------------------------------------
 // Direct instruction/clarification: "the idea is thats the primary load mechanism

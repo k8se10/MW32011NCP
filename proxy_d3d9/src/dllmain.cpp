@@ -50,6 +50,11 @@ void InstallReadBytesSubstitutionHookX64(); // defined in analog_input_hooks_x64
 void InstallImageScratchPoolWideningHookX64(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, real root-cause fix for the native 26MB loose-image-scratch
     // pool a 4x-upscaled substituted texture can exceed (FUN_1401ba830).
+void InstallImagePoolOverflowHookX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-29, real native 4448-image pool exhaustion fallback. Inert unless
+    // [Experimental] ImagePoolOverflowFallback=1 (default OFF -- see that
+    // function's own header comment for the real, honestly-documented residual
+    // risk this config gate exists for).
 extern "C" void ResolveImageLoadTriggerX64_Exported(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, proactive level-load texture preload -- resolves the real
     // native "force-load this image now" function (FUN_1401b9760). The queue/
@@ -991,6 +996,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             ResolveImageLoadTriggerX64_Exported(); // 2026-09-29, proactive level-load
                 // texture preload -- resolves the real force-load trigger function.
                 // Inert unless [Video] ProactiveLevelTexturePreload=1 (default OFF).
+            InstallImagePoolOverflowHookX64(); // 2026-09-29, real 4448-image pool
+                // exhaustion fallback. Inert unless [Experimental]
+                // ImagePoolOverflowFallback=1 (default OFF).
             TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
                 // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
                 // own header comment. Starts a background thread only when the on-disk

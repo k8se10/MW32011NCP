@@ -956,6 +956,23 @@ struct ModConfig
     // surprise an ordinary player; this is squarely a dev/power-user tool.
     bool autoExitOnCacheCompleteEnabled = false;
 
+    // [Experimental] ImagePoolOverflowFallback (2026-09-29) -- real dev/QoL
+    // toggle, direct request: "no just fix the limit (expand it its from x86
+    // era)." The native engine's own real 4448-image fixed-size pool (a real
+    // intrusive free-list, not just a counter) hits a hard fatal error once
+    // exhausted -- this project's own aggressive name-driven proactive fetch
+    // (ProactiveLevelTexturePreload) can genuinely reach that limit. When
+    // enabled, a signature-scanned hook on the real per-type pool allocator
+    // serves a generously-sized (8KB) heap-backed fallback object instead of
+    // the native fatal error, ONLY for the specific image-type free-list
+    // (every other asset type sharing the same generic allocator function is
+    // completely unaffected). Default OFF -- this project has NOT confirmed
+    // the real GfxImage struct size or ruled out other code assuming pool-
+    // array contiguity, so this is a real, reasoned, but not risk-free
+    // mitigation (see Hook_ImagePoolAllocatorX64's own header comment,
+    // analog_input_hooks_x64.cpp, for the full trail).
+    bool imagePoolOverflowFallbackEnabled = false;
+
     // [Video] CustomAssetOverrides (2026-09-28, generalized same day) --
     // real, general, zero-code-change custom asset substitution: any real,
     // correctly-formatted .iwi file dropped into custom_assets\ (named
