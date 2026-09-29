@@ -12663,13 +12663,38 @@ void AppendToActiveCapture(const void* data, uint32_t len)
 // itself was. Fix: on a cache hit, DON'T pass the real callback through at
 // all -- pass this synthetic one instead, matching the real callback's own
 // exact signature/calling convention, reporting OUR buffer's own real total
-// size instead of the original file's. The "handle" it writes is a dummy
-// sentinel -- Hook_ReadBytesSubstitutionX64 never actually inspects the
-// handle value while armed, it only checks the armed flag, so any nonzero
-// placeholder is safe here.
+// size instead of the original file's.
+//
+// CRITICAL FIX, 2026-09-29 -- the "handle" this writes was `1`, a real,
+// serious bug this project's own known_issues_x64.md issue #12 had already
+// flagged as a well-evidenced, not-yet-confirmed lead (a shared native
+// file-handle table plausibly being exhausted by this exact feature). Live-
+// confirmed via full decompile of FUN_1402b3e90 -- the REAL native file-
+// table close function `FUN_1401bae80` (the function this hook's own
+// call-through invokes) unconditionally calls on every code path once the
+// read callback has returned successfully. `FUN_1402b3e90` treats its
+// argument as a real INDEX into a shared, fixed-size file-handle table
+// (`(&DAT_1426563f0)[param_1*0x27]`) and only special-cases `0` as a safe
+// no-op (`if (param_1 != 0) { ... }` gates the whole "is this slot really
+// empty" check) -- any OTHER value, including our old dummy `1`, is
+// dereferenced as a real slot and potentially closed/corrupted, regardless
+// of whether it was ever a real handle. With real sessions now serving
+// hundreds of cache-hit substitutions, every single one called
+// FUN_1402b3e90(1) -- repeatedly hammering file-table slot #1 with a bogus
+// close, corrupting whatever REAL file (e.g. config.cfg's own open, or
+// another real concurrent image load) happened to occupy that slot at the
+// time. This is almost certainly THE root cause of issue #12's still-open
+// FAIL_FAST_INVALID_ARG crash chain, not just a contributing factor --
+// fixed by using the real native "no handle" sentinel (0) instead of an
+// arbitrary nonzero value; `Hook_ReadBytesSubstitutionX64` never actually
+// inspects the handle value while armed (it only checks the armed flag), so
+// this change is safe from that side too.
 long long __fastcall FakeSubstitutionReadCallback(long long pathIgnored, long long* outHandlePtr)
 {
-    if (outHandlePtr) *outHandlePtr = 1; // dummy sentinel, never dereferenced as a real handle
+    if (outHandlePtr) *outHandlePtr = 0; // real native "no handle" sentinel -- see
+        // this function's own header comment for the crash this fixes. NEVER use a
+        // nonzero placeholder here again: FUN_1402b3e90 treats any nonzero value as
+        // a real file-table slot index to potentially close.
     return static_cast<long long>(g_activeTextureSubstitutionX64.size);
 }
 
