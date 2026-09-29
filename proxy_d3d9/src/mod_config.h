@@ -908,6 +908,22 @@ struct ModConfig
     // config value.
     int textureRenderRes = 1;
 
+    // [Experimental] ImageScratchMB (2026-09-29) -- real, root-cause fix for
+    // the native engine's own fixed 26MB "loose-image scratch" bump-allocator
+    // pool (FUN_1401ba830, re_notes/x64_migration/memory_ceiling_analysis.md
+    // limit #2), sized decades ago for vanilla asset dimensions. Live-reported
+    // and confirmed via real decompile: a single 4x-upscaled world texture
+    // (e.g. an 8192x4096 DXT5 result, ~32MB) already exceeds this real cap,
+    // triggering the native engine's own fatal "Needed to allocate at least
+    // %.1f MB to load images" error and dropping to the menu -- not a leak in
+    // this project's own code, a genuine native pool sized far below what
+    // this feature's own substituted textures now need. Default 256 (matches
+    // this project's own already-recorded recommendation in
+    // memory_ceiling_analysis.md's "How to remove each limit" section,
+    // written before this feature ever needed it). Clamped 26 (vanilla) to
+    // 2048 in ReadImageScratchMB.
+    int imageScratchMB = 256;
+
     // [Video] CustomAssetOverrides (2026-09-28, generalized same day) --
     // real, general, zero-code-change custom asset substitution: any real,
     // correctly-formatted .iwi file dropped into custom_assets\ (named

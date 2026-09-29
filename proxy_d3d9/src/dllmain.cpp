@@ -45,6 +45,9 @@ void InstallReadBytesSubstitutionHookX64(); // defined in analog_input_hooks_x64
     // 2026-09-28, the second of the texture-upscale-cache feature's two real
     // substitution hooks (FUN_1402b5ec0). SP-only; pass-through unless a
     // substitution is actively armed by Hook_ImageFileLoadX64.
+void InstallImageScratchPoolWideningHookX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-29, real root-cause fix for the native 26MB loose-image-scratch
+    // pool a 4x-upscaled substituted texture can exceed (FUN_1401ba830).
 namespace TexturePrecacheOrchestrator { void EnsurePrecacheStarted(); } // defined in
     // texture_precache_orchestrator.cpp, 2026-09-28 -- real, opt-out, only starts a
     // background thread when TextureRenderRes>1 and the on-disk marker is stale/missing.
@@ -952,6 +955,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallLooseFileOpenDiagHookX64(); // 2026-09-28, empirical test of whether
                 // a loose file override works for this feature -- see
                 // texture_upscale_cache_research.md's "File-read callback traced" round.
+            InstallImageScratchPoolWideningHookX64(); // 2026-09-29, real fix for the
+                // native 26MB loose-image-scratch pool -- see its own comment
+                // (analog_input_hooks_x64.cpp). Installed unconditionally (SP-only,
+                // matching the rest of this feature's hooks) -- this is a real engine
+                // limit that can bite even without the upscale-cache feature enabled,
+                // if a player drops a large custom_assets override in.
             InstallReadBytesSubstitutionHookX64(); // 2026-09-28, the real substitution
                 // mechanism's second hook -- see Hook_ImageFileLoadX64/
                 // Hook_ReadBytesSubstitutionX64's own comments (analog_input_hooks_x64.cpp).

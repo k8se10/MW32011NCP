@@ -1273,6 +1273,14 @@ void WriteDefaultConfig(const char* path)
         "; auto-switches to DLAA for that session only, with an on-screen notice, and\n"
         "; never rewrites this value itself.\n"
         "DLSSModeX64=%d\n"
+        "; Real, root-cause fix (2026-09-29) for the native engine's own fixed 26MB\n"
+        "; \"loose-image scratch\" pool (memory_ceiling_analysis.md limit #2), sized for\n"
+        "; vanilla asset dimensions -- a single 4x-upscaled world texture (e.g. ~32MB)\n"
+        "; already exceeds it, triggering the native \"Needed to allocate at least %%.1f\n"
+        "; MB to load images\" fatal error. Widens the real pool via a signature-scanned\n"
+        "; replacement of the real allocator function. Default 256 (vanilla is 26,\n"
+        "; clamped 26..2048).\n"
+        "ImageScratchMB=%d\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
         "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
@@ -1408,6 +1416,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.liveBlurStepCapX64,
         g_modConfig.occlusionLodScaleFixX64 ? 1 : 0,
         g_modConfig.dlssModeX64,
+        g_modConfig.imageScratchMB,
         g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
         g_modConfig.gpuCaptureEnabled ? 1 : 0,
         g_modConfig.gpuSyncTimingLogging ? 1 : 0,
@@ -1755,6 +1764,11 @@ void LoadModConfig()
     ReadTextureRenderRes(path, g_modConfig.textureRenderRes);
     ReadBool(path, "Video", "CustomAssetOverrides", g_modConfig.customAssetOverridesEnabled);
     ReadBool(path, "Video", "BulkTexturePrecache", g_modConfig.bulkTexturePrecacheEnabled);
+    {
+        int v = GetPrivateProfileIntA("Experimental", "ImageScratchMB", g_modConfig.imageScratchMB, path);
+        ClampIntSetting("Experimental", "ImageScratchMB", v, 26, 2048, 256);
+        g_modConfig.imageScratchMB = v;
+    }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);

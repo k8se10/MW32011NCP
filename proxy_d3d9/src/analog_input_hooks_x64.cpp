@@ -12653,6 +12653,145 @@ void InstallReadBytesSubstitutionHookX64()
     LogFromController("[texture-upscale-sub] Read-bytes substitution hook installed and enabled -- FUN_1402b5ec0.");
 }
 
+// ---- Real "loose-image scratch" pool widening (2026-09-29) ------------------------
+// Root-cause fix for a real, live-reported crash: the native engine reserves a
+// FIXED 26MB (0x1A00000) bump-allocator pool for decoding a single loose image
+// (re_notes/x64_migration/memory_ceiling_analysis.md limit #2), sized decades
+// ago for vanilla asset dimensions. A single 4x-upscaled substituted texture
+// (e.g. an 8192x4096 DXT5 result, ~32MB) already exceeds it -- confirmed via
+// real decompile of FUN_1401ba830 (the exact allocator FUN_1401bae80, this
+// feature's own Hook_ImageFileLoadX64 target, calls) -- triggering the native
+// engine's own fatal Com_Error("Needed to allocate at least %.1f MB to load
+// images") and dropping to the menu. Not a leak in this project's own code
+// (that theory was tested and ruled out: privateBytesMB hit the same ~10.3GB
+// ceiling both before and after a real, separate leak fix) -- a genuine
+// native pool sized far below what this feature's own substituted textures
+// now need.
+//
+// Real, signature-scanned, MinHook-replaced (this project's own current
+// signature-scanning policy, CLAUDE.md ยง5/ยง10.3) -- never a hardcoded VA.
+// Resolves FUN_1401ba830's own two internal data globals (the bump-pointer
+// "used" counter, and the lazily-allocated base-buffer pointer) via
+// SigScan::ResolveRipRelative at fixed byte offsets WITHIN the signature-
+// matched function's own body -- stable across a shifted function base,
+// exactly the technique already established for this project's interned-
+// string-table resolution.
+//
+// Real signature (FUN_1401ba830's own prologue through its first data-global
+// read -- no PC-relative operand in this exact span):
+//   40 53               PUSH RBX
+//   48 83 EC 20         SUB RSP,0x20
+//   8D 59 03            LEA EBX,[RCX+0x3]
+// Independently verified unique (1 raw occurrence) against
+// re_notes/x64_migration/binaries/iw5sp.exe before use.
+constexpr const char* kImageScratchAllocSignature = "40 53 48 83 EC 20 8D 59 03";
+
+uint32_t* g_pImageScratchUsed = nullptr;   // real DAT_1418853fc -- bump "used" counter
+void** g_pImageScratchBase = nullptr;      // real DAT_141885400 -- lazily-allocated base pointer
+uint32_t g_imageScratchCapBytes = 0;       // resolved once from g_modConfig.imageScratchMB at install time
+
+long long __fastcall Hook_ImageScratchAllocX64(int size)
+{
+    uint32_t rounded = (static_cast<uint32_t>(size) + 3u) & 0xFFFFFFFCu;
+    uint64_t newUsed = static_cast<uint64_t>(*g_pImageScratchUsed) + rounded;
+
+    if (newUsed > g_imageScratchCapBytes) {
+        // Real overflow even with the widened cap -- should be exceedingly
+        // rare (256MB default vs. a real ~32-64MB single-image high-water
+        // mark observed live). Degrade gracefully: a fresh, one-off
+        // allocation for just this call, never the native fatal Com_Error,
+        // never memory corruption. The shared bump counter is still
+        // advanced by `rounded` below regardless of path, so the real
+        // callers' own inline "pop" arithmetic (DAT_1418853fc -= size)
+        // stays consistent either way -- this one-off buffer itself is
+        // never explicitly freed (same "implicit free via counter pop"
+        // design the original uses), a small, accepted leak only in this
+        // rare fallback case.
+        char buf[300];
+        sprintf_s(buf, "[x64-imagescratch] one-off fallback allocation: %u bytes requested, "
+            "widened pool (%u MB) still exceeded (used=%u)", rounded, g_imageScratchCapBytes / (1024 * 1024),
+            *g_pImageScratchUsed);
+        LogFromController(buf);
+        void* fallback = malloc(rounded);
+        *g_pImageScratchUsed = static_cast<uint32_t>(*g_pImageScratchUsed + rounded);
+        return reinterpret_cast<long long>(fallback);
+    }
+
+    if (*g_pImageScratchBase == nullptr) {
+        // Real, independent allocation -- VirtualAlloc rather than calling
+        // the original lazy-init function (FUN_1402bea40, an internal
+        // engine allocator whose own real constraints at this larger size
+        // aren't verified) -- reserves+commits the full widened pool
+        // up front, matching the original's own "commit the whole buffer
+        // once" behavior (memory_ceiling_analysis.md's own note that a
+        // reserve-then-commit-on-demand version is a real future
+        // improvement, not implemented here).
+        *g_pImageScratchBase = VirtualAlloc(nullptr, g_imageScratchCapBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        char buf[200];
+        sprintf_s(buf, "[x64-imagescratch] widened image-scratch pool allocated: %u MB (vanilla is 26MB)",
+            g_imageScratchCapBytes / (1024 * 1024));
+        LogFromController(buf);
+    }
+
+    uint32_t oldUsed = *g_pImageScratchUsed;
+    *g_pImageScratchUsed = oldUsed + rounded;
+    return reinterpret_cast<long long>(*g_pImageScratchBase) + oldUsed;
+}
+
+// SP-only (per this project's own standing per-exe signature-verification
+// policy -- this signature has only ever been resolved/verified against
+// iw5sp.exe, never iw5mp.exe).
+void InstallImageScratchPoolWideningHookX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kImageScratchAllocSignature);
+    if (!r.found) {
+        LogFromController("[x64-imagescratch] FATAL: image-scratch-allocator signature did not resolve -- "
+            "real engine pool stays at its vanilla 26MB cap this session (large upscaled textures may still "
+            "trigger the native \"Needed to allocate\" fatal error)");
+        return;
+    }
+
+    // Resolve the two real data globals via fixed byte offsets within this
+    // signature-matched function's own body (see this section's own header
+    // comment) -- offsets confirmed via DumpSigBytes.java against the real
+    // decompile: +0x09 is `MOV ECX, dword ptr [rip+disp]` (6 bytes) for the
+    // bump counter; +0x4B is `MOV RDX, qword ptr [rip+disp]` (7 bytes) for
+    // the base-buffer pointer.
+    uintptr_t usedAddr = SigScan::ResolveRipRelative(r.address + 0x09, 6);
+    uintptr_t baseAddr = SigScan::ResolveRipRelative(r.address + 0x4B, 7);
+    if (!usedAddr || !baseAddr) {
+        LogFromController("[x64-imagescratch] FATAL: failed to resolve real data-global addresses -- "
+            "real engine pool stays at its vanilla 26MB cap this session");
+        return;
+    }
+    g_pImageScratchUsed = reinterpret_cast<uint32_t*>(usedAddr);
+    g_pImageScratchBase = reinterpret_cast<void**>(baseAddr);
+    g_imageScratchCapBytes = static_cast<uint32_t>(g_modConfig.imageScratchMB) * 1024u * 1024u;
+
+    void* target = reinterpret_cast<void*>(r.address);
+    void* origUnused = nullptr; // this hook is a full replacement, never calls through
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ImageScratchAllocX64), &origUnused);
+    if (createStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-imagescratch] FATAL: MH_CreateHook failed for image-scratch allocator @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
+        LogFromController(buf);
+        return;
+    }
+    MH_STATUS enableStatus = MH_EnableHook(target);
+    if (enableStatus != MH_OK) {
+        char buf[200];
+        sprintf_s(buf, "[x64-imagescratch] FATAL: MH_EnableHook failed for image-scratch allocator @ 0x%llX (status=%d)",
+                   static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
+        LogFromController(buf);
+        return;
+    }
+    char buf[250];
+    sprintf_s(buf, "[x64-imagescratch] image-scratch pool widening hook installed and enabled -- FUN_1401ba830 @ 0x%llX, cap=%dMB (vanilla 26MB)",
+        static_cast<unsigned long long>(r.address), g_modConfig.imageScratchMB);
+    LogFromController(buf);
+}
+
 // ---- Real loose-file-open path diagnostic (2026-09-28) ---------------------------
 // Empirical half of the "does a loose file override work" question, direct
 // instruction ("do both one by one no forksx" -- the static trace of
