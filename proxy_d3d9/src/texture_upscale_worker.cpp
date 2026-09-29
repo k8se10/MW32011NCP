@@ -9,7 +9,6 @@
 #include "texture_upscale_iwi_writer.h"
 #include "texture_upscale_ncnn.h"
 #include "texture_upscale_cache.h"
-#include "overlay_hud.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -124,6 +123,15 @@ namespace
         LeaveCriticalSection(&g_inFlightLock);
     }
 
+    // Real, live session-wide progress counters (2026-09-29) -- see this
+    // file's own header (GetProgressSnapshot) for the full rationale. Plain
+    // LONG + Interlocked* -- cheaper and simpler than a critical section for
+    // three independent monotonic counters nothing else ever needs to read
+    // atomically together.
+    volatile LONG g_totalQueued = 0;
+    volatile LONG g_totalProcessed = 0;
+    volatile LONG g_totalFailed = 0;
+
     // Real DXT format -> TextureUpscaleDxt::BlockFormat mapping -- these two
     // enums intentionally mirror each other 1:1 for the three formats both
     // understand (see texture_upscale_iwi_writer.h's own header comment),
@@ -149,10 +157,13 @@ namespace
     // the live game process beyond this.
     void ProcessJob(const PendingJob& job)
     {
-        char progressBuf[300];
-        sprintf_s(progressBuf, "[NCP] Upscaling \"%.200s\" (%ux)...", job.name, job.scaleMultiplier);
-        ShowOverlayMessage(progressBuf, 4000);
-
+        // Real per-job "[NCP] Upscaling ..."/"[NCP] Cached upscaled ..." toasts
+        // (one per texture) removed 2026-09-29 -- with real sessions queuing
+        // upward of 1800 distinct textures, that was a toast every few
+        // seconds for the whole session, not useful feedback. Replaced by a
+        // single persistent, live-updating status bar
+        // (overlay_hud.cpp's own DrawTextureCacheStatusBar, driven by
+        // GetProgressSnapshot) that shows real aggregate progress instead.
         TextureUpscaleDxt::BlockFormat blockFmt;
         if (!IwiFormatToBlockFormat(job.format, &blockFmt)) {
             char buf[300];
@@ -274,8 +285,6 @@ namespace
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': upscaled %ux%u -> %ux%u and cached (%u bytes)",
                 job.name, job.width, job.height, finalW, finalH, iwiSize);
             LogFromController(buf);
-            sprintf_s(progressBuf, "[NCP] Cached upscaled \"%.200s\"", job.name);
-            ShowOverlayMessage(progressBuf, 2500);
         } else {
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': StoreUpscaledIwi failed", job.name);
             LogFromController(buf);
@@ -316,7 +325,9 @@ namespace
                     free(checkBuf);
                 } else {
                     ClearInFlightOnFailure(job.name);
+                    InterlockedIncrement(&g_totalFailed);
                 }
+                InterlockedIncrement(&g_totalProcessed);
             } else {
                 Sleep(50); // idle poll -- new jobs are rare (once per new
                            // menu/HUD texture, deduped), not a hot loop
@@ -421,6 +432,7 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     LeaveCriticalSection(&g_pendingLock);
 
     MarkInFlight(name);
+    InterlockedIncrement(&g_totalQueued);
 
     char buf[300];
     sprintf_s(buf, "[texture-upscale-worker] queued '%.200s' (%ux%u, format=%d, target=%dx, source=%s)",
@@ -432,6 +444,13 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
 bool IsNameInFlight(const char* name)
 {
     return name ? IsInFlight(name) : false;
+}
+
+void GetProgressSnapshot(uint32_t* queued, uint32_t* processed, uint32_t* failed)
+{
+    if (queued) *queued = static_cast<uint32_t>(InterlockedCompareExchange(&g_totalQueued, 0, 0));
+    if (processed) *processed = static_cast<uint32_t>(InterlockedCompareExchange(&g_totalProcessed, 0, 0));
+    if (failed) *failed = static_cast<uint32_t>(InterlockedCompareExchange(&g_totalFailed, 0, 0));
 }
 
 }

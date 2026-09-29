@@ -12451,23 +12451,25 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
         g_activeTextureSubstitutionX64.cursor = 0;
         g_activeTextureSubstitutionX64.armed = true;
 
+        // Unbounded (2026-09-29, direct instruction: "caching and cache
+        // logging (dev only) shouldnt be bounded") -- this line was
+        // previously capped at 100 hits, purely a LOGGING limit (the real
+        // substitution above, `armed = true`, always ran regardless of this
+        // counter) -- but it read live as "the overlay just stops," a real,
+        // reasonable thing to worry about from the log alone. Removed so the
+        // log stays an honest, complete record of every real substitution
+        // for the whole session.
         static int s_loggedSubCount = 0;
-        if (s_loggedSubCount < 100) { // bounded -- a real substitution firing
-            // repeatedly for the same handful of textures across a session is
-            // expected and not interesting past the first several confirmations,
-            // unlike the earlier pure name-diagnostic hooks which needed a full
-            // session's worth of data to answer an open research question.
-            ++s_loggedSubCount;
-            char buf[400];
-            if (cacheBufferIsCustomAsset) {
-                sprintf_s(buf, "[texture-upscale-sub] serving custom_assets override for \"%.300s\" (%u bytes) (hit #%d/100)",
-                    name, cacheSize, s_loggedSubCount);
-            } else {
-                sprintf_s(buf, "[texture-upscale-sub] serving cached upscale for \"%.300s\" (%u bytes, %dx) (hit #%d/100)",
-                    name, cacheSize, g_modConfig.textureRenderRes, s_loggedSubCount);
-            }
-            LogFromController(buf);
+        ++s_loggedSubCount;
+        char buf[400];
+        if (cacheBufferIsCustomAsset) {
+            sprintf_s(buf, "[texture-upscale-sub] serving custom_assets override for \"%.300s\" (%u bytes) (hit #%d)",
+                name, cacheSize, s_loggedSubCount);
+        } else {
+            sprintf_s(buf, "[texture-upscale-sub] serving cached upscale for \"%.300s\" (%u bytes, %dx) (hit #%d)",
+                name, cacheSize, g_modConfig.textureRenderRes, s_loggedSubCount);
         }
+        LogFromController(buf);
     }
 
     // On a cache hit, pass OUR synthetic callback instead of the real one --

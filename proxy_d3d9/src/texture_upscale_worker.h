@@ -83,4 +83,15 @@ namespace TextureUpscaleWorker
     // in flight for an unrelated, unretryable reason (as opposed to a
     // "queue temporarily full" failure, which IS worth a bounded retry).
     bool IsNameInFlight(const char* name);
+
+    // Real, live session-wide progress counters (2026-09-29) -- backs the
+    // status-bar overlay (overlay_hud.cpp's own DrawTextureCacheStatusBar).
+    // `queued` = every real job ever accepted by QueueUpscaleJob this
+    // session; `processed` = every job the worker has finished (success OR
+    // failure) and popped off the queue; `failed` is a subset of
+    // `processed`, purely informational. All three are monotonically
+    // increasing for the life of the process -- reading them is a plain,
+    // lock-free InterlockedExchangeAdd(..., 0)-style snapshot, safe to call
+    // every frame from the render thread.
+    void GetProgressSnapshot(uint32_t* queued, uint32_t* processed, uint32_t* failed);
 }

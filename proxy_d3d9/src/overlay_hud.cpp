@@ -44,6 +44,7 @@
 #include "vanilla_settings_table.h"
 #include "asset_capture.h"
 #include "texture_viewport_capture.h" // 2026-09-29, InstallSetTextureHook -- see its own header comment.
+#include "texture_upscale_worker.h" // 2026-09-29, GetProgressSnapshot -- see DrawTextureCacheStatusBar.
 #include "vram_diag.h"
 #include "frame_benchmark.h"
 #if defined(_M_X64) || defined(_WIN64)
@@ -7794,6 +7795,79 @@ void DrawBuildWatermark(void* device)
                               kWmColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
 }
 
+// Real, persistent, live-updating texture-upscale-cache progress bar
+// (2026-09-29, direct instruction: "we need parralellism and proper modal
+// caching dfollowing our popup modal pecednent but with a proper status bar
+// etc" -- parallelism itself was dropped from that ask mid-session once a
+// real log trace showed the earlier "overlay just stops" report was a
+// logging-only cap, not an actual stall; see analog_input_hooks_x64.cpp's
+// own 2026-09-29 fix removing the [texture-upscale-sub] 100-hit log cap).
+// Replaces the old per-job "[NCP] Upscaling .../Cached upscaled ..." toast
+// pair (texture_upscale_worker.cpp's own ProcessJob) -- a real session can
+// queue upward of 1800 distinct textures, which made that a near-constant
+// toast for the whole session; a single aggregate bar is the actually
+// useful signal. Same "popup modal precedent" as DrawBuildWatermark just
+// above (own text texture via EnsureLeftAlignedTextTexture, same
+// screen-space-quad draw), not the dismiss-required warning-modal pipeline
+// (DrawWarningModal) -- this is ambient status, never something the player
+// needs to acknowledge.
+void DrawTextureCacheStatusBar(void* device)
+{
+    uint32_t queued = 0, processed = 0, failed = 0;
+    TextureUpscaleWorker::GetProgressSnapshot(&queued, &processed, &failed);
+    if (queued == 0 || processed >= queued) return; // nothing queued yet, or
+        // fully caught up -- the bar only shows while there's a real,
+        // active backlog, same "inert unless there's something to say"
+        // convention as every other opt-in overlay in this file.
+
+    constexpr int kBarSegments = 20;
+    int filledSegments = static_cast<int>((static_cast<uint64_t>(processed) * kBarSegments) / queued);
+    if (filledSegments > kBarSegments) filledSegments = kBarSegments; // real
+        // safety clamp only -- processed can never exceed queued by this
+        // function's own contract, but integer-division edge cases are
+        // cheap to guard against outright rather than trust.
+    int percent = static_cast<int>((static_cast<uint64_t>(processed) * 100) / queued);
+
+    char barChars[kBarSegments + 1];
+    for (int i = 0; i < kBarSegments; ++i) barChars[i] = (i < filledSegments) ? '#' : '-';
+    barChars[kBarSegments] = '\0';
+
+    char text[200];
+    if (failed > 0) {
+        sprintf_s(text, "[NCP] Caching textures: %u/%u (%d%%) [%s] (%u failed)",
+            processed, queued, percent, barChars, failed);
+    } else {
+        sprintf_s(text, "[NCP] Caching textures: %u/%u (%d%%) [%s]",
+            processed, queued, percent, barChars);
+    }
+
+    float scaleX = 1.0f, scaleY = 1.0f;
+    GetResolutionScale(device, scaleX, scaleY);
+    static void* s_barTexture = nullptr;
+    static char s_barRenderedFor[256] = "";
+    static int s_barLastFontHeight = 0;
+    constexpr int kBarFontHeightPx = 14;
+    if (!EnsureLeftAlignedTextTexture(device, s_barTexture, s_barRenderedFor, sizeof(s_barRenderedFor), text,
+                                       s_barLastFontHeight, kBarFontHeightPx, FontRole::Default))
+        return;
+    const float barScale = static_cast<float>(kBarFontHeightPx) / 20.0f; // EnsureLeftAlignedTextTexture's own baseline is 20px
+    // Bottom-left, mirroring the build watermark's own bottom-right placement --
+    // both are ambient/low-priority overlays, deliberately kept out of the
+    // gameplay-hint/HUD-hint area used elsewhere in this file.
+    constexpr float kBarLeftMarginPx = 20.0f;
+    constexpr float kBarBottomMarginPx = 15.0f;
+    const float drawX = kBarLeftMarginPx;
+    const float drawY = 1080.0f - kBarBottomMarginPx - static_cast<float>(kTextureHeight) * barScale;
+    // Slightly more visible than the watermark's own 25% grey -- this is
+    // real, actionable status (a background pass is actively running),
+    // not a passive build stamp.
+    constexpr DWORD kBarColor = 0x80C0C0C0u;
+    DrawGenericTexturedQuad(device, s_barTexture, drawX * scaleX, drawY * scaleY,
+                              static_cast<float>(kTextureWidth) * scaleX * barScale,
+                              static_cast<float>(kTextureHeight) * scaleY * barScale,
+                              kBarColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
+}
+
 HRESULT WINAPI Hook_EndScene(void* device)
 {
     // 2026-09-24 -- real render-thread diagnostic, renderer_architecture_map.md
@@ -7991,6 +8065,7 @@ HRESULT WINAPI Hook_EndScene(void* device)
     // resolution sources, so they only cancelled out by coincidence).
     g_lastKnownRenderDevice = device;
     DrawBuildWatermark(device);
+    DrawTextureCacheStatusBar(device);
     DrawJitterProbeOverlayIfEnabled(device);
 #if defined(_M_X64) || defined(_WIN64)
     // Real, direct QueryPerformanceCounter timing (2026-09-24) -- NOT wrapped
