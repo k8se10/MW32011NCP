@@ -159,6 +159,143 @@ namespace
         LeaveCriticalSection(&g_inFlightLock);
     }
 
+    // ---- Cross-session continuity (2026-09-29) -----------------------------
+    // Direct request: "we should have session continuity so cacheing knows
+    // what to cache from last runs." The on-disk upscale cache itself already
+    // persists forever once a texture IS cached -- this closes the other real
+    // gap: the QUEUE (what's still pending) is pure in-memory, so a crash or
+    // early exit loses every not-yet-processed job, and the next session only
+    // re-discovers that work if the player happens to revisit the same
+    // content again. This tracks just NAMES (never the actual captured
+    // texture bytes -- those are cheap to re-capture the next time the game
+    // itself loads that name, and persisting them would make this a much
+    // larger, riskier on-disk structure for no real benefit), written at a
+    // deliberately LOW frequency (not per-event -- after this same session's
+    // own file-handle-table crash, adding another high-frequency file I/O
+    // path is exactly the kind of risk worth avoiding).
+    struct CarriedOverNode
+    {
+        char name[256];
+        CarriedOverNode* next;
+    };
+    CarriedOverNode* g_carriedOverHead = nullptr;
+    CRITICAL_SECTION g_carriedOverLock;
+    bool g_carriedOverLockInit = false;
+
+    bool IsCarriedOver(const char* name)
+    {
+        EnterCriticalSection(&g_carriedOverLock);
+        bool found = false;
+        for (CarriedOverNode* n = g_carriedOverHead; n; n = n->next) {
+            if (_stricmp(n->name, name) == 0) { found = true; break; }
+        }
+        LeaveCriticalSection(&g_carriedOverLock);
+        return found;
+    }
+
+    // Called once a carried-over name is successfully cached this session --
+    // stops it being artificially boosted to the front of the queue forever
+    // (it would otherwise never get removed, since nothing else drops entries
+    // from this set).
+    void RemoveCarriedOver(const char* name)
+    {
+        EnterCriticalSection(&g_carriedOverLock);
+        CarriedOverNode* prev = nullptr;
+        for (CarriedOverNode* n = g_carriedOverHead; n; prev = n, n = n->next) {
+            if (_stricmp(n->name, name) == 0) {
+                if (prev) prev->next = n->next; else g_carriedOverHead = n->next;
+                free(n);
+                break;
+            }
+        }
+        LeaveCriticalSection(&g_carriedOverLock);
+    }
+
+    bool BuildManifestPath(char* outPath, size_t outPathSize)
+    {
+        char path[MAX_PATH];
+        GetModuleFileNameA(nullptr, path, MAX_PATH); // same convention as
+            // TextureUpscaleCache::EnsureCacheDir -- full path of the .exe
+            // that loaded us.
+        char* lastSlash = strrchr(path, '\\');
+        if (lastSlash) *(lastSlash + 1) = '\0';
+        strcat_s(path, "texture_upscale_cache\\pending_manifest.txt");
+        if (strlen(path) + 1 > outPathSize) return false;
+        strcpy_s(outPath, outPathSize, path);
+        return true;
+    }
+
+    // Called exactly once, from InitWorkerOnceCallback below, before any real
+    // queuing can happen -- reads last session's own leftover pending-name
+    // list (if any) into g_carriedOverHead. A missing file (first-ever
+    // launch, or a session that finished its entire backlog and left nothing
+    // pending) is the expected common case, not an error. Line-based, plain
+    // text, one real image name per line -- intentionally simple; this is a
+    // best-effort priority hint, not critical state, so a partially-written
+    // or slightly stale file degrades gracefully (worst case: a name that's
+    // actually already cached gets a harmless priority boost once, then
+    // RemoveCarriedOver clears it the moment it's confirmed cached again).
+    void LoadPendingManifest()
+    {
+        char path[MAX_PATH];
+        if (!BuildManifestPath(path, sizeof(path))) return;
+        FILE* f = nullptr;
+        if (fopen_s(&f, path, "r") != 0 || !f) return; // no manifest -- fine, nothing to carry over
+        char line[256];
+        int loadedCount = 0;
+        while (fgets(line, sizeof(line), f)) {
+            size_t len = strlen(line);
+            while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
+            if (len == 0) continue;
+            CarriedOverNode* node = static_cast<CarriedOverNode*>(malloc(sizeof(CarriedOverNode)));
+            if (!node) break; // real OOM -- stop loading, keep whatever's already loaded
+            strncpy_s(node->name, line, _TRUNCATE);
+            node->next = g_carriedOverHead;
+            g_carriedOverHead = node;
+            ++loadedCount;
+        }
+        fclose(f);
+        if (loadedCount > 0) {
+            char buf[160];
+            sprintf_s(buf, "[texture-upscale-continuity] loaded %d pending name(s) carried over from a prior session.",
+                loadedCount);
+            LogFromController(buf);
+        }
+    }
+
+    // Called periodically (from WorkerThreadProc's own loop, never per-event)
+    // to snapshot the CURRENT pending queue's own real names to disk, so a
+    // crash or early exit doesn't lose the whole backlog's worth of "what
+    // still needs caching" -- only whatever was queued since the last periodic
+    // write. Full rewrite each time (not incremental) -- simplest correct
+    // design, and the file itself is small (plain names, one per line) even
+    // for a real multi-thousand-entry backlog.
+    void PersistPendingManifestIfDue()
+    {
+        constexpr DWORD kIntervalMs = 30000; // deliberately low frequency --
+            // see this section's own header comment for why.
+        static DWORD s_lastWriteMs = 0;
+        DWORD now = GetTickCount();
+        if (s_lastWriteMs != 0 && (now - s_lastWriteMs) < kIntervalMs) return;
+        s_lastWriteMs = now;
+
+        char path[MAX_PATH];
+        if (!BuildManifestPath(path, sizeof(path))) return;
+        FILE* f = nullptr;
+        if (fopen_s(&f, path, "w") != 0 || !f) return; // real failure -- skip this
+            // period's write silently; the next period tries again, and losing
+            // one snapshot is a real but low-cost degradation, not worth a log
+            // line every 30s if the directory is ever briefly unwritable.
+
+        EnterCriticalSection(&g_pendingLock);
+        for (PendingJob* n = g_pendingHead; n; n = n->next) {
+            fprintf(f, "%s\n", n->name);
+        }
+        LeaveCriticalSection(&g_pendingLock);
+
+        fclose(f);
+    }
+
     // Real, live session-wide progress counters (2026-09-29) -- see this
     // file's own header (GetProgressSnapshot) for the full rationale. Plain
     // LONG + Interlocked* -- cheaper and simpler than a critical section for
@@ -359,6 +496,8 @@ namespace
                 uint8_t* checkBuf = TextureUpscaleCache::TryLoadCachedUpscaledIwi(job.name, job.scaleMultiplier, &checkSize);
                 if (checkBuf) {
                     free(checkBuf);
+                    RemoveCarriedOver(job.name); // 2026-09-29, session continuity --
+                        // confirmed cached, stop artificially boosting this name.
                 } else {
                     ClearInFlightOnFailure(job.name);
                     InterlockedIncrement(&g_totalFailed);
@@ -370,6 +509,11 @@ namespace
                            // worth a condition variable for, same reasoning
                            // as asset_capture.cpp's own write thread.
             }
+            PersistPendingManifestIfDue(); // 2026-09-29, session continuity --
+                // real no-op most iterations (its own internal 30s interval
+                // check), called unconditionally (not just in the idle branch)
+                // so a continuously busy backlog-draining session still gets
+                // periodic snapshots, not just an idle one.
         }
         return 0;
     }
@@ -405,6 +549,12 @@ namespace
         g_pendingLockInit = true;
         InitializeCriticalSection(&g_inFlightLock);
         g_inFlightLockInit = true;
+        InitializeCriticalSection(&g_carriedOverLock);
+        g_carriedOverLockInit = true;
+        LoadPendingManifest(); // 2026-09-29, session continuity -- see that
+            // function's own header comment. Must run before any real thread
+            // starts queuing jobs, which InitOnceExecuteOnce already guarantees
+            // (every other caller blocks until this whole callback returns).
         // Real, live config value, already clamped 1..16 by mod_config.cpp's
         // own ClampIntSetting at load time -- clamped again here purely as a
         // defensive array-bounds safety net, not because the config layer is
@@ -513,17 +663,28 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     // eventually, just after the cheap ones already queued. O(n) insert is
     // fine here -- this runs once per texture LOAD EVENT (not per frame), and
     // real sessions queue in the hundreds/low thousands, not a hot path.
-    uint64_t newJobPixels = static_cast<uint64_t>(width) * height;
+    // Session-continuity priority boost (2026-09-29) -- a name a PRIOR
+    // session left pending (never got cached before that session ended)
+    // jumps straight to the very front, ahead of even same-size new work,
+    // so genuinely interrupted work actually finishes instead of getting
+    // re-queued and re-interrupted at a similar point every session.
     EnterCriticalSection(&g_pendingLock);
-    PendingJob* prev = nullptr;
-    PendingJob* cur = g_pendingHead;
-    while (cur && (static_cast<uint64_t>(cur->width) * cur->height) <= newJobPixels) {
-        prev = cur;
-        cur = cur->next;
+    if (IsCarriedOver(name)) {
+        node->next = g_pendingHead;
+        g_pendingHead = node;
+        if (!g_pendingTail) g_pendingTail = node;
+    } else {
+        uint64_t newJobPixels = static_cast<uint64_t>(width) * height;
+        PendingJob* prev = nullptr;
+        PendingJob* cur = g_pendingHead;
+        while (cur && (static_cast<uint64_t>(cur->width) * cur->height) <= newJobPixels) {
+            prev = cur;
+            cur = cur->next;
+        }
+        node->next = cur;
+        if (prev) prev->next = node; else g_pendingHead = node;
+        if (!cur) g_pendingTail = node;
     }
-    node->next = cur;
-    if (prev) prev->next = node; else g_pendingHead = node;
-    if (!cur) g_pendingTail = node;
     LeaveCriticalSection(&g_pendingLock);
 
     MarkInFlight(name);
