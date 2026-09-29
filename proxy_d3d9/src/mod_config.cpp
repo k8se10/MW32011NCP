@@ -1317,6 +1317,17 @@ void WriteDefaultConfig(const char* path)
         "; contiguity, so this is a real, reasoned, but not risk-free mitigation --\n"
         "; watch [x64-image-pool-overflow] in the log before trusting it long-term.\n"
         "ImagePoolOverflowFallback=%d\n"
+        "; Real, configurable safety ceiling (percent, 10-99, default 80), checked\n"
+        "; against BOTH real system RAM load (GlobalMemoryStatusEx) AND real VRAM\n"
+        "; usage (driver-authoritative DXGI QueryVideoMemoryInfo) before either\n"
+        "; ImagePoolOverflowFallback's fallback allocation OR the name-driven\n"
+        "; proactive texture-fetch pump does more risky work. Added after a real,\n"
+        "; live incident: with no gate, the fetch pump ran fully unbounded once the\n"
+        "; native pool's own safety ceiling was worked around, and drove DXVK's own\n"
+        "; host-visible Vulkan heap to the brink of a real allocation failure. Once\n"
+        "; either real signal is at or above this percent, both features stop\n"
+        "; taking on new work for that frame/call rather than continuing unbounded.\n"
+        "MaxMemoryUsagePercentForProactiveFeatures=%d\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
         "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
@@ -1457,6 +1468,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.textureUpscaleWorkerThreads,
         g_modConfig.autoExitOnCacheCompleteEnabled ? 1 : 0,
         g_modConfig.imagePoolOverflowFallbackEnabled ? 1 : 0,
+        g_modConfig.maxMemoryUsagePercentForProactiveFeatures,
         g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
         g_modConfig.gpuCaptureEnabled ? 1 : 0,
         g_modConfig.gpuSyncTimingLogging ? 1 : 0,
@@ -1817,6 +1829,11 @@ void LoadModConfig()
     }
     ReadBool(path, "Experimental", "AutoExitOnCacheComplete", g_modConfig.autoExitOnCacheCompleteEnabled);
     ReadBool(path, "Experimental", "ImagePoolOverflowFallback", g_modConfig.imagePoolOverflowFallbackEnabled);
+    {
+        int v = GetPrivateProfileIntA("Experimental", "MaxMemoryUsagePercentForProactiveFeatures", g_modConfig.maxMemoryUsagePercentForProactiveFeatures, path);
+        ClampIntSetting("Experimental", "MaxMemoryUsagePercentForProactiveFeatures", v, 10, 99, 80);
+        g_modConfig.maxMemoryUsagePercentForProactiveFeatures = v;
+    }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);
     ReadBool(path, "Video", "SmaaEnabled", g_modConfig.smaaEnabled);

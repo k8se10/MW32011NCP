@@ -20,3 +20,12 @@
 // factory/adapter on first real call -- never torn down, matching this
 // project's "install once, never uninstall" background-resource convention.
 void LogRealVramDiagIfDue();
+
+// Real, on-demand VRAM query (2026-09-29) -- same cached DXGI adapter/
+// QueryVideoMemoryInfo call LogRealVramDiagIfDue already uses, exposed as a
+// direct accessor for callers that need a real, current budget/usage reading
+// right now (e.g. a memory-safety gate deciding whether it's safe to keep
+// creating more GPU resources), not just a periodic log line. Returns false
+// (outputs left untouched) if the real DXGI query isn't available/fails --
+// callers should treat that as "unknown," not "safe" or "unsafe."
+bool TryGetRealVramInfo(double* outBudgetMB, double* outUsageMB);

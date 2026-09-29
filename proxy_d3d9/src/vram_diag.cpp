@@ -79,6 +79,16 @@ bool EnsureDxgiAdapter()
 
 } // namespace
 
+bool TryGetRealVramInfo(double* outBudgetMB, double* outUsageMB)
+{
+    if (!EnsureDxgiAdapter()) return false;
+    DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+    if (FAILED(g_dxgiAdapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) return false;
+    if (outBudgetMB) *outBudgetMB = static_cast<double>(info.Budget) / (1024.0 * 1024.0);
+    if (outUsageMB) *outUsageMB = static_cast<double>(info.CurrentUsage) / (1024.0 * 1024.0);
+    return true;
+}
+
 void LogRealVramDiagIfDue()
 {
     DWORD nowMs = GetTickCount();

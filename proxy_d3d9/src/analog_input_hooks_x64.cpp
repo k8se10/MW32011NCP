@@ -84,6 +84,8 @@
 #include "signature_scan.h"
 #include "controller_input.h"
 #include "mod_config.h"
+#include "vram_diag.h" // TryGetRealVramInfo -- real DXGI VRAM budget/usage query,
+    // reused by IsMemorySafeToContinueX64 below (2026-09-29).
 #include "overlay_hud.h" // CustomOptionsMenu_TickInput/_ResetOnMenuClose -- see
                           // PollCustomOptionsMenuX64's own comment below
 #include "rumble.h" // Rumble_Install()/Rumble_Tick() -- 2026-09-12 x64 port, see
@@ -12401,6 +12403,41 @@ extern "C" void LogAssetPoolImageStatsX64_Exported() { LogAssetPoolImageStatsX64
 // it would misbehave in a way this project can't yet characterize. Ships
 // opt-in for exactly this reason -- watch [x64-image-pool-overflow] in a real
 // session before trusting this long-term.
+// Real memory-safety gate (2026-09-29), direct correction after a live
+// session confirmed the overflow fallback + name-driven fetch combination
+// (both above) could genuinely exhaust real memory fast: real system RAM
+// went from ~93MB to 26GB private bytes in one session, and DXVK's own log
+// showed a hard `DxvkMemoryAllocator: Memory allocation failed` once its
+// real host-visible Vulkan heap ran out of budget. Direct instruction: "just
+// have it be memory safe using only x% of available ram + vram" -- rather
+// than simply disabling the features, both now check REAL, current memory
+// pressure (system RAM via GlobalMemoryStatusEx, VRAM via the same real
+// DXGI QueryVideoMemoryInfo query vram_diag.cpp already uses) before doing
+// any more work, and back off automatically once a configurable percentage
+// threshold is crossed -- no separate on/off toggle needed, this makes both
+// mechanisms self-limiting by construction.
+bool IsMemorySafeToContinueX64()
+{
+    int maxPercent = g_modConfig.maxMemoryUsagePercentForProactiveFeatures;
+
+    MEMORYSTATUSEX memStatus{};
+    memStatus.dwLength = sizeof(memStatus);
+    if (GlobalMemoryStatusEx(&memStatus)) {
+        if (static_cast<int>(memStatus.dwMemoryLoad) >= maxPercent) return false;
+    }
+    // If the RAM query itself fails (rare), fall through to the VRAM check
+    // rather than blocking outright -- an "unknown" real reading shouldn't
+    // by itself halt a feature the player explicitly enabled.
+
+    double budgetMB = 0.0, usageMB = 0.0;
+    if (TryGetRealVramInfo(&budgetMB, &usageMB) && budgetMB > 0.0) {
+        double usagePercent = (usageMB / budgetMB) * 100.0;
+        if (usagePercent >= static_cast<double>(maxPercent)) return false;
+    }
+
+    return true;
+}
+
 constexpr const char* kImagePoolAllocatorSignature =
     "48 8B 01 48 85 C0 ?? ?? 48 8B 10 48 89 11 C3 C3";
 constexpr uintptr_t kPerTypeHeadAddrTableRvaX64 = 0x4c2f60; // qword[assetType] -> &freeListHead
@@ -12424,6 +12461,14 @@ void* __fastcall Hook_ImagePoolAllocatorX64(void* headAddrPtr)
         return result; // null, but NOT the image type (or we never resolved which
             // address that is) -- pass the real null through unchanged, exactly as
             // the original engine behavior already handles it for every other type.
+    }
+    if (!IsMemorySafeToContinueX64()) {
+        // Real memory-pressure ceiling hit -- let the native fatal error fire as
+        // a real, clear stop rather than hand out one more object on top of an
+        // already-unsafe system. See this function's own header comment and the
+        // 2026-09-29 incident this gate was built to prevent.
+        LogFromController("[x64-image-pool-overflow] memory ceiling reached -- declining fallback, native fatal error will fire");
+        return result;
     }
 
     void* fallback = malloc(kImagePoolFallbackSize);
@@ -12695,8 +12740,17 @@ extern "C" void PumpLevelImagePreloadX64_Exported() { PumpLevelImagePreloadX64()
 struct PendingNameNode
 {
     char name[256];
+    int retryCount; // 2026-09-29: a resolve failure no longer drops the name
+        // outright -- it's requeued to the tail with retryCount incremented,
+        // up to kMaxNameRetries attempts, before finally being dropped. Real
+        // motivation: a name that fails to resolve on its first attempt (e.g.
+        // the real asset table hasn't finished populating yet this early in a
+        // session) isn't necessarily permanently invalid -- see this file's
+        // own "slow init, not a stall" finding earlier in this same feature's
+        // history for a concrete example of exactly this timing shape.
     PendingNameNode* next;
 };
+constexpr int kMaxNameRetries = 3;
 PendingNameNode* g_pendingNameHead = nullptr;
 PendingNameNode* g_pendingNameTail = nullptr;
 bool g_pendingNamesPopulated = false; // one-shot -- populated once per session,
@@ -12709,6 +12763,7 @@ void CollectCarriedOverNameCallback(const char* name, void* userData)
     PendingNameNode* node = static_cast<PendingNameNode*>(malloc(sizeof(PendingNameNode)));
     if (!node) return; // real OOM -- stop silently, keep whatever's already collected
     strncpy_s(node->name, name, _TRUNCATE);
+    node->retryCount = 0;
     node->next = nullptr;
     if (g_pendingNameTail) g_pendingNameTail->next = node; else g_pendingNameHead = node;
     g_pendingNameTail = node;
@@ -12734,14 +12789,20 @@ void PopulatePendingNamesFromCarriedOverX64()
 // real native FindOrLoadAsset (a lightweight hash-table lookup/create, not disk
 // I/O itself -- the real file read only happens later, rate-limited separately by
 // PumpLevelImagePreloadX64's own trigger pump), and feeds successfully-resolved
-// pointers into that same trigger queue. A name that fails to resolve (e.g. the
-// real image genuinely doesn't exist in this build) is silently dropped -- not
-// logged individually, to avoid spamming the log across a real multi-thousand-name
-// backlog for an expected, non-error case.
+// pointers into that same trigger queue. A name that fails to resolve is
+// requeued to the tail (not dropped outright) for up to kMaxNameRetries real
+// attempts, spread across later frames/passes, before finally being dropped --
+// a first-attempt failure isn't necessarily permanently invalid (e.g. the real
+// asset table hasn't finished populating yet this early in a session). None of
+// this is logged per-name individually, to avoid spamming the log across a
+// real multi-thousand-name backlog for an expected, non-error case.
 void PumpLevelImageNameResolveX64()
 {
     if (!g_modConfig.proactiveLevelTexturePreloadEnabled) return;
     if (g_realFindOrLoadAssetX64 == nullptr) return;
+    if (!IsMemorySafeToContinueX64()) return; // real memory-pressure ceiling hit --
+        // skip this frame's proactive fetch work entirely rather than keep piling
+        // on more real native image loads. See this gate's own header comment.
 
     PopulatePendingNamesFromCarriedOverX64();
     if (g_pendingNameHead == nullptr) return;
@@ -12780,8 +12841,24 @@ void PumpLevelImageNameResolveX64()
                     ++g_pendingNameResolvedCount;
                 }
             }
+            free(node);
+        } else if (node->retryCount + 1 < kMaxNameRetries) {
+            // Real resolve failure, but not yet at the retry cap -- requeue to
+            // the TAIL (not the head) so a genuinely-early-timing failure gets
+            // a real later chance once more of the asset table has populated,
+            // without this one stuck name starving every other pending name
+            // behind it in the meantime. With a short remaining queue this can
+            // still be re-picked within the same frame's kMaxPerFrame drain --
+            // harmless (each attempt is a cheap hash lookup, not disk I/O).
+            ++node->retryCount;
+            node->next = nullptr;
+            if (g_pendingNameTail) g_pendingNameTail->next = node; else g_pendingNameHead = node;
+            g_pendingNameTail = node;
+        } else {
+            // Real cap hit (kMaxNameRetries attempts, spread across the
+            // session) -- genuinely drop it now rather than retry forever.
+            free(node);
         }
-        free(node);
     }
 }
 

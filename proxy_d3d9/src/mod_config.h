@@ -973,6 +973,26 @@ struct ModConfig
     // analog_input_hooks_x64.cpp, for the full trail).
     bool imagePoolOverflowFallbackEnabled = false;
 
+    // [Experimental] MaxMemoryUsagePercentForProactiveFeatures (2026-09-29) --
+    // real, configurable safety ceiling (percent, checked against BOTH real
+    // system RAM load via GlobalMemoryStatusEx AND real VRAM usage via the
+    // driver-authoritative DXGI QueryVideoMemoryInfo query -- see
+    // IsMemorySafeToContinueX64(), analog_input_hooks_x64.cpp) gating every
+    // proactive/speculative memory-consuming feature this project ships
+    // (currently: ImagePoolOverflowFallback's fallback allocation, and the
+    // name-driven proactive texture-fetch pump). Direct instruction after a
+    // real, live-confirmed incident: ImagePoolOverflowFallback alone let the
+    // name-driven fetch pipeline run fully unbounded once the native pool's
+    // own safety ceiling was worked around, fired 8329 times in one session,
+    // and drove DXVK's own host-visible Vulkan heap to the brink of real
+    // allocation failure (iw5sp_d3d9.log: "DxvkMemoryAllocator: Memory
+    // allocation failed", Heap 1 13224MB/13364MB budget) -- "just have it be
+    // memory safe using only x% of available ram + vram." Once either real
+    // signal is at or above this percent, both gated features stop taking
+    // on new risky work for that frame/call rather than continuing
+    // unbounded -- this is a real ceiling, not a warning-only threshold.
+    int maxMemoryUsagePercentForProactiveFeatures = 80;
+
     // [Video] CustomAssetOverrides (2026-09-28, generalized same day) --
     // real, general, zero-code-change custom asset substitution: any real,
     // correctly-formatted .iwi file dropped into custom_assets\ (named
