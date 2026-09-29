@@ -469,7 +469,19 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
 
 bool IsNameInFlight(const char* name)
 {
-    return name ? IsInFlight(name) : false;
+    if (!name) return false;
+    // Real fix (2026-09-29, round 2): the InitOnceExecuteOnce change above
+    // fixed the RACE inside EnsureWorkerStarted, but this exported entry
+    // point -- the viewport-capture path's own real caller
+    // (texture_viewport_capture.cpp's Hook_SetTexture) -- never actually
+    // CALLED EnsureWorkerStarted before touching g_inFlightLock in the
+    // first place. A second, identical crash (same WER dump signature)
+    // confirmed the ordering bug was still live. EnsureWorkerStarted is
+    // idempotent and cheap after the first real call (InitOnceExecuteOnce's
+    // own fast path), so calling it here unconditionally is the correct,
+    // permanent fix, not a narrow patch for this one caller.
+    EnsureWorkerStarted();
+    return IsInFlight(name);
 }
 
 void GetProgressSnapshot(uint32_t* queued, uint32_t* processed, uint32_t* failed)
