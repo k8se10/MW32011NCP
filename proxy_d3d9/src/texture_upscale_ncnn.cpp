@@ -82,18 +82,25 @@ namespace
     // tileHeight*4 x 3 bytes RGB, no alpha -- alpha is handled once, at the
     // whole-image level, by the public UpscaleRGBA4x below, not per-tile).
     //
-    // Safe to call concurrently from multiple worker threads (2026-09-29,
-    // real parallelism added to drain a genuinely large real-world backlog
-    // faster) -- this function already creates its own, fresh, purely
-    // local `ncnn::Extractor` on every single call and never mutates
-    // `g_net` itself (only ever reads it, after load) -- exactly ncnn's own
-    // documented safe concurrency model ("Extractor is not thread-safe
-    // itself, but multiple threads may each create and use their own
-    // Extractor from the same already-loaded Net concurrently"). The only
-    // real synchronization this feature ever needed was around the ONE-TIME
-    // model load, which EnsureModelLoaded already handles with its own
-    // internal lock -- see UpscaleRGBA4x's own comment for why the old
-    // whole-call lock was removed.
+    // CORRECTED 2026-09-29 -- the real worker-parallelism pass this session
+    // (see texture_upscale_worker.cpp/mod_config.h's own kWorkerThreadCount
+    // work) assumed "each thread creates its own Extractor" was unconditionally
+    // safe per ncnn's documented CPU-inference concurrency model, and removed
+    // the lock around this whole call on that basis. Live-tested and found
+    // WRONG for this specific setup: `g_net->opt.use_vulkan_compute = true`
+    // (below, EnsureModelLoaded) means every extraction submits real GPU work,
+    // and ncnn's Vulkan compute backend does NOT extend that same "just create
+    // your own Extractor" safety guarantee to genuinely concurrent submission
+    // across threads without its own additional synchronization (multiple
+    // command-buffer/queue setup this project doesn't have) -- confirmed live:
+    // real jobs failed with "Extractor::extract failed" from virtually the
+    // very start of a session (line 7289 of ~237000, well before any real
+    // memory pressure), not an intermittent/late-session symptom, ruling out
+    // resource exhaustion as the cause. Fixed by serializing just the real GPU
+    // submission (create/input/extract) behind the same lock EnsureModelLoaded
+    // already uses for the one-time model load -- decode/tiling/compositing/
+    // file I/O around this call, in the caller, stay fully parallel across the
+    // worker threads; only the actual unsafe part is serialized.
     uint8_t* RunInferenceOnTileRgb(const uint8_t* rgb, int tileWidth, int tileHeight, int* outTileWidth, int* outTileHeight)
     {
         // Same real, already-proven ncnn::Mat::from_pixels API this file's
@@ -110,16 +117,22 @@ namespace
         const float normVals[3] = { 1.0f / 255.0f, 1.0f / 255.0f, 1.0f / 255.0f };
         in.substract_mean_normalize(nullptr, normVals);
 
-        ncnn::Extractor ex = g_net->create_extractor();
-        if (ex.input(kInputBlobName, in) != 0) {
-            LogFromController("[texture-upscale-ncnn] FAILED: Extractor::input failed");
-            return nullptr;
-        }
-
         ncnn::Mat out;
-        if (ex.extract(kOutputBlobName, out) != 0) {
-            LogFromController("[texture-upscale-ncnn] FAILED: Extractor::extract failed");
-            return nullptr;
+        {
+            // Real GPU submission -- serialized (see this function's own header
+            // comment for why, and the real live failures that showed it was
+            // needed). Decode/tiling/compositing outside this block stay fully
+            // parallel; only this section is single-threaded at a time.
+            ScopedSrwLock gpuLock(&g_netLock);
+            ncnn::Extractor ex = g_net->create_extractor();
+            if (ex.input(kInputBlobName, in) != 0) {
+                LogFromController("[texture-upscale-ncnn] FAILED: Extractor::input failed");
+                return nullptr;
+            }
+            if (ex.extract(kOutputBlobName, out) != 0) {
+                LogFromController("[texture-upscale-ncnn] FAILED: Extractor::extract failed");
+                return nullptr;
+            }
         }
         if (out.w <= 0 || out.h <= 0) {
             LogFromController("[texture-upscale-ncnn] FAILED: output Mat has zero dimensions");
