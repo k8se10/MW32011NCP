@@ -122,6 +122,25 @@ Build-verified (x64 Release, 0 errors), deployed to the live install.
 **Not yet live-tested** — the next play session's log will show whether the
 table resolves and reports real, sane population counts.
 
+**CORRECTED same day, first live session** — the signature above shipped
+without independently re-verifying uniqueness (this project's own standing
+rule, skipped this one time) and failed live: `[x64-asset-pool] FATAL: ...
+did not resolve`. Root cause, confirmed via a standalone PowerShell byte
+search against the real binary: the original 35-byte prologue-only signature
+matched **twice** (file offsets `0xA4D50` and `0xA5830`) — `FUN_1400a54c0`
+(asset creation) shares byte-for-byte identical prologue+hash-loop codegen
+with `FUN_1400a5950` (asset lookup), since both inline the same lowercase-
+hash-with-backslash-folding routine. Fixed by extending the signature to
+153 bytes, through the real divergent code (the magic-number modulo-42000
+multiply, the hash-table read, and critically the two real `CALL` targets
+neither function shares from the same position) — independently re-verified
+as exactly 1 occurrence via the same standalone byte-search technique before
+redeploying. Real, generalizable lesson: a short, boilerplate-heavy prologue
+(register saves + a common inline idiom) is a real collision risk even when
+Ghidra's own signature match reports high confidence — always independently
+verify uniqueness against the raw binary before shipping a signature, not
+just spot-check the first one built for a feature.
+
 ## The actual "hijack" step — built 2026-09-29, ships opt-in
 
 ### Finding 3 — the real native force-load trigger

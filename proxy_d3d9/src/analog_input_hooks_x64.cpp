@@ -12229,13 +12229,39 @@ void InstallFindOrLoadAssetImageDiagHookX64()
 // "validate a scanned signature actually resolved... before installing a hook
 // on it" -- same discipline applies to trusting a fixed-RVA global).
 //
-// Signature: FUN_1400a5950's own real prologue, 35 bytes, entirely deterministic
-// (no embedded absolute/relative addresses at all within this span -- confirmed
-// via DumpSigBytes.java's own PC-relative flags, all of which land at +0x23
-// onward, past what this signature covers). Independently re-derivable via
-// DumpSigBytes.java against 0x1400a5950 if this ever needs re-verifying.
+// Signature: FUN_1400a5950's own real body, 153 bytes (entry through the second
+// CALL 0x1402ca760). CORRECTED 2026-09-29 -- the original 35-byte prologue-only
+// signature shipped without independently re-verifying uniqueness (this
+// project's own standing "verify before hooking" rule, skipped this one time)
+// and turned out to match TWICE in the real binary (0xA4D50 and 0xA5830 file
+// offsets, confirmed via a standalone byte search) -- FUN_1400a54c0 (asset
+// creation) shares byte-for-byte IDENTICAL prologue+hash-loop codegen with
+// FUN_1400a5950 (asset lookup), since both inline the exact same lowercase-hash-
+// with-backslash-folding routine compiled from what's almost certainly the same
+// source idiom. SigScan::FindPatternInMainModule correctly refused to resolve
+// an ambiguous match rather than guessing (exactly per CLAUDE.md SS5) -- this
+// showed up live as "[x64-asset-pool] FATAL: ... did not resolve" and both the
+// stats diagnostic and the proactive-preload feature going fully inert.
+// Extended to include the real DIVERGENT code that follows the shared loop --
+// the magic-number modulo-42000 multiply, the hash-table read, and critically
+// the two real CALL targets (FUN_14008e3c0, FUN_1402ca760) neither of which
+// FUN_1400a54c0 reaches from its own equivalent position -- and independently
+// re-verified as exactly 1 raw occurrence via a standalone PowerShell byte
+// search against the real binary (not just Ghidra's own confidence), matching
+// this project's own standing rule. Only the one genuine RIP-relative data
+// reference in this span (`LEA RDI,[rip+disp32]`, resolving to the module's own
+// preferred image base) is wildcarded; the two SIB+disp32 references to
+// DAT_140c5cf00/DAT_140c75740 are NOT RIP-relative (a literal baked-in
+// displacement, not PC-relative) and are kept literal since their value should
+// always match this project's own already-confirmed RVA constants below.
+// Re-derivable via DumpSigBytes.java against 0x1400a5950 with a 45+ instruction
+// count if this ever needs re-verifying.
 constexpr const char* kAssetPoolLookupSignature =
-    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B EA 8B F1 8B D9 48 8B FA 66 90 0F BE 0F";
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B EA 8B F1 8B D9 48 8B FA 66 90 0F BE 0F "
+    "E8 48 70 2F 00 83 F8 5C 75 0F 6B DB 1F B8 2F 00 00 00 03 D8 48 FF C7 EB E4 85 C0 74 0A 6B DB 1F 03 D8 "
+    "48 FF C7 EB D6 B8 09 A4 EE 31 48 8D 3D ?? ?? ?? ?? F7 E3 C1 EA 0D 69 C2 10 A4 00 00 2B D8 48 63 C3 "
+    "0F B7 8C 47 00 CF C5 00 85 C9 74 33 48 8D 0C 49 48 8D 9F 40 57 C7 00 39 34 CB 48 8D 1C CB 75 17 "
+    "48 8B CB E8 E2 89 FE FF 48 8B C8 48 8B D5 E8 77 4D 22 00";
 
 constexpr uintptr_t kAssetHashTableRvaX64 = 0xc5cf00;   // ushort[42000]
 constexpr uintptr_t kAssetSlotArrayRvaX64 = 0xc75740;   // 42000 * 0x18-byte slots
