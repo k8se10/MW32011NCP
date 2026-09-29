@@ -967,6 +967,19 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
 void ForEachCarriedOverName(void (*callback)(const char* name, void* userData), void* userData)
 {
     if (!callback) return;
+    // CRITICAL FIX, 2026-09-29 -- real, live-reported crash (WER dump:
+    // ForEachCarriedOverName -> EnterCriticalSection, AV.Dereference=NullClassPtr).
+    // Same bug class this project already fixed once this session for IsInFlight/
+    // EnsureWorkerStarted: g_carriedOverLock is only InitializeCriticalSection'd
+    // inside InitWorkerOnceCallback, which QueueUpscaleJob calls via
+    // EnsureWorkerStarted() -- but this function's own new caller chain
+    // (analog_input_hooks_x64.cpp's PumpLevelImageNameResolveX64 ->
+    // PopulatePendingNamesFromCarriedOverX64) can run on the very first frame,
+    // before ANY texture has ever been queued, meaning g_carriedOverLock could
+    // still be a zeroed, never-initialized CRITICAL_SECTION the first time this
+    // runs. EnsureWorkerStarted() is idempotent (InitOnceExecuteOnce) -- safe to
+    // call unconditionally here, matching IsNameInFlight's own established fix.
+    EnsureWorkerStarted();
     EnterCriticalSection(&g_carriedOverLock);
     for (CarriedOverNode* n = g_carriedOverHead; n; n = n->next) {
         callback(n->name, userData);
