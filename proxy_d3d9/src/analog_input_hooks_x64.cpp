@@ -12883,36 +12883,67 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
             // diagnostic must never silently stop covering the rest of a
             // real playthrough. The UI-prefix skip stays -- that's relevance
             // filtering (already-confirmed-correct names), not a bound.
+            // 2026-09-29 -- SKIP (known UI asset) and FAIL (magic/format rejected) each get
+            // their own distinct log tag now, instead of sharing "[x64-capture-outcome]" with
+            // a success and needing the trailing fields parsed to tell them apart (direct
+            // instruction: "skip and fail shpuld have unique identifies and not waste time on
+            // them"). Both paths also do the least possible work -- SKIP never touches the
+            // capture buffer at all (name-prefix check only); FAIL logs immediately on the
+            // first failing check instead of computing anything past it.
             bool looksLikeKnownUiAsset = (_strnicmp(cap.name, "cardicon_", 9) == 0)
                 || (_strnicmp(cap.name, "ammo_counter_", 13) == 0);
-            static int s_captureOutcomeDiagCount = 0;
-            if (!looksLikeKnownUiAsset) {
-                ++s_captureOutcomeDiagCount;
+            if (looksLikeKnownUiAsset) {
+                // Cheapest possible line -- no byte inspection, just confirms this name was
+                // filtered rather than silently vanishing from the log.
+                char skipBuf[64];
+                sprintf_s(skipBuf, "[x64-capture-outcome-skip] '%.40s'", cap.name);
+                LogFromController(skipBuf);
+            } else {
                 bool magicOk = cap.size > 0x20 && cap.buffer[0] == 'I' && cap.buffer[1] == 'W'
                     && cap.buffer[2] == 'i' && cap.buffer[3] == 8;
-                char buf[400];
                 if (!magicOk) {
-                    sprintf_s(buf, "[x64-capture-outcome] '%.200s': capSize=%u magicOk=0 (bytes %02X %02X %02X %02X)",
+                    char buf[200];
+                    sprintf_s(buf, "[x64-capture-outcome-fail] '%.200s': capSize=%u magicOk=0 (bytes %02X %02X %02X %02X)",
                         cap.name, cap.size, cap.size > 0 ? cap.buffer[0] : 0, cap.size > 1 ? cap.buffer[1] : 0,
                         cap.size > 2 ? cap.buffer[2] : 0, cap.size > 3 ? cap.buffer[3] : 0);
+                    LogFromController(buf);
                 } else {
                     int8_t rawFormat = static_cast<int8_t>(cap.buffer[0x08]);
                     uint16_t w = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0A);
                     uint16_t h = *reinterpret_cast<const uint16_t*>(cap.buffer + 0x0C);
-                    uint32_t baseMipSize = 0;
-                    bool formatOk = (rawFormat == 0 || rawFormat == 1 || rawFormat == 3); // DXT1/DXT3/DXT5
-                        // real enum values per TextureUpscaleIwi::Format -- kept as raw ints here to
-                        // avoid pulling in that header just for this diagnostic.
-                    if (formatOk && w > 0 && h > 0) {
-                        TextureUpscaleDxt::BlockFormat bf = (rawFormat == 0) ? TextureUpscaleDxt::BlockFormat::BC1
-                            : (rawFormat == 1) ? TextureUpscaleDxt::BlockFormat::BC2 : TextureUpscaleDxt::BlockFormat::BC3;
-                        baseMipSize = TextureUpscaleDxt::CompressedSize(w, h, bf);
+                    // CORRECTED 2026-09-29 -- this diagnostic's own check used the wrong raw
+                    // values (0/1/3, an eyeballed guess) instead of TextureUpscaleIwi::Format's
+                    // real ones (DXT1=0xB/11, DXT3=0xC/12, DXT5=0xD/13,
+                    // texture_upscale_iwi_writer.h), the same bug class this project's own
+                    // history already had to correct once for a different hand-rolled format
+                    // check. Made the overwhelming majority of real, valid, already-supported
+                    // captures (rawFormat 11/12/13 -- 1105 of 1164 "formatOk=0" lines in one
+                    // real session's log) misreport as unsupported, even though the real
+                    // production parser (texture_upscale_worker.cpp, QueueUpscaleJobFromIwiFile)
+                    // already used the correct values and queued them successfully the whole
+                    // time -- this was purely a misleading diagnostic, not a real pipeline gap.
+                    bool formatOk = (rawFormat == 0x0B || rawFormat == 0x0C || rawFormat == 0x0D);
+                    if (!formatOk) {
+                        char buf[160];
+                        sprintf_s(buf, "[x64-capture-outcome-fail] '%.100s': capSize=%u rawFormat=%d (unsupported)",
+                            cap.name, cap.size, rawFormat);
+                        LogFromController(buf);
+                    } else if (w == 0 || h == 0) {
+                        char buf[120];
+                        sprintf_s(buf, "[x64-capture-outcome-fail] '%.60s': rawFormat=%d w=%u h=%u (zero dimension)",
+                            cap.name, rawFormat, w, h);
+                        LogFromController(buf);
+                    } else {
+                        TextureUpscaleDxt::BlockFormat bf = (rawFormat == 0x0B) ? TextureUpscaleDxt::BlockFormat::BC1
+                            : (rawFormat == 0x0C) ? TextureUpscaleDxt::BlockFormat::BC2 : TextureUpscaleDxt::BlockFormat::BC3;
+                        uint32_t baseMipSize = TextureUpscaleDxt::CompressedSize(w, h, bf);
+                        bool sizeOk = baseMipSize > 0 && cap.size >= 0x20 + baseMipSize;
+                        char buf[220];
+                        sprintf_s(buf, "[x64-capture-outcome-%s] '%.180s': capSize=%u rawFormat=%d w=%u h=%u baseMipSize=%u",
+                            sizeOk ? "ok" : "fail", cap.name, cap.size, rawFormat, w, h, baseMipSize);
+                        LogFromController(buf);
                     }
-                    sprintf_s(buf, "[x64-capture-outcome] '%.200s': capSize=%u magicOk=1 rawFormat=%d formatOk=%d w=%u h=%u baseMipSize=%u sizeOk=%d",
-                        cap.name, cap.size, rawFormat, formatOk ? 1 : 0, w, h, baseMipSize,
-                        (baseMipSize > 0 && cap.size >= 0x20 + baseMipSize) ? 1 : 0);
                 }
-                LogFromController(buf);
             }
             // Shared parse-and-queue (2026-09-28) -- same real IWI-v8
             // header-parse + base-mip-extraction logic the bulk pre-cache
