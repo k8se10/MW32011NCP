@@ -7845,19 +7845,31 @@ extern "C" void SendSyntheticEscX64(); // analog_input_hooks_x64.cpp -- real
 
 // Real, one-time auto-pause for the texture-cache-building notice
 // (2026-09-29, direct instruction: "also pause the game (after 5s delay -
-// unless modal dismissed)"). kCacheBuildNoticeText (overlay_hud.h) already
-// tells the player pausing is recommended and that staying up 5s triggers
-// an automatic pause -- this is that trigger, checked every frame
-// alongside the status bar. Deliberately keyed off the modal actually being
-// the CURRENT on-screen dismiss-required modal (not merely "was ever
-// shown"), so the 5s clock starts when the player actually SEES it, not
-// when it was first queued behind some other modal.
+// unless modal dismissed)", timer/gate revised same day: "better make the
+// auto pause gated on active gameplay and maybe mae the timer 15s").
+// kCacheBuildNoticeText (overlay_hud.h) already tells the player pausing is
+// recommended and that staying up triggers an automatic pause -- this is
+// that trigger, checked every frame alongside the status bar. Deliberately
+// keyed off the modal actually being the CURRENT on-screen dismiss-required
+// modal (not merely "was ever shown"), so the clock starts when the player
+// actually SEES it, not when it was first queued behind some other modal.
+//
+// Gated on real active gameplay (2026-09-29 revision): the modal can show
+// at the main menu too (e.g. the main-menu weapon-preview model captures
+// real textures -- see the same day's "even does it while im on main menu"
+// finding), where auto-pressing ESC would be meaningless or could back out
+// of a menu the player is actively navigating. Uses the same real
+// in-level>0 + clcState!=0 pair this project's own visual-suite safety
+// gates (motion blur/FSR) already established as the correct "genuinely in
+// a level, not menu/loading/disconnected" signal -- checked at fire time
+// only, not as a pause on the countdown itself, so time spent at the main
+// menu before loading into a level doesn't burn down the clock for nothing.
 void CheckCacheBuildAutoPause()
 {
     static bool s_wasActiveLastFrame = false;
     static DWORD s_activeSinceMs = 0;
     static bool s_fired = false; // real, permanent one-shot -- once fired,
-        // never re-armed. Without this, every frame after the 5s mark
+        // never re-armed. Without this, every frame after the timer mark
         // (while the modal is still undismissed, which is expected --
         // pausing doesn't auto-dismiss it) would re-send ESC and erratically
         // toggle pause on/off.
@@ -7871,7 +7883,15 @@ void CheckCacheBuildAutoPause()
     if (isActiveNow && !s_wasActiveLastFrame) s_activeSinceMs = GetTickCount();
     s_wasActiveLastFrame = isActiveNow;
 
-    if (isActiveNow && (GetTickCount() - s_activeSinceMs) >= 5000) {
+    constexpr DWORD kAutoPauseDelayMs = 15000;
+    if (isActiveNow && (GetTickCount() - s_activeSinceMs) >= kAutoPauseDelayMs) {
+        int inLevel = 0, clcState = 0;
+        bool inActiveGameplay = TryGetInLevelFlagX64(&inLevel) && inLevel > 0
+            && TryGetClcStateX64(&clcState) && clcState != 0;
+        if (!inActiveGameplay) return; // stay armed -- re-check next frame,
+            // e.g. still sitting at the main menu once the timer elapses;
+            // fires the first frame both the timer AND the gameplay gate
+            // are true together.
         s_fired = true;
         if (!IsMenuActiveX64_Exported()) SendSyntheticEscX64(); // don't fire
             // if the player already paused (or opened any other menu)

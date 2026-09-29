@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <thread> // std::thread::hardware_concurrency, EnsureModelLoaded's real num_threads value
 
 #include "net.h"
 #include "mat.h"
@@ -67,14 +68,37 @@ namespace
         // fixed upscale factor -- matches TextureRenderRes's own default
         // config value ("4x") by design, not a coincidence.
 
-    // Real tiling constants (2026-09-28). kTileMaxDim is an input-space
-    // (pre-upscale) size -- a 256x256 input tile produces a 1024x1024 4x
-    // output tile, a safe, real-world-proven size for consumer GPU VRAM
-    // budgets with this model class. kTileOverlap is the real per-edge
-    // overlap (input space) used to hide convolution border artifacts at
-    // tile seams -- standard technique, matching what real tiled-ESRGAN
-    // tools (e.g. Real-ESRGAN-ncnn-vulkan's own --tilesize option) use.
-    constexpr int kTileMaxDim = 256;
+    // Real tiling constants. kTileMaxDim is an input-space (pre-upscale)
+    // size -- a NxN input tile produces a 4Nx4N 4x output tile. kTileOverlap
+    // is the real per-edge overlap (input space) used to hide convolution
+    // border artifacts at tile seams -- standard technique, matching what
+    // real tiled-ESRGAN tools (e.g. Real-ESRGAN-ncnn-vulkan's own --tilesize
+    // option) use.
+    //
+    // RAISED 256 -> 512, 2026-09-29, direct instruction ("the texture
+    // caching is criminally slow cant we use more cpu to brute force it
+    // faster"). Real answer: more WORKER threads doesn't help the actual
+    // bottleneck -- RunInferenceOnTileRgb's own real GPU submission is now
+    // correctly serialized (see that function's own header comment, same
+    // day: concurrent Vulkan compute across threads was silently corrupting
+    // extraction, not actually safe the way ncnn's CPU-only concurrency
+    // model is). With submission serialized, throughput is bounded by the
+    // NUMBER of GPU round-trips, each carrying real fixed submission/sync
+    // overhead independent of tile size -- so the actual lever is fewer,
+    // bigger tiles, not more threads fighting over one queue. At 256, a
+    // real, common 512x512 weapon texture (this session's own log is full
+    // of them) needed 4 separate serialized round-trips; a 1024x1024 needed
+    // 16. At 512, those drop to 1 and 4 respectively -- a real 4x reduction
+    // in round-trip count for the most common real texture sizes this
+    // feature actually processes. Safe from a peak-VRAM standpoint despite
+    // 12 configured worker threads (TextureUpscaleWorkerThreads): since GPU
+    // submission is serialized to one at a time regardless of worker count,
+    // inference VRAM pressure is bounded by ONE tile's own working set, not
+    // multiplied by thread count -- confirmed against this session's own
+    // live GPU-memory headroom (Task Manager: 9.3/11.0GB dedicated already
+    // in use by the whole game, ~1.7GB free) before choosing 512 over a
+    // larger value, to stay within that real margin.
+    constexpr int kTileMaxDim = 512;
     constexpr int kTileOverlap = 16;
 
     // Runs the real Real-ESRGAN inference on ONE already-RGB, already-sized
@@ -207,6 +231,17 @@ bool EnsureModelLoaded()
         // file's own header comment above g_net's declaration for the real
         // exit-crash reasoning this sidesteps.
     g_net->opt.use_vulkan_compute = true;
+    // 2026-09-29 -- explicit, not just ncnn's own auto-detected default:
+    // real CPU headroom this session (23% utilization on a real multi-core
+    // CPU, per live Task Manager) is genuinely available for the CPU-side
+    // work ncnn still does even with Vulkan compute on (input packing/
+    // padding, the pre/post substract_mean_normalize calls in
+    // RunInferenceOnTileRgb, blob format conversion) -- this doesn't touch
+    // the real GPU-submission serialization fixed above, it's a separate,
+    // safe lever for the CPU-bound portion specifically.
+    g_net->opt.num_threads = static_cast<int>(std::thread::hardware_concurrency());
+    if (g_net->opt.num_threads <= 0) g_net->opt.num_threads = 4; // real fallback if the
+        // OS ever fails to report a core count -- ncnn requires a positive value.
 
     if (g_net->load_param(paramPath) != 0) {
         char buf[400];

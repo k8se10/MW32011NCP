@@ -222,7 +222,7 @@ constexpr const char* kCacheBuildNoticeText =
     "upscaling in the background. This can cause noticeable hitching while it runs.\n\n"
     "\x02" "\xE2\x9C\x94 Pausing (or sitting at a menu) is recommended -- it lets the "
     "cache catch up with less impact on your framerate. If this stays on screen for "
-    "5 seconds, the game will pause automatically.\n\n"
+    "15 seconds during active gameplay, the game will pause automatically.\n\n"
     "This is a genuine ONE-TIME process, per texture: once a texture is cached, it's "
     "served instantly forever after, this session and every future one.\n\n"
     "\x01" "\xE2\x9A\xA0 A texture already loaded this session won't visually update "
