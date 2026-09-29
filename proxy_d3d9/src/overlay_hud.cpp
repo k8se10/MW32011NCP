@@ -140,6 +140,11 @@ extern "C" const char* GetDvarStringX64_Exported(const char* name); // analog_in
 extern "C" void LogAssetPoolImageStatsX64_Exported(); // analog_input_hooks_x64.cpp -- 2026-09-29, level-load
     // asset-pool enumeration groundwork; dumps real populated/image-slot counts from the shared native
     // 42000-slot asset table on every real map change (see that function's own header comment).
+extern "C" void QueueLevelImagePreloadX64_Exported(); // analog_input_hooks_x64.cpp -- 2026-09-29, the real
+    // "hijack" step; queues every not-yet-loaded image this level's asset table references. No-op unless
+    // [Video] ProactiveLevelTexturePreload=1 (default OFF -- see that function's own header comment).
+extern "C" void PumpLevelImagePreloadX64_Exported(); // analog_input_hooks_x64.cpp -- drains a few queued
+    // entries per frame, called unconditionally every frame (cheap early-out when disabled/empty).
     // is genuinely at its own in-game pause menu" signal (the existing `menuActive`/`IsMenuActiveX64_Exported`
     // flags are a blanket "some menu/UI is active" bit that also fires for the main menu and loading screens,
     // per this issue's own already-documented correction), which repeatedly forced guessing pause-vs-live state
@@ -8106,8 +8111,19 @@ HRESULT WINAPI Hook_EndScene(void* device)
             strncpy_s(s_lastMapName, currentMapName, _TRUNCATE);
             if (wasRealTransition) {
                 LogAssetPoolImageStatsX64_Exported();
+                // 2026-09-29, the actual "hijack" step -- queues every not-yet-loaded
+                // image this level's own asset table references for proactive preload.
+                // A no-op unless [Video] ProactiveLevelTexturePreload=1 (default OFF).
+                // PumpLevelImagePreloadX64_Exported() (below, every frame) drains this
+                // queue a few entries at a time.
+                QueueLevelImagePreloadX64_Exported();
             }
         }
+
+        // 2026-09-29, drains a few queued proactive-preload entries per frame
+        // (see QueueLevelImagePreloadX64_Exported above) -- a real no-op, cheap
+        // early-out when the feature is disabled or the queue is empty.
+        PumpLevelImagePreloadX64_Exported();
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
             // 2026-09-26: direct user report -- "cl paused flag doesnt work

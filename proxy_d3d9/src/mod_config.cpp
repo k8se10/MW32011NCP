@@ -899,6 +899,16 @@ void WriteDefaultConfig(const char* path)
         "; whenever TextureRenderRes > 1, but disable this specifically if you only\n"
         "; want the lighter, on-demand runtime capture path.\n"
         "BulkTexturePrecache=%d\n"
+        "; ProactiveLevelTexturePreload (2026-09-29) -- real, experimental \"hijack\n"
+        "; the level load itself\" mechanism: on every real map change, walks the\n"
+        "; game's own native asset table and proactively forces each not-yet-loaded\n"
+        "; image through this project's real texture-capture pipeline, instead of\n"
+        "; waiting for organic play to demand-load each one. OFF by default for its\n"
+        "; first real live test -- see re_notes/x64_migration/\n"
+        "; level_asset_pool_hijack_research.md for the full finding and why this one\n"
+        "; specifically ships opt-in rather than on by default like the other\n"
+        "; texture-cache mechanisms above.\n"
+        "ProactiveLevelTexturePreload=%d\n"
         "; --- Recommended companion settings for everything below (FSR/motion blur/\n"
         "; render-scale) -- confirmed live 2026-08-27, known_issues.md issue #99: this\n"
         "; engine's own camera-look pacing gets visibly worse under vsync (a real,\n"
@@ -1367,6 +1377,7 @@ void WriteDefaultConfig(const char* path)
         textureRenderResBuf,
         g_modConfig.customAssetOverridesEnabled ? 1 : 0,
         g_modConfig.bulkTexturePrecacheEnabled ? 1 : 0,
+        g_modConfig.proactiveLevelTexturePreloadEnabled ? 1 : 0,
         g_modConfig.fsrSharpenEnabled ? 1 : 0,
         g_modConfig.fsrSharpenStrength,
         g_modConfig.smaaEnabled ? 1 : 0,
@@ -1771,6 +1782,7 @@ void LoadModConfig()
     ReadTextureRenderRes(path, g_modConfig.textureRenderRes);
     ReadBool(path, "Video", "CustomAssetOverrides", g_modConfig.customAssetOverridesEnabled);
     ReadBool(path, "Video", "BulkTexturePrecache", g_modConfig.bulkTexturePrecacheEnabled);
+    ReadBool(path, "Video", "ProactiveLevelTexturePreload", g_modConfig.proactiveLevelTexturePreloadEnabled);
     {
         int v = GetPrivateProfileIntA("Experimental", "ImageScratchMB", g_modConfig.imageScratchMB, path);
         ClampIntSetting("Experimental", "ImageScratchMB", v, 26, 2048, 256);

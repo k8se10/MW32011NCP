@@ -1,7 +1,17 @@
 # Level asset-pool enumeration — map/level-load hijack research (2026-09-29)
 
-**Status: Groundwork resolved and live-deployed (read-only). Proactive preload
-trigger NOT yet built.**
+**Status: Real proactive-preload trigger built and deployed, OPT-IN (config
+default OFF). Not yet live-tested.**
+
+Direct clarification of intent, after the read-only groundwork below shipped:
+"the idea is thats the primary load mechanism and the others are used when
+needed" — i.e. this table walk + proactive force-load should become how MOST
+of a level's textures get queued for upscaling, with the existing reactive
+paths (load-time capture, viewport capture, bulk zone-file precache) filling
+in whatever this misses, not the other way around. Supporting evidence from
+the user's own play sessions: loading times are already measurably longer
+since some assets started being cached, consistent with the game already
+tolerating extra work during its own loading window.
 
 ## Why
 
@@ -112,24 +122,65 @@ Build-verified (x64 Release, 0 errors), deployed to the live install.
 **Not yet live-tested** — the next play session's log will show whether the
 table resolves and reports real, sane population counts.
 
-## What is deliberately NOT built yet — the actual "hijack" step
+## The actual "hijack" step — built 2026-09-29, ships opt-in
 
-The real proactive-preload feature (walk the table after a map change, and for
-every populated image slot not yet demand-loaded, force it through the
-existing `Hook_ImageFileLoadX64`/`Hook_ReadBytesSubstitutionX64` capture
-pipeline ourselves rather than waiting for organic play to trigger it) is a
-genuine architectural change — calling back into a native engine loader
-function proactively, off our own timing, during/after level load. Per
-CLAUDE.md's "ask before making architectural changes" principle, this needs
-its own explicit go-ahead before being wired in, separate from the RE/
-groundwork work authorized so far. Real open design questions for that step:
-- Which native function actually triggers a real demand-load for a given
-  `GfxImage*` (`FUN_1401b93d0`'s own material-bind path, or something more
-  direct)? Not yet found/verified.
-- What real per-frame budget avoids stalling the game while forcing dozens/
-  hundreds of loads back-to-back right after a map change?
-- Does forcing a load this way interact safely with the same file-handle-table
-  resource already implicated in known issue #12's still-open crash chain?
+### Finding 3 — the real native force-load trigger
+
+`FUN_1401b9760(void* imageStructPtr)` (`__fastcall`, single argument) is the
+real trigger: given a pointer to the same image-load struct `FUN_1401bae80`
+itself operates on (name at `+0x20`, matching the already-confirmed offset),
+it checks two real streaming/device-state flags
+(`[ImageBase+0xc..ca8]+0x10` / a second byte global), and if they allow it,
+calls straight into `FUN_1401bae70` — the already-hooked `FUN_1401bae80`
+wrapper — meaning a call to this function flows through the existing
+`Hook_ImageFileLoadX64`/`Hook_ReadBytesSubstitutionX64` capture pipeline
+exactly like an organic demand-load would. Confirmed via full decompile
+(`FUN_1401b9760` — see the earlier chain-decomp file) and disassembly
+(`image_load_trigger_sigbytes.txt`).
+
+Real, NOT-fully-understood risk, why this ships opt-in rather than on by
+default: the function's own prologue unconditionally reads the struct's real
+dword at `+0x10`, zeroes it, and at the end decrements a real shared global
+counter (`DAT_14073d698`, via `FUN_14008ede0`) by that old value — apparent
+"in-flight load" bookkeeping this project hasn't independently verified the
+full semantics of. Calling this on an image already mid-load via some other
+native path could plausibly desync that counter over a long session.
+x64dbg was unavailable this session (MCP server connection refused), so this
+could not be live-debugged before shipping.
+
+### Mitigations shipped
+
+- **Only ever queued if genuinely not yet loaded**: before queuing, the
+  struct's own real decoded-data pointer (offset `+0x0` — the same field
+  `FUN_1401b9760` itself checks post-load, `CMP qword ptr [RBX],0x0`) is
+  checked; only null (never-loaded) slots get queued. Already-loaded images
+  are never re-triggered.
+- **Rate-limited**: a max of 2 preload calls per frame, drained from a
+  malloc-backed queue populated once per real map change — a bad interaction
+  surfaces as one logged event, not a frame-time cliff.
+- **SEH-guarded** on both the table-walk dereference and the trigger call
+  itself.
+- **Opt-in**: `[Video] ProactiveLevelTexturePreload` in `mw3ncp_config.ini`,
+  default `0`. The read-only table-walk/stats diagnostic keeps running
+  regardless; this flag only gates the real queue/trigger side.
+
+### Implementation
+
+`analog_input_hooks_x64.cpp`:
+- `kImageLoadTriggerSignature` / `ResolveImageLoadTriggerX64()` — resolves
+  `FUN_1401b9760` via signature match (two real RIP-relative globals
+  wildcarded, matching this file's own established convention).
+- `QueueLevelImagePreloadX64()` — called once per real map-change transition
+  (`overlay_hud.cpp`'s existing `[x64-map-diag]` detection); walks the same
+  table `LogAssetPoolImageStatsX64` already walks, queuing not-yet-loaded
+  image slots.
+- `PumpLevelImagePreloadX64()` — called every frame; drains up to 2 queued
+  entries, calling the real trigger function on each.
+
+Build-verified (x64 Release, 0 errors), deployed to the live install.
+**Not yet live-tested** — the next real session's `[x64-level-preload]` log
+lines (queue counts, per-trigger fires, any caught exceptions) are what
+determines whether this is safe to flip to default-on.
 
 ## Related
 

@@ -980,6 +980,25 @@ struct ModConfig
     // disabled), regardless of this flag's own value.
     bool bulkTexturePrecacheEnabled = true;
 
+    // [Experimental] ProactiveLevelTexturePreload (2026-09-29) -- real,
+    // genuinely new "hijack the level load itself" mechanism, direct
+    // instruction/clarification: "the idea is thats the primary load
+    // mechanism and the others are used when needed" (i.e. this should
+    // eventually be how most of a level's textures get queued for upscale,
+    // with the existing reactive paths -- load-time capture, viewport
+    // capture, bulk zone-file precache -- filling in whatever this misses,
+    // not the other way around). See
+    // re_notes/x64_migration/level_asset_pool_hijack_research.md for the
+    // full RE trail. Default OFF for its first real live test: unlike
+    // BulkTexturePrecache above (pure file I/O, well-understood), this
+    // calls a real native engine function (FUN_1401b9760) that also
+    // decrements a real shared global counter by a per-asset field this
+    // project doesn't yet have full confidence it's always safe to zero
+    // (see TriggerLevelImagePreloadX64's own header comment,
+    // analog_input_hooks_x64.cpp) -- flip to 1 once a session's own
+    // [x64-level-preload] log lines confirm it behaves safely.
+    bool proactiveLevelTexturePreloadEnabled = false;
+
     // [Video] CustomResolutionWidth/CustomResolutionHeight -- REMOVED 2026-08-29,
     // not achieving its actual goal. Shipped 2026-08-28 (issue #102, community
     // request/GitHub issue #3) as an independent W/H override reusing

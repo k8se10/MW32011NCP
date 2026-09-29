@@ -12324,6 +12324,178 @@ void LogAssetPoolImageStatsX64()
 extern "C" void ResolveAssetPoolGlobalsX64_Exported() { ResolveAssetPoolGlobalsX64(); }
 extern "C" void LogAssetPoolImageStatsX64_Exported() { LogAssetPoolImageStatsX64(); }
 
+// ---- Proactive level-load texture preload (2026-09-29) -- the real "hijack" step
+// ---------------------------------------------------------------------------------
+// Direct instruction/clarification: "the idea is thats the primary load mechanism
+// and the others are used when needed" -- i.e. walking the asset-pool table above
+// and proactively forcing each not-yet-loaded image through this project's real
+// capture pipeline should become how MOST of a level's textures get queued, with
+// the existing reactive paths (load-time capture, viewport capture, bulk zone-file
+// precache) filling in whatever this misses rather than doing all the work.
+//
+// FUN_1401b9760 is the real native trigger: a single-argument (`__fastcall`,
+// RCX = the same image-load struct pointer FUN_1401bae80 itself takes, name at
+// +0x20, confirmed shared struct shape) function that -- IF the real streaming/
+// device flags at `[DAT_141884ca8+0x10]` and `[DAT_14188bc30]` allow it -- calls
+// straight into `FUN_1401bae70` (the already-hooked `FUN_1401bae80` wrapper),
+// exactly the real load path this project's Hook_ImageFileLoadX64/
+// Hook_ReadBytesSubstitutionX64 capture pipeline already observes. Confirmed via
+// full decompile+disassembly (image_load_trigger_sigbytes.txt).
+//
+// REAL, NOT-FULLY-UNDERSTOOD RISK, why this ships opt-in (config default OFF)
+// rather than on by default like the other texture-cache mechanisms: the
+// function's own prologue unconditionally reads the struct's real dword at
+// +0x10, zeroes it, and at the very end decrements a real shared global counter
+// (`DAT_14073d698`, via `FUN_14008ede0`) by that OLD value. This looks like
+// legitimate "in-flight/pending load" bookkeeping this project has not
+// independently confirmed the full semantics of -- calling this on an image
+// already mid-load via some OTHER native path (not just our own trigger) could
+// plausibly desync that counter over a long session. Mitigated, not eliminated:
+// only ever call this for slots whose real decoded-data pointer (struct offset
+// +0x0, the same field `FUN_1401b9760` itself checks post-load: "CMP qword ptr
+// [RBX],0x0") is still null -- i.e. never re-trigger an image this project can
+// already see is loaded -- and rate-limited to a small number of calls per frame
+// so a bad interaction surfaces as an isolated logged event, not a hitch/crash
+// spike right after a map change. x64dbg is unavailable this session (server
+// connection refused) so this could not be independently live-debugged before
+// shipping -- ship opt-in, watch the [x64-level-preload] log for a live session,
+// promote to default-on once confirmed safe (mirrors this project's own standing
+// precedent -- see mod_config.h's own comment on this flag).
+constexpr const char* kImageLoadTriggerSignature =
+    "48 89 5C 24 08 57 48 83 EC 20 8B 79 10 33 C0 48 89 41 10 48 8B D9 48 8B 05 ?? ?? ?? ?? "
+    "80 78 10 00 74 4E 0F B6 05 ?? ?? ?? ?? 84 C0 75 43 E8 DD 16 00 00 84 C0 75 08 48 8B CB "
+    "E8 11 F5 FF FF 48 83 3B 00 75 2C";
+
+using ImageLoadTriggerFnX64 = void(__fastcall*)(void* imageStructPtr);
+ImageLoadTriggerFnX64 g_imageLoadTriggerX64 = nullptr;
+
+// Resolved once at startup and cached, same policy as ResolveAssetPoolGlobalsX64
+// above. A separate resolve step (not folded into that function) since it's a
+// distinct signature match with its own independent failure mode.
+void ResolveImageLoadTriggerX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kImageLoadTriggerSignature);
+    if (!r.found) {
+        LogFromController("[x64-level-preload] FATAL: image-load-trigger signature did not resolve -- "
+            "proactive level preload inactive this session even if enabled in config.");
+        return;
+    }
+    g_imageLoadTriggerX64 = reinterpret_cast<ImageLoadTriggerFnX64>(r.address);
+    char buf[160];
+    sprintf_s(buf, "[x64-level-preload] image-load-trigger resolved @ 0x%llX.",
+        static_cast<unsigned long long>(r.address));
+    LogFromController(buf);
+}
+
+// Simple, unbounded, malloc-backed singly-linked queue (same "no fixed-capacity
+// silent-drop" convention TextureUpscaleWorker's own job queue already
+// established, 2026-09-29 hardening pass) -- populated once per real map change
+// (QueueLevelImagePreloadX64), drained a few entries per frame
+// (PumpLevelImagePreloadX64). Render-thread only (both the table walk and the
+// pump run from overlay_hud.cpp's own per-frame Hook_EndScene body), so no
+// locking -- single producer, single consumer, same thread.
+struct LevelPreloadQueueNode
+{
+    void* imageStructPtr;
+    LevelPreloadQueueNode* next;
+};
+LevelPreloadQueueNode* g_levelPreloadQueueHead = nullptr;
+LevelPreloadQueueNode* g_levelPreloadQueueTail = nullptr;
+int g_levelPreloadQueuedCount = 0;
+int g_levelPreloadTriggeredCount = 0;
+
+// Called once per real map-change transition (overlay_hud.cpp's existing
+// [x64-map-diag] coop_mapName detection). Walks the same 42000-slot table
+// LogAssetPoolImageStatsX64 already walks, but this pass QUEUES every image
+// slot whose real decoded-data pointer (+0x0) is still null -- i.e. genuinely
+// not yet loaded -- for PumpLevelImagePreloadX64 to work through over the
+// following frames. A no-op if the feature is disabled or the trigger function
+// never resolved.
+void QueueLevelImagePreloadX64()
+{
+    if (!g_modConfig.proactiveLevelTexturePreloadEnabled) return;
+    if (!g_assetPoolResolvedX64 || g_assetSlotArrayX64 == nullptr || g_imageLoadTriggerX64 == nullptr) {
+        LogFromController("[x64-level-preload] skipped -- asset-pool globals or trigger function not resolved.");
+        return;
+    }
+
+    int queuedThisPass = 0;
+    for (int i = 1; i < kAssetPoolSlotCountX64; ++i) {
+        const uint8_t* slot = g_assetSlotArrayX64 + static_cast<size_t>(i) * kAssetPoolSlotStrideX64;
+        int32_t assetType = *reinterpret_cast<const int32_t*>(slot + 0x00);
+        void* dataPtr = *reinterpret_cast<void* const*>(slot + 0x08);
+        if (dataPtr == nullptr || assetType != kFindOrLoadAssetImageTypeX64) continue;
+
+        bool alreadyLoaded = true;
+        __try {
+            alreadyLoaded = (*reinterpret_cast<void* const*>(dataPtr) != nullptr);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            continue; // can't safely inspect this slot -- skip it rather than guess
+        }
+        if (alreadyLoaded) continue;
+
+        LevelPreloadQueueNode* node = static_cast<LevelPreloadQueueNode*>(malloc(sizeof(LevelPreloadQueueNode)));
+        if (node == nullptr) break; // out of memory -- stop queuing, keep whatever's already queued
+        node->imageStructPtr = dataPtr;
+        node->next = nullptr;
+        if (g_levelPreloadQueueTail != nullptr) g_levelPreloadQueueTail->next = node;
+        else g_levelPreloadQueueHead = node;
+        g_levelPreloadQueueTail = node;
+        ++g_levelPreloadQueuedCount;
+        ++queuedThisPass;
+    }
+
+    char buf[220];
+    sprintf_s(buf, "[x64-level-preload] map change: queued %d not-yet-loaded image(s) for proactive "
+        "preload (total ever queued this session: %d).", queuedThisPass, g_levelPreloadQueuedCount);
+    LogFromController(buf);
+}
+
+// Called every frame (overlay_hud.cpp's per-frame Hook_EndScene body). Drains a
+// small, fixed number of queued entries per frame -- deliberately conservative
+// (real file I/O per call, unknown real per-call cost) so a bad interaction
+// surfaces as one logged event, not a frame-time cliff right after a map change.
+void PumpLevelImagePreloadX64()
+{
+    if (!g_modConfig.proactiveLevelTexturePreloadEnabled) return;
+    if (g_imageLoadTriggerX64 == nullptr || g_levelPreloadQueueHead == nullptr) return;
+
+    constexpr int kMaxPerFrame = 2;
+    for (int i = 0; i < kMaxPerFrame && g_levelPreloadQueueHead != nullptr; ++i) {
+        LevelPreloadQueueNode* node = g_levelPreloadQueueHead;
+        g_levelPreloadQueueHead = node->next;
+        if (g_levelPreloadQueueHead == nullptr) g_levelPreloadQueueTail = nullptr;
+
+        void* imageStructPtr = node->imageStructPtr;
+        free(node);
+
+        const char* name = nullptr;
+        __try {
+            name = *reinterpret_cast<const char* const*>(reinterpret_cast<uint8_t*>(imageStructPtr) + 0x20);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            name = nullptr;
+        }
+
+        __try {
+            g_imageLoadTriggerX64(imageStructPtr);
+            ++g_levelPreloadTriggeredCount;
+            char buf[380];
+            sprintf_s(buf, "[x64-level-preload] triggered #%d: name=\"%.300s\" ptr=%p",
+                g_levelPreloadTriggeredCount, name ? name : "(null)", imageStructPtr);
+            LogFromController(buf);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            char buf[220];
+            sprintf_s(buf, "[x64-level-preload] EXCEPTION calling trigger for ptr=%p (name=\"%.100s\") -- "
+                "skipped, continuing with remaining queue.", imageStructPtr, name ? name : "(null)");
+            LogFromController(buf);
+        }
+    }
+}
+
+extern "C" void ResolveImageLoadTriggerX64_Exported() { ResolveImageLoadTriggerX64(); }
+extern "C" void QueueLevelImagePreloadX64_Exported() { QueueLevelImagePreloadX64(); }
+extern "C" void PumpLevelImagePreloadX64_Exported() { PumpLevelImagePreloadX64(); }
+
 // ---- Universal per-image file-load diagnostic (2026-09-28) ----------------------
 // Found by tracing REAL callers back from the already-established, already-hooked
 // CreateTexture device call (asset_capture.cpp's first-N caller trace), per direct

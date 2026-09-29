@@ -1,0 +1,29 @@
+Signature-byte dump of FUN_1401b9760 @ 1401b9760
+(byte offsets relative to function entry point)
+
++0x00  48 89 5C 24 08                 MOV qword ptr [RSP + 0x8],RBX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  57                             PUSH RDI                                 
++0x06  48 83 EC 20                    SUB RSP,0x20                             
++0x0A  8B 79 10                       MOV EDI,dword ptr [RCX + 0x10]           
++0x0D  33 C0                          XOR EAX,EAX                              
++0x0F  48 89 41 10                    MOV qword ptr [RCX + 0x10],RAX           
++0x13  48 8B D9                       MOV RBX,RCX                              
++0x16  48 8B 05 2B B5 6C 01           MOV RAX,qword ptr [0x141884ca8]          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x1D  80 78 10 00                    CMP byte ptr [RAX + 0x10],0x0            
++0x21  74 4E                          JZ 0x1401b97d1                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x23  0F B6 05 A6 24 6D 01           MOVZX EAX,byte ptr [0x14188bc30]         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2A  84 C0                          TEST AL,AL                               
++0x2C  75 43                          JNZ 0x1401b97d1                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2E  E8 DD 16 00 00                 CALL 0x1401bae70                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x33  84 C0                          TEST AL,AL                               
++0x35  75 08                          JNZ 0x1401b979f                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x37  48 8B CB                       MOV RCX,RBX                              
++0x3A  E8 11 F5 FF FF                 CALL 0x1401b8cb0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3F  48 83 3B 00                    CMP qword ptr [RBX],0x0                  
++0x43  75 2C                          JNZ 0x1401b97d1                          [PC-RELATIVE/REF -- likely needs wildcarding]
+
+Raw bytes (69 total): 48 89 5C 24 08 57 48 83 EC 20 8B 79 10 33 C0 48 89 41 10 48 8B D9 48 8B 05 2B B5 6C 01 80 78 10 00 74 4E 0F B6 05 A6 24 6D 01 84 C0 75 43 E8 DD 16 00 00 84 C0 75 08 48 8B CB E8 11 F5 FF FF 48 83 3B 00 75 2C
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? 57 48 83 EC 20 8B 79 10 33 C0 48 89 41 10 48 8B D9 ?? ?? ?? ?? ?? ?? ?? 80 78 10 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? 84 C0 ?? ?? ?? ?? ?? ?? ?? 84 C0 ?? ?? 48 8B CB ?? ?? ?? ?? ?? 48 83 3B 00 ?? ??
