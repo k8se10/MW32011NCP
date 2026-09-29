@@ -17,6 +17,8 @@
 #include <share.h>
 #include "game_exe_detect.h"
 #include "mod_config.h"
+#include "native_config_backup.h" // BackupOrRestoreNativeConfigCfg -- see that
+    // header's own comment for the real crash-loop incident this closes.
 #include "overlay_hud.h"
 #include "plugin_loader.h"
 #include "../third_party/minhook/include/MinHook.h"
@@ -879,6 +881,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         DisableThreadLibraryCalls(hModule);
         LogInit();
         LoadModConfig(); // task #14 -- must run before InstallAnalogInputHooks reads g_modConfig
+        // As early as possible, before the native engine gets a real chance to read
+        // players2/config.cfg itself -- see native_config_backup.h's own comment for
+        // the real crash-loop incident (a truncated config.cfg from an earlier crash
+        // kept getting read back in, every launch) this closes automatically going
+        // forward.
+        BackupOrRestoreNativeConfigCfg();
         LoadOverlayFonts(hModule); // 2026-07-31 follow-up -- self-contained Isotherm
             // Sans (swapped from Barlow Condensed 2026-08-24), embedded in this DLL
             // rather than depending on a system install; logs its own success/failure,

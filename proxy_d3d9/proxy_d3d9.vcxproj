@@ -260,6 +260,7 @@
     <ClCompile Include="src\asset_capture.cpp" />
     <ClCompile Include="src\texture_upscale_iwi_writer.cpp" />
     <ClCompile Include="src\texture_upscale_cache.cpp" />
+    <ClCompile Include="src\native_config_backup.cpp" />
     <ClCompile Include="src\texture_upscale_dxt_codec.cpp" />
     <ClCompile Include="src\texture_upscale_ncnn.cpp" />
     <ClCompile Include="src\texture_upscale_worker.cpp" />
@@ -327,6 +328,7 @@
     <ClInclude Include="src\rumble.h" />
     <ClInclude Include="src\asset_capture.h" />
     <ClInclude Include="src\texture_upscale_iwi_writer.h" />
+    <ClInclude Include="src\native_config_backup.h" />
     <ClInclude Include="src\texture_upscale_cache.h" />
     <ClInclude Include="src\texture_upscale_dxt_codec.h" />
     <ClInclude Include="src\texture_upscale_ncnn.h" />

@@ -7500,6 +7500,18 @@ void DrawCustomCursorIfNeeded(void* device)
 typedef HRESULT(WINAPI* Reset_t)(void* This, void* pPresentationParameters);
 Reset_t g_origReset = nullptr;
 
+// Forward decls -- real definitions sit right before DrawBuildWatermark/
+// DrawTextureCacheStatusBar further down this file (they need to be visible
+// to those two draw functions directly, so they aren't declared up here
+// instead). See those definitions' own comments for the real device-
+// recreation stale-pointer bug this closes.
+extern void* g_buildWatermarkTexture;
+extern char g_buildWatermarkRenderedFor[128];
+extern int g_buildWatermarkLastFontHeight;
+extern void* g_textureCacheStatusBarTexture;
+extern char g_textureCacheStatusBarRenderedFor[256];
+extern int g_textureCacheStatusBarLastFontHeight;
+
 void ReleaseAllCachedTextures()
 {
     auto releaseIfSet = [](void*& tex) {
@@ -7619,6 +7631,16 @@ void ReleaseAllCachedTextures()
     // along with the SetVertexDeclaration-based fix itself -- see
     // DrawFullScreenPass's own header comment and known_issues.md issue
     // #100 for the real crash this caused and the current state.
+
+    // Real bug fix (2026-09-29) -- see these globals' own definitions
+    // (right before DrawBuildWatermark/DrawTextureCacheStatusBar) for the
+    // full incident.
+    releaseIfSet(g_buildWatermarkTexture);
+    g_buildWatermarkRenderedFor[0] = '\0';
+    g_buildWatermarkLastFontHeight = 0;
+    releaseIfSet(g_textureCacheStatusBarTexture);
+    g_textureCacheStatusBarRenderedFor[0] = '\0';
+    g_textureCacheStatusBarLastFontHeight = 0;
 }
 
 } // namespace -- closes the file-wide anonymous namespace (see the matching close's
@@ -7766,17 +7788,31 @@ void DrawJitterProbeOverlayIfEnabled(void* device)
 #endif
 }
 
+// Real bug fix (2026-09-29): these were function-local `static` variables --
+// invisible to ReleaseAllCachedTextures (which only knows about file-scope
+// globals it's told to iterate), so after a real device recreation (this
+// engine destroys and fully recreates the D3D9 device on any display-mode
+// change, e.g. fullscreen<->windowed-borderless -- see Hook_CreateDevice's
+// own comment) this texture kept a stale pointer into the just-destroyed
+// device. Live-reported crash chain this closes: a display-mode switch
+// triggering the device recreation, followed by "Direct3DDevice9::Present
+// failed: Unspecified error" and/or an outright crash on the very next
+// frame this stale texture got bound. Hoisted to file scope so
+// ReleaseAllCachedTextures can null them out on every real recreation, same
+// as every other cached texture in this file.
+void* g_buildWatermarkTexture = nullptr;
+char g_buildWatermarkRenderedFor[128] = "";
+int g_buildWatermarkLastFontHeight = 0;
+
 void DrawBuildWatermark(void* device)
 {
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
-    static void* s_wmTexture = nullptr;
-    static char s_wmRenderedFor[128] = "";
-    static int s_wmLastFontHeight = 0;
     constexpr int kWmFontHeightPx = 13;
     const char* text = GetBuildWatermarkString();
-    if (!EnsureLeftAlignedTextTexture(device, s_wmTexture, s_wmRenderedFor, sizeof(s_wmRenderedFor), text,
-                                       s_wmLastFontHeight, kWmFontHeightPx, FontRole::Default))
+    if (!EnsureLeftAlignedTextTexture(device, g_buildWatermarkTexture, g_buildWatermarkRenderedFor,
+                                       sizeof(g_buildWatermarkRenderedFor), text,
+                                       g_buildWatermarkLastFontHeight, kWmFontHeightPx, FontRole::Default))
         return;
     const int widthPx = MeasureTextWidthPx(text, g_modConfig.overlayFontItalic, kWmFontHeightPx, FontRole::Default);
     const float wmScale = static_cast<float>(kWmFontHeightPx) / 20.0f; // EnsureLeftAlignedTextTexture's own baseline is 20px
@@ -7789,7 +7825,7 @@ void DrawBuildWatermark(void* device)
     // Grey, ~25% alpha. At low opacity a pale grey blends toward white against a dark background -- darkened the RGB
     // (0x50 instead of 0x80) so the hue still reads as grey rather than washing out to a whitish smudge.
     constexpr DWORD kWmColor = 0x40505050u;
-    DrawGenericTexturedQuad(device, s_wmTexture, drawX * scaleX, drawY * scaleY,
+    DrawGenericTexturedQuad(device, g_buildWatermarkTexture, drawX * scaleX, drawY * scaleY,
                               static_cast<float>(kTextureWidth) * scaleX * wmScale,
                               static_cast<float>(kTextureHeight) * scaleY * wmScale,
                               kWmColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
@@ -7851,6 +7887,17 @@ void CheckCacheBuildAutoPause()
 // screen-space-quad draw), not the dismiss-required warning-modal pipeline
 // (DrawWarningModal) -- this is ambient status, never something the player
 // needs to acknowledge.
+// Real bug fix (2026-09-29): same device-recreation stale-pointer class as
+// g_buildWatermarkTexture above -- these were originally function-local
+// `static` variables, invisible to ReleaseAllCachedTextures. Hoisted to file
+// scope for the identical reason: a live-reported crash chain (a
+// display-mode switch triggering this engine's real device destroy+
+// recreate, then "Direct3DDevice9::Present failed" / a crash on the next
+// frame that bound one of these stale texture handles).
+void* g_textureCacheStatusBarTexture = nullptr;
+char g_textureCacheStatusBarRenderedFor[256] = "";
+int g_textureCacheStatusBarLastFontHeight = 0;
+
 void DrawTextureCacheStatusBar(void* device)
 {
     uint32_t queued = 0, processed = 0, failed = 0;
@@ -7883,12 +7930,10 @@ void DrawTextureCacheStatusBar(void* device)
 
     float scaleX = 1.0f, scaleY = 1.0f;
     GetResolutionScale(device, scaleX, scaleY);
-    static void* s_barTexture = nullptr;
-    static char s_barRenderedFor[256] = "";
-    static int s_barLastFontHeight = 0;
     constexpr int kBarFontHeightPx = 14;
-    if (!EnsureLeftAlignedTextTexture(device, s_barTexture, s_barRenderedFor, sizeof(s_barRenderedFor), text,
-                                       s_barLastFontHeight, kBarFontHeightPx, FontRole::Default))
+    if (!EnsureLeftAlignedTextTexture(device, g_textureCacheStatusBarTexture, g_textureCacheStatusBarRenderedFor,
+                                       sizeof(g_textureCacheStatusBarRenderedFor), text,
+                                       g_textureCacheStatusBarLastFontHeight, kBarFontHeightPx, FontRole::Default))
         return;
     const float barScale = static_cast<float>(kBarFontHeightPx) / 20.0f; // EnsureLeftAlignedTextTexture's own baseline is 20px
     // Bottom-left, mirroring the build watermark's own bottom-right placement --
@@ -7902,7 +7947,7 @@ void DrawTextureCacheStatusBar(void* device)
     // real, actionable status (a background pass is actively running),
     // not a passive build stamp.
     constexpr DWORD kBarColor = 0x80C0C0C0u;
-    DrawGenericTexturedQuad(device, s_barTexture, drawX * scaleX, drawY * scaleY,
+    DrawGenericTexturedQuad(device, g_textureCacheStatusBarTexture, drawX * scaleX, drawY * scaleY,
                               static_cast<float>(kTextureWidth) * scaleX * barScale,
                               static_cast<float>(kTextureHeight) * scaleY * barScale,
                               kBarColor, 0.0f, 0.0f, 1.0f, 1.0f, /*premultipliedAlpha=*/true, /*isTextOrGlyph=*/true);
