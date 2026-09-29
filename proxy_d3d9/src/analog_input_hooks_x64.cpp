@@ -12364,6 +12364,33 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
         }
     }
 
+    // Temporary, UNBOUNDED-SCOPE name diagnostic (2026-09-29) -- investigating
+    // a real, live-reported suspicion: "text and in game non player/ai model
+    // stuff hasnt been observed" getting captured/cached, even during real
+    // in-level play (menu/weapon/character content already confirmed working
+    // via source=loadtime/source=viewport). Thread correlation itself is
+    // already confirmed solid (96-98% coverage, texture_viewport_capture's
+    // own diagnostic) -- if world/prop textures were reaching THIS function
+    // at all, they'd almost certainly get captured same as everything else
+    // that does. This dumps EVERY real name this function ever sees,
+    // unconditionally, generously bounded (20000, not the earlier 50-hit
+    // scoped version above -- menu navigation alone can burn through a
+    // smaller cap before real gameplay is ever reached) so a real in-level
+    // playthrough can be checked for whether real level-geometry-sounding
+    // names (walls/floors/props/foliage) ever appear here at all -- if they
+    // never do, that's real proof world geometry loads through a different,
+    // currently unhooked path entirely, not a capture-side bug. Remove once
+    // this is confirmed or ruled out.
+    if (name) {
+        static int s_allNameLogCount = 0;
+        if (s_allNameLogCount < 20000) {
+            ++s_allNameLogCount;
+            char nbuf[400];
+            sprintf_s(nbuf, "[x64-allname-diag] \"%.300s\" (hit #%d)", name, s_allNameLogCount);
+            LogFromController(nbuf);
+        }
+    }
+
     // Real cache-check logic (2026-09-28) -- replaces the earlier diagnostic-
     // only version. Strictly opt-in: g_modConfig.textureRenderRes == 1 means
     // "1x", the feature's own disabled default -- skip the cache lookup
