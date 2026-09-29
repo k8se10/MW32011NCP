@@ -65,12 +65,23 @@ namespace
     // for exactly this) and each run real, independent GPU inference
     // concurrently -- see texture_upscale_ncnn.cpp's own comment on why
     // that's genuinely safe (ncnn's own documented per-thread-Extractor
-    // concurrency model, not something this project invented). Fixed at 3,
-    // not hardware-concurrency-scaled -- this is GPU-submission-bound work,
-    // not CPU-core-bound, so scaling with logical CPU count would just add
-    // contention past a real, low ceiling; 3 is a real, conservative
-    // starting point, not tuned against actual throughput data yet.
-    constexpr int kWorkerThreadCount = 3;
+    // concurrency model, not something this project invented).
+    //
+    // Widened 3 -> 6 (2026-09-29, same day, direct follow-up: "caching rn
+    // is over 15s per texture which for over 1000 textures is wild... we
+    // also need more parralellism"). Real per-texture latency this slow is
+    // dominated by tiled inference cost (large world textures split into
+    // many 256x256 tiles, each a real GPU round trip -- see
+    // texture_upscale_ncnn.cpp's kTileMaxDim), so this is still a real bet
+    // that the GPU has headroom for more concurrent submissions rather than
+    // a proven scaling curve -- doubling is a genuine, honest guess at the
+    // right next step, not benchmarked against actual measured throughput
+    // at 3 vs. 6 yet. If 6 doesn't meaningfully improve wall-clock drain
+    // rate, that's real evidence this workload is already GPU-saturated and
+    // more threads would just add contention, not throughput -- worth
+    // checking via the status bar's own live progress rate before pushing
+    // this higher again.
+    constexpr int kWorkerThreadCount = 6;
     HANDLE g_workerThreadHandles[kWorkerThreadCount] = {};
 
     // In-flight dedup set -- separate from the on-disk cache check in

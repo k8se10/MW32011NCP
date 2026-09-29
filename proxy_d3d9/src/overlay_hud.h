@@ -211,6 +211,18 @@ constexpr const char* kCacheBuildNoticeText =
     "\x01" "\xE2\x9A\xA0 A texture already loaded this session won't visually update "
     "until you restart the level or the game -- once the cache finishes building, "
     "restart to see the results.\n\n"
+    // Real, direct instruction (2026-09-29): "also update the modal to show
+    // caching is extremely slow(we also need more parralellism - caching rn
+    // is over 15s per texture which for over 1000 textures is wild)" -- an
+    // honest expectation-setting line, not a vague "please wait": at this
+    // real measured rate, a session queuing 1000+ textures (not an
+    // exaggeration -- 1813 real textures were queued in a single Dome
+    // playthrough this same session) can take HOURS to fully drain, even
+    // with the background worker running multiple threads.
+    "\x01" "\xE2\x9A\xA0 This is genuinely slow -- roughly 15+ seconds per texture. "
+    "With over a thousand textures in a typical level, expect this to take a long "
+    "time (potentially hours) to fully finish. It keeps working across every future "
+    "session too, so it's fine to leave it running in the background.\n\n"
     "Enter / Space / Click to continue:";
 
 // STRICTLY A TESTING AID (2026-07-31, [Overlay] TestCycleAllVariants in
