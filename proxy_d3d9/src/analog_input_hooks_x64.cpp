@@ -12833,13 +12833,40 @@ struct PendingNameNode
 constexpr int kMaxNameRetries = 3;
 PendingNameNode* g_pendingNameHead = nullptr;
 PendingNameNode* g_pendingNameTail = nullptr;
-bool g_pendingNamesPopulated = false; // one-shot -- populated once per session,
-    // not per map change, since this is now decoupled from level transitions.
+bool g_pendingNamesPopulated = false; // real, one-time "has this ever run" flag --
+    // kept for the very first population's own startup log line; re-population
+    // itself is now gated on DWORD g_lastPendingPopulateMs below instead.
+DWORD g_lastPendingPopulateMs = 0;
 int g_pendingNameResolvedCount = 0;
+int g_pendingNameRepopulateCount = 0; // for logging/diagnostics -- how many
+    // periodic refreshes have run this session, separate from the initial one.
+
+// 2026-09-30, real fix for a live-reported "assets got stuck" gap: with a
+// hard kMaxNameRetries cap and no re-population, any name that failed all
+// 3 of its retries -- which, given this pump drains up to 5 names/frame,
+// could all happen within the first few real MINUTES of a session that
+// might then run for HOURS more -- was dropped PERMANENTLY for the rest of
+// that session, even though the real asset table (and the player's own
+// progress through the level/mode) keeps changing the whole time. A name
+// that fails early isn't necessarily permanently invalid; it just hadn't
+// had a fair chance yet. Re-running population periodically (not
+// continuously -- this walks the full real basemap, a real, non-trivial
+// cost not worth paying every frame) gives every still-uncached name a
+// fresh set of retries throughout a long session, not just once at the
+// very start.
+constexpr DWORD kPendingRepopulateIntervalMs = 60 * 1000; // 1 real minute -- direct
+    // instruction: "5 min is a long time try 1." Still bounded, not continuous --
+    // this walks the full real basemap on each refresh (a real, non-trivial cost),
+    // just paced tighter than the original 5-minute default.
 
 void CollectCarriedOverNameCallback(const char* name, void* userData)
 {
     (void)userData;
+    // Real, deliberate skip (2026-09-30, added for periodic re-population):
+    // don't re-add a name that's already genuinely cached on disk -- cheap
+    // (GetFileAttributesA, no real read) and avoids the refresh pass
+    // needlessly re-walking thousands of already-done names every interval.
+    if (TextureUpscaleCache::CacheEntryExists(name, g_modConfig.textureRenderRes)) return;
     PendingNameNode* node = static_cast<PendingNameNode*>(malloc(sizeof(PendingNameNode)));
     if (!node) return; // real OOM -- stop silently, keep whatever's already collected
     strncpy_s(node->name, name, _TRUNCATE);
@@ -12849,19 +12876,35 @@ void CollectCarriedOverNameCallback(const char* name, void* userData)
     g_pendingNameTail = node;
 }
 
-// Called once, the first time PumpLevelImageNameResolveX64 below runs -- builds
-// the full name backlog from the carried-over set in one cheap pass (just string
-// copies, no engine calls yet). SP-only/opt-in gated by the caller.
+// Called from PumpLevelImageNameResolveX64 below: once immediately (the
+// original 2026-09-29 design), then periodically re-run every
+// kPendingRepopulateIntervalMs once the list drains empty -- see this
+// section's own 2026-09-30 header comment for why a hard one-shot
+// permanently stranded any name that failed its retries early. SP-only/
+// opt-in gated by the caller.
 void PopulatePendingNamesFromCarriedOverX64()
 {
-    if (g_pendingNamesPopulated) return;
+    if (g_pendingNamesPopulated && g_pendingNameHead != nullptr) return; // still
+        // real work outstanding from the last population -- nothing to do yet.
+    DWORD nowMs = GetTickCount();
+    if (g_pendingNamesPopulated && (nowMs - g_lastPendingPopulateMs < kPendingRepopulateIntervalMs)) {
+        return; // list is empty, but not due for a refresh yet
+    }
+    bool isRepopulate = g_pendingNamesPopulated;
     g_pendingNamesPopulated = true;
+    g_lastPendingPopulateMs = nowMs;
     TextureUpscaleWorker::ForEachCarriedOverName(CollectCarriedOverNameCallback, nullptr);
     int count = 0;
     for (PendingNameNode* n = g_pendingNameHead; n; n = n->next) ++count;
-    char buf[200];
-    sprintf_s(buf, "[x64-level-preload] name-driven fetch: %d known name(s) queued for real "
-        "FindOrLoadAsset resolution.", count);
+    char buf[220];
+    if (isRepopulate) {
+        ++g_pendingNameRepopulateCount;
+        sprintf_s(buf, "[x64-level-preload] name-driven fetch: periodic refresh #%d found %d "
+            "still-uncached name(s) to retry.", g_pendingNameRepopulateCount, count);
+    } else {
+        sprintf_s(buf, "[x64-level-preload] name-driven fetch: %d known name(s) queued for real "
+            "FindOrLoadAsset resolution.", count);
+    }
     LogFromController(buf);
 }
 
