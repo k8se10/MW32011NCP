@@ -1,0 +1,33 @@
+================================================================
+Function: FUN_1400a4e50 @ 1400a4e50
+----------------------------------------------------------------
+
+void FUN_1400a4e50(longlong *param_1,int param_2)
+
+{
+  longlong lVar1;
+  int iVar2;
+  longlong *plVar3;
+  longlong lVar4;
+  longlong lVar5;
+  
+  lVar4 = (longlong)param_2 + -1;
+  *param_1 = (longlong)(param_1 + 1);
+  if (0 < lVar4) {
+    iVar2 = 1;
+    plVar3 = param_1 + 1;
+    lVar5 = lVar4;
+    do {
+      lVar1 = (longlong)iVar2;
+      iVar2 = iVar2 + 1;
+      *plVar3 = (longlong)(param_1 + lVar1 * 5 + 1);
+      lVar5 = lVar5 + -1;
+      plVar3 = plVar3 + 5;
+    } while (lVar5 != 0);
+  }
+  param_1[lVar4 * 5 + 1] = 0;
+  return;
+}
+
+
+
