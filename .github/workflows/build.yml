@@ -89,14 +89,23 @@ jobs:
       # itself uses its own in-house Vulkan function loader rather than linking
       # vulkan-1.lib -- see build_ncnn.bat's own header comment). Skipped
       # entirely on a cache hit.
+      #
+      # 2026-09-29: replaced a hand-rolled Invoke-WebRequest against
+      # sdk.lunarg.com's own "latest" redirect -- real CI failure, "Not Found -
+      # File not found or access denied," from a wrong guessed filename
+      # (VulkanSDK.exe; the real convention is lowercase vulkan_sdk.exe) and
+      # generally a URL pattern this project has no way to keep in sync with
+      # LunarG's own changes. A real, actively-maintained marketplace action
+      # exists specifically for this and handles the real download/install
+      # correctly, with its own caching -- switched to it rather than keep
+      # re-guessing LunarG's own URL scheme by hand.
       - name: Install Vulkan SDK
         if: matrix.project == 'proxy_d3d9/proxy_d3d9.vcxproj' && steps.ncnn-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/VulkanSDK.exe" -OutFile "$env:RUNNER_TEMP\VulkanSDK.exe"
-          Start-Process -FilePath "$env:RUNNER_TEMP\VulkanSDK.exe" -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
-          $sdkDir = Get-ChildItem "C:\VulkanSDK" | Select-Object -First 1
-          echo "VULKAN_SDK=C:\VulkanSDK\$($sdkDir.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: latest
+          install_runtime: false
+          cache: true
 
       # Builds real ncnn from source (Tencent/ncnn, pinned tag, matching this
       # project's own documented local process exactly -- same script a
