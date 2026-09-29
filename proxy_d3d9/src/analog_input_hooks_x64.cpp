@@ -12438,75 +12438,132 @@ bool IsMemorySafeToContinueX64()
     return true;
 }
 
-constexpr const char* kImagePoolAllocatorSignature =
-    "48 8B 01 48 85 C0 ?? ?? 48 8B 10 48 89 11 C3 C3";
 constexpr uintptr_t kPerTypeHeadAddrTableRvaX64 = 0x4c2f60; // qword[assetType] -> &freeListHead
-constexpr size_t kImagePoolFallbackSize = 8192; // real, generous safety margin -- see
-    // this section's own header comment for why no smaller, "exact" size is used.
 
-using ImagePoolAllocatorFnX64 = void*(__fastcall*)(void* headAddrPtr);
-ImagePoolAllocatorFnX64 g_realImagePoolAllocatorX64 = nullptr;
+// ---- Image asset-pool REAL expansion (2026-09-29) -- replaces the removed
+// ImagePoolOverflowFallback mechanism entirely after it caused a real,
+// confirmed FULL SYSTEM CRASH live (known_issues_x64.md issue #13). Static
+// RE (no live attach) found the real, one-time pool INITIALIZER for the
+// image type -- FUN_1400a4e50, called exactly once at startup as
+// FUN_1400a4e50(imageHeadAddrPtr, 4448) -- and decompiled its own real
+// address arithmetic: the pool is a genuinely contiguous static array, 40
+// bytes (0x28) per object, built as a classic intrusive free list (each
+// object's first 8 bytes hold the address of the next free object), living
+// immediately after the head-pointer global itself (head = headAddrPtr+8).
+// The OLD mechanism handed a single, separately-malloc'd object OUTSIDE
+// that contiguous range to the engine whenever the real array was
+// exhausted -- structurally unsafe regardless of the fallback object's own
+// size (confirmed the real object is only 40 bytes, so the old 8KB
+// fallback was never undersized; the real risk is any code elsewhere in
+// this exact subsystem that assumes every live object's address falls
+// inside one fixed, contiguous range). This mechanism is structurally
+// different and sound: it hooks the ONE-TIME initializer itself and
+// replaces the whole pool with a bigger one, built the exact same
+// contiguous way the native code itself builds it -- every object handed
+// out afterward is still part of one real, single contiguous array, just
+// a larger one, so no downstream code can ever see an out-of-range object
+// address. Installs UNCONDITIONALLY (always logs a firing confirmation)
+// so this hook's own timing (does it actually fire before the real pool
+// is ever consumed?) can be verified live on a completely ordinary launch
+// with zero risk, regardless of whether real expansion itself is enabled.
+constexpr const char* kImagePoolInitSignature =
+    "4c 63 d2 4c 8d 41 08 49 ff ca 4c 89 01 4d 85 d2 ?? ?? ba 01 00 00 00 "
+    "4d 8b da 66 0f 1f 44 00 00 48 63 c2 4d 8d 40 28 ff c2 48 8d 04 80 "
+    "48 8d 40 01 48 8d 04 c1 49 89 40 d8 49 83 eb 01 ?? ?? 4b 8d 04 92 "
+    "48 c7 44 c1 08 00 00 00 00"; // FUN_1400a4e50's own real prologue+body,
+    // independently verified as EXACTLY 1 match in the whole binary
+    // (re_notes/x64_migration/pool_init_sig_uniqueness.txt) -- the two
+    // wildcarded byte pairs are real short-jump (JLE/JNZ) rel8 operands,
+    // the same wildcard class this project's own signatures already treat
+    // as safe to mask.
+constexpr size_t kImagePoolObjectStrideX64 = 40; // confirmed via FUN_1400a4e50's
+    // own real address arithmetic (5 qwords between consecutive objects),
+    // not assumed -- see known_issues_x64.md issue #13.
+constexpr int kImagePoolRealCountX64 = 4448; // the real, native, confirmed count
+    // (matches the fatal-error string's own %d exactly).
+
+using ImagePoolInitFnX64 = void(__fastcall*)(void* headAddrPtr, int count);
+ImagePoolInitFnX64 g_realImagePoolInitX64 = nullptr;
 void* g_imageTypeFreeListHeadAddrX64 = nullptr; // resolved once at startup -- the
     // REAL per-type head-address, read from the same table the native code itself
     // indexes, never hardcoded.
-int g_imagePoolOverflowCount = 0;
+void* g_imagePoolExpandedBufferX64 = nullptr; // never freed -- lives for the whole
+    // process, matching this project's own "install once, never uninstall"
+    // background-resource convention.
 
-void* __fastcall Hook_ImagePoolAllocatorX64(void* headAddrPtr)
+void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
 {
-    void* result = g_realImagePoolAllocatorX64(headAddrPtr); // ALWAYS call through
-        // first -- every other asset type sharing this generic allocator must see
-        // completely unmodified behavior.
-    if (result != nullptr) return result; // real pop succeeded -- nothing to do
+    // This same generic initializer function is shared by more than one real
+    // asset type (confirmed: the function-pointer table has it at two separate
+    // indices, both 40-byte-stride types) -- only ever touch the image type's
+    // own call; every other type must see completely unmodified behavior.
     if (g_imageTypeFreeListHeadAddrX64 == nullptr || headAddrPtr != g_imageTypeFreeListHeadAddrX64) {
-        return result; // null, but NOT the image type (or we never resolved which
-            // address that is) -- pass the real null through unchanged, exactly as
-            // the original engine behavior already handles it for every other type.
-    }
-    if (!IsMemorySafeToContinueX64()) {
-        // Real memory-pressure ceiling hit -- let the native fatal error fire as
-        // a real, clear stop rather than hand out one more object on top of an
-        // already-unsafe system. See this function's own header comment and the
-        // 2026-09-29 incident this gate was built to prevent.
-        LogFromController("[x64-image-pool-overflow] memory ceiling reached -- declining fallback, native fatal error will fire");
-        return result;
-    }
-
-    void* fallback = malloc(kImagePoolFallbackSize);
-    if (fallback == nullptr) return result; // real OOM -- fall through to the
-        // native fatal error rather than return a null we can't back with memory.
-    memset(fallback, 0, kImagePoolFallbackSize);
-    ++g_imagePoolOverflowCount;
-    char buf[200];
-    sprintf_s(buf, "[x64-image-pool-overflow] real image pool (4448) exhausted -- "
-        "served fallback #%d (%zu-byte heap allocation) instead of the native fatal error.",
-        g_imagePoolOverflowCount, kImagePoolFallbackSize);
-    LogFromController(buf);
-    return fallback;
-}
-
-void InstallImagePoolOverflowHookX64()
-{
-    if (!g_modConfig.imagePoolOverflowFallbackEnabled) return;
-
-    SigScan::Result r = SigScan::FindPatternInMainModule(kImagePoolAllocatorSignature);
-    if (!r.found) {
-        LogFromController("[x64-image-pool-overflow] FATAL: allocator signature did not resolve -- "
-            "the real 4448-image native limit stays fully enforced this session.");
+        g_realImagePoolInitX64(headAddrPtr, count);
         return;
     }
+
+    char logBuf[240];
+    sprintf_s(logBuf, "[x64-image-pool-expand] real init hook fired -- headAddrPtr=%p count=%d "
+        "(expected count %d)", headAddrPtr, count, kImagePoolRealCountX64);
+    LogFromController(logBuf);
+
+    if (!g_modConfig.imagePoolRealExpansionEnabled) {
+        g_realImagePoolInitX64(headAddrPtr, count); // real, fully unmodified native behavior
+        return;
+    }
+
+    int extra = g_modConfig.imagePoolExtraCapacity;
+    if (extra < 0) extra = 0;
+    long long newCount = static_cast<long long>(count) + extra;
+    size_t bytes = static_cast<size_t>(newCount) * kImagePoolObjectStrideX64;
+
+    void* pool = VirtualAlloc(nullptr, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (pool == nullptr) {
+        char buf[200];
+        sprintf_s(buf, "[x64-image-pool-expand] VirtualAlloc(%zu bytes) FAILED -- falling back "
+            "to the real, unmodified native pool (%d objects).", bytes, count);
+        LogFromController(buf);
+        g_realImagePoolInitX64(headAddrPtr, count);
+        return;
+    }
+
+    // Build the IDENTICAL intrusive free-list chain the real native initializer
+    // builds (FUN_1400a4e50, decompiled in known_issues_x64.md issue #13) --
+    // just inside our own, bigger, VirtualAlloc'd buffer instead of the fixed
+    // static array. Every object's first 8 bytes hold the address of the next
+    // free object; the last object's first 8 bytes are NULL, exactly matching
+    // the real function's own real semantics.
+    char* base = static_cast<char*>(pool);
+    for (long long i = 0; i < newCount - 1; ++i) {
+        *reinterpret_cast<void**>(base + i * kImagePoolObjectStrideX64) =
+            base + (i + 1) * kImagePoolObjectStrideX64;
+    }
+    *reinterpret_cast<void**>(base + (newCount - 1) * kImagePoolObjectStrideX64) = nullptr;
+    *reinterpret_cast<void**>(headAddrPtr) = pool; // head now points into OUR buffer,
+        // never the original static array -- the real array (sized for `count`
+        // objects, immediately following headAddrPtr in .data) is simply left
+        // unused for the rest of the session.
+
+    g_imagePoolExpandedBufferX64 = pool;
+    char buf[260];
+    sprintf_s(buf, "[x64-image-pool-expand] REPLACED the real static pool with a genuinely "
+        "contiguous %lld-object buffer (native was %d, +%d extra) -- %zu bytes committed via "
+        "VirtualAlloc @ %p.", newCount, count, extra, bytes, pool);
+    LogFromController(buf);
+}
+
+void InstallImagePoolExpandHookX64()
+{
     HMODULE mainModule = GetModuleHandleA(nullptr);
     if (mainModule == nullptr) {
-        LogFromController("[x64-image-pool-overflow] FATAL: GetModuleHandleA(nullptr) returned null.");
+        LogFromController("[x64-image-pool-expand] FATAL: GetModuleHandleA(nullptr) returned null.");
         return;
     }
     uintptr_t moduleBase = reinterpret_cast<uintptr_t>(mainModule);
     // Real, non-hardcoded resolution: reads the SAME per-type head-address table
     // entry (moduleBase + 0x4c2f60 + imageType*8) the native code itself indexes
-    // at line "MOV RCX,[moduleBase+assetType*8+0x4c2f60]" -- this is a genuine
-    // runtime memory READ, not a static guess, so it stays correct even if this
-    // table's own base address ever shifts in a future build (only the fixed RVA
-    // 0x4c2f60 itself would need re-verifying then, matching this project's own
-    // standing signature-scanning policy).
+    // -- a genuine runtime memory READ, not a static guess, so it stays correct
+    // even if this table's own base address ever shifts in a future build.
     void** headAddrTable = reinterpret_cast<void**>(moduleBase + kPerTypeHeadAddrTableRvaX64);
     __try {
         g_imageTypeFreeListHeadAddrX64 = headAddrTable[kFindOrLoadAssetImageTypeX64];
@@ -12514,17 +12571,25 @@ void InstallImagePoolOverflowHookX64()
         g_imageTypeFreeListHeadAddrX64 = nullptr;
     }
     if (g_imageTypeFreeListHeadAddrX64 == nullptr) {
-        LogFromController("[x64-image-pool-overflow] FATAL: could not resolve the real image-type "
-            "free-list head address -- the fallback will never activate this session.");
+        LogFromController("[x64-image-pool-expand] FATAL: could not resolve the real image-type "
+            "free-list head address -- this hook will never distinguish the image type from "
+            "the other real asset type sharing the same initializer function.");
+        return;
+    }
+
+    SigScan::Result r = SigScan::FindPatternInMainModule(kImagePoolInitSignature);
+    if (!r.found) {
+        LogFromController("[x64-image-pool-expand] FATAL: initializer signature did not resolve -- "
+            "the real 4448-image native limit stays fully enforced this session.");
         return;
     }
 
     void* target = reinterpret_cast<void*>(r.address);
-    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ImagePoolAllocatorX64),
-                                            reinterpret_cast<void**>(&g_realImagePoolAllocatorX64));
+    MH_STATUS createStatus = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_ImagePoolInitX64),
+                                            reinterpret_cast<void**>(&g_realImagePoolInitX64));
     if (createStatus != MH_OK) {
         char buf[220];
-        sprintf_s(buf, "[x64-image-pool-overflow] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
+        sprintf_s(buf, "[x64-image-pool-expand] FATAL: MH_CreateHook failed @ 0x%llX (status=%d)",
             static_cast<unsigned long long>(r.address), static_cast<int>(createStatus));
         LogFromController(buf);
         return;
@@ -12532,15 +12597,16 @@ void InstallImagePoolOverflowHookX64()
     MH_STATUS enableStatus = MH_EnableHook(target);
     if (enableStatus != MH_OK) {
         char buf[220];
-        sprintf_s(buf, "[x64-image-pool-overflow] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
+        sprintf_s(buf, "[x64-image-pool-expand] FATAL: MH_EnableHook failed @ 0x%llX (status=%d)",
             static_cast<unsigned long long>(r.address), static_cast<int>(enableStatus));
         LogFromController(buf);
         return;
     }
     char buf[240];
-    sprintf_s(buf, "[x64-image-pool-overflow] installed -- allocator @ 0x%llX, image free-list head @ %p. "
-        "Native 4448-image limit now has a real (8KB-per-overflow, heap-backed) fallback instead of a fatal error.",
-        static_cast<unsigned long long>(r.address), g_imageTypeFreeListHeadAddrX64);
+    sprintf_s(buf, "[x64-image-pool-expand] installed -- initializer @ 0x%llX, image free-list "
+        "head @ %p. Real expansion is %s (see [Experimental] ImagePoolRealExpansion).",
+        static_cast<unsigned long long>(r.address), g_imageTypeFreeListHeadAddrX64,
+        g_modConfig.imagePoolRealExpansionEnabled ? "ENABLED" : "off -- diagnostic-only this session");
     LogFromController(buf);
 }
 

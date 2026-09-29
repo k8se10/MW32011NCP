@@ -1306,27 +1306,33 @@ void WriteDefaultConfig(const char* path)
         "; nothing left to do. 0 = off (default -- forcibly closing the game should\n"
         "; never surprise an ordinary player), 1 = on.\n"
         "AutoExitOnCacheComplete=%d\n"
-        "; Real dev/QoL toggle (2026-09-29): the native engine's own real 4448-image\n"
-        "; fixed-size asset pool hits a hard fatal error once exhausted -- this can\n"
-        "; genuinely happen with ProactiveLevelTexturePreload's own aggressive\n"
-        "; name-driven fetch. When on, a signature-scanned hook on the real per-type\n"
-        "; pool allocator serves a generously-sized heap-backed fallback object\n"
-        "; instead of the native fatal error, ONLY for images -- every other asset\n"
-        "; type is completely unaffected. Default OFF: this project has NOT confirmed\n"
-        "; the real GfxImage struct size or ruled out other code assuming pool-array\n"
-        "; contiguity, so this is a real, reasoned, but not risk-free mitigation --\n"
-        "; watch [x64-image-pool-overflow] in the log before trusting it long-term.\n"
-        "ImagePoolOverflowFallback=%d\n"
+        "; REPLACES the removed ImagePoolOverflowFallback (2026-09-29) after that\n"
+        "; mechanism caused a real, confirmed FULL SYSTEM CRASH live (Kernel-Power\n"
+        "; Event 41, hard power-cycle required -- known_issues_x64.md issue #13).\n"
+        "; Real static RE found the native 4448-image pool is a genuinely contiguous\n"
+        "; 40-byte-stride array, NOT an unconfirmed large struct -- the old fallback\n"
+        "; handed the engine an out-of-range heap pointer, which is the real danger,\n"
+        "; not undersizing. This hooks the pool's own one-time initializer and\n"
+        "; REPLACES it with a bigger array built the identical contiguous way.\n"
+        "; Default OFF: the hook always logs a firing confirmation regardless of\n"
+        "; this setting -- watch [x64-image-pool-expand] on an ordinary launch\n"
+        "; before ever relying on the extra capacity in play.\n"
+        "ImagePoolRealExpansion=%d\n"
+        "; How many EXTRA image-pool objects to add on top of the real native count\n"
+        "; (4448) when ImagePoolRealExpansion is on. 40 real bytes per extra object,\n"
+        "; committed once via VirtualAlloc at startup. Default more than doubles\n"
+        "; real capacity for a trivial one-time ~174KB.\n"
+        "ImagePoolExtraCapacity=%d\n"
         "; Real, configurable safety ceiling (percent, 10-99, default 80), checked\n"
         "; against BOTH real system RAM load (GlobalMemoryStatusEx) AND real VRAM\n"
-        "; usage (driver-authoritative DXGI QueryVideoMemoryInfo) before either\n"
-        "; ImagePoolOverflowFallback's fallback allocation OR the name-driven\n"
-        "; proactive texture-fetch pump does more risky work. Added after a real,\n"
-        "; live incident: with no gate, the fetch pump ran fully unbounded once the\n"
-        "; native pool's own safety ceiling was worked around, and drove DXVK's own\n"
+        "; usage (driver-authoritative DXGI QueryVideoMemoryInfo) before the\n"
+        "; name-driven proactive texture-fetch pump does more risky work. Added\n"
+        "; after a real, live incident: with no gate, the fetch pump ran fully\n"
+        "; unbounded once the (since-removed) ImagePoolOverflowFallback worked\n"
+        "; around the native pool's own safety ceiling, and drove DXVK's own\n"
         "; host-visible Vulkan heap to the brink of a real allocation failure. Once\n"
-        "; either real signal is at or above this percent, both features stop\n"
-        "; taking on new work for that frame/call rather than continuing unbounded.\n"
+        "; either real signal is at or above this percent, the fetch pump stops\n"
+        "; taking on new work for that frame rather than continuing unbounded.\n"
         "MaxMemoryUsagePercentForProactiveFeatures=%d\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
@@ -1467,7 +1473,8 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.imageScratchMB,
         g_modConfig.textureUpscaleWorkerThreads,
         g_modConfig.autoExitOnCacheCompleteEnabled ? 1 : 0,
-        g_modConfig.imagePoolOverflowFallbackEnabled ? 1 : 0,
+        g_modConfig.imagePoolRealExpansionEnabled ? 1 : 0,
+        g_modConfig.imagePoolExtraCapacity,
         g_modConfig.maxMemoryUsagePercentForProactiveFeatures,
         g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
         g_modConfig.gpuCaptureEnabled ? 1 : 0,
@@ -1828,7 +1835,12 @@ void LoadModConfig()
         g_modConfig.textureUpscaleWorkerThreads = v;
     }
     ReadBool(path, "Experimental", "AutoExitOnCacheComplete", g_modConfig.autoExitOnCacheCompleteEnabled);
-    ReadBool(path, "Experimental", "ImagePoolOverflowFallback", g_modConfig.imagePoolOverflowFallbackEnabled);
+    ReadBool(path, "Experimental", "ImagePoolRealExpansion", g_modConfig.imagePoolRealExpansionEnabled);
+    {
+        int v = GetPrivateProfileIntA("Experimental", "ImagePoolExtraCapacity", g_modConfig.imagePoolExtraCapacity, path);
+        ClampIntSetting("Experimental", "ImagePoolExtraCapacity", v, 0, 100000, 4000);
+        g_modConfig.imagePoolExtraCapacity = v;
+    }
     {
         int v = GetPrivateProfileIntA("Experimental", "MaxMemoryUsagePercentForProactiveFeatures", g_modConfig.maxMemoryUsagePercentForProactiveFeatures, path);
         ClampIntSetting("Experimental", "MaxMemoryUsagePercentForProactiveFeatures", v, 10, 99, 80);

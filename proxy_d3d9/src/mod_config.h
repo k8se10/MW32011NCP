@@ -956,41 +956,55 @@ struct ModConfig
     // surprise an ordinary player; this is squarely a dev/power-user tool.
     bool autoExitOnCacheCompleteEnabled = false;
 
-    // [Experimental] ImagePoolOverflowFallback (2026-09-29) -- real dev/QoL
-    // toggle, direct request: "no just fix the limit (expand it its from x86
-    // era)." The native engine's own real 4448-image fixed-size pool (a real
-    // intrusive free-list, not just a counter) hits a hard fatal error once
-    // exhausted -- this project's own aggressive name-driven proactive fetch
-    // (ProactiveLevelTexturePreload) can genuinely reach that limit. When
-    // enabled, a signature-scanned hook on the real per-type pool allocator
-    // serves a generously-sized (8KB) heap-backed fallback object instead of
-    // the native fatal error, ONLY for the specific image-type free-list
-    // (every other asset type sharing the same generic allocator function is
-    // completely unaffected). Default OFF -- this project has NOT confirmed
-    // the real GfxImage struct size or ruled out other code assuming pool-
-    // array contiguity, so this is a real, reasoned, but not risk-free
-    // mitigation (see Hook_ImagePoolAllocatorX64's own header comment,
-    // analog_input_hooks_x64.cpp, for the full trail).
-    bool imagePoolOverflowFallbackEnabled = false;
+    // [Experimental] ImagePoolRealExpansion (2026-09-29) -- REPLACES the
+    // removed ImagePoolOverflowFallback mechanism entirely, after that
+    // approach caused a real, confirmed FULL SYSTEM CRASH live (Kernel-Power
+    // Event 41, hard power-cycle required -- see known_issues_x64.md issue
+    // #13 for the complete record). Real static RE (no live attach) found
+    // the image type's own one-time pool INITIALIZER (FUN_1400a4e50) and
+    // confirmed the native pool is a genuinely contiguous 40-byte-stride
+    // static array of exactly 4448 objects -- NOT an unconfirmed large
+    // struct as originally assumed. The old mechanism handed the engine a
+    // separately-malloc'd object OUTSIDE that contiguous array, which this
+    // project now understands as the real structural danger (not
+    // undersizing -- the old 8KB fallback was ~200x larger than the real
+    // 40-byte object). This feature instead hooks the SAME one-time
+    // initializer and REPLACES the whole pool with a bigger one, built via
+    // the identical contiguous free-list logic the native code itself uses
+    // (see Hook_ImagePoolInitX64's own header comment, analog_input_hooks_x64.cpp,
+    // for the full trail) -- every object handed out afterward is still
+    // part of one real, single contiguous array, just a larger one.
+    // Default OFF -- the installer always fires its own diagnostic log line
+    // regardless of this setting, so the hook's real timing can be verified
+    // live (watch for [x64-image-pool-expand] on an ordinary launch) before
+    // ever relying on the extra capacity in play.
+    bool imagePoolRealExpansionEnabled = false;
+
+    // [Experimental] ImagePoolExtraCapacity (2026-09-29) -- how many EXTRA
+    // image-pool objects to add on top of the real, confirmed native count
+    // (4448) when ImagePoolRealExpansion is on. Each extra object costs
+    // exactly 40 real bytes (kImagePoolObjectStrideX64), committed once via
+    // VirtualAlloc at startup -- the default more than doubles real
+    // capacity for a trivial, one-time ~174KB.
+    int imagePoolExtraCapacity = 4000;
 
     // [Experimental] MaxMemoryUsagePercentForProactiveFeatures (2026-09-29) --
     // real, configurable safety ceiling (percent, checked against BOTH real
     // system RAM load via GlobalMemoryStatusEx AND real VRAM usage via the
     // driver-authoritative DXGI QueryVideoMemoryInfo query -- see
-    // IsMemorySafeToContinueX64(), analog_input_hooks_x64.cpp) gating every
-    // proactive/speculative memory-consuming feature this project ships
-    // (currently: ImagePoolOverflowFallback's fallback allocation, and the
-    // name-driven proactive texture-fetch pump). Direct instruction after a
-    // real, live-confirmed incident: ImagePoolOverflowFallback alone let the
-    // name-driven fetch pipeline run fully unbounded once the native pool's
-    // own safety ceiling was worked around, fired 8329 times in one session,
+    // IsMemorySafeToContinueX64(), analog_input_hooks_x64.cpp) gating the
+    // name-driven proactive texture-fetch pump (ProactiveLevelTexturePreload's
+    // own fetch pipeline). Direct instruction after a real, live-confirmed
+    // incident: with no gate, the fetch pipeline ran fully unbounded once
+    // the (since-removed) ImagePoolOverflowFallback worked around the
+    // native pool's own safety ceiling, fired 8329 times in one session,
     // and drove DXVK's own host-visible Vulkan heap to the brink of real
     // allocation failure (iw5sp_d3d9.log: "DxvkMemoryAllocator: Memory
     // allocation failed", Heap 1 13224MB/13364MB budget) -- "just have it be
     // memory safe using only x% of available ram + vram." Once either real
-    // signal is at or above this percent, both gated features stop taking
-    // on new risky work for that frame/call rather than continuing
-    // unbounded -- this is a real ceiling, not a warning-only threshold.
+    // signal is at or above this percent, the fetch pump stops taking on
+    // new work for that frame rather than continuing unbounded -- this is a
+    // real ceiling, not a warning-only threshold.
     int maxMemoryUsagePercentForProactiveFeatures = 80;
 
     // [Video] CustomAssetOverrides (2026-09-28, generalized same day) --

@@ -50,9 +50,12 @@ void InstallReadBytesSubstitutionHookX64(); // defined in analog_input_hooks_x64
 void InstallImageScratchPoolWideningHookX64(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, real root-cause fix for the native 26MB loose-image-scratch
     // pool a 4x-upscaled substituted texture can exceed (FUN_1401ba830).
-void InstallImagePoolOverflowHookX64(); // defined in analog_input_hooks_x64.cpp --
-    // 2026-09-29, real native 4448-image pool exhaustion fallback. Inert unless
-    // [Experimental] ImagePoolOverflowFallback=1 (default OFF -- see that
+void InstallImagePoolExpandHookX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-29, real native 4448-image pool expansion. REPLACES the removed
+    // ImagePoolOverflowFallback mechanism after it caused a real, confirmed
+    // full system crash live (known_issues_x64.md issue #13). Always installs
+    // (logs a firing confirmation unconditionally); actual expansion is inert
+    // unless [Experimental] ImagePoolRealExpansion=1 (default OFF -- see that
     // function's own header comment for the real, honestly-documented residual
     // risk this config gate exists for).
 extern "C" void ResolveImageLoadTriggerX64_Exported(); // defined in analog_input_hooks_x64.cpp --
@@ -996,9 +999,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             ResolveImageLoadTriggerX64_Exported(); // 2026-09-29, proactive level-load
                 // texture preload -- resolves the real force-load trigger function.
                 // Inert unless [Video] ProactiveLevelTexturePreload=1 (default OFF).
-            InstallImagePoolOverflowHookX64(); // 2026-09-29, real 4448-image pool
-                // exhaustion fallback. Inert unless [Experimental]
-                // ImagePoolOverflowFallback=1 (default OFF).
+            InstallImagePoolExpandHookX64(); // 2026-09-29, real 4448-image pool
+                // expansion (replaces the removed ImagePoolOverflowFallback --
+                // see known_issues_x64.md issue #13). Always installs; actual
+                // expansion inert unless [Experimental] ImagePoolRealExpansion=1
+                // (default OFF).
             TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
                 // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
                 // own header comment. Starts a background thread only when the on-disk

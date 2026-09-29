@@ -1,0 +1,24 @@
+Function created at 1400a4e50, body size=77
+1400a4e50: 4c 63 d2   ; MOVSXD R10,EDX
+1400a4e53: 4c 8d 41 08   ; LEA R8,[RCX + 0x8]
+1400a4e57: 49 ff ca   ; DEC R10
+1400a4e5a: 4c 89 01   ; MOV qword ptr [RCX],R8
+1400a4e5d: 4d 85 d2   ; TEST R10,R10
+1400a4e60: 7e 2d   ; JLE 0x1400a4e8f  [PC-REL/REF]
+1400a4e62: ba 01 00 00 00   ; MOV EDX,0x1
+1400a4e67: 4d 8b da   ; MOV R11,R10
+1400a4e6a: 66 0f 1f 44 00 00   ; NOP word ptr [RAX + RAX*0x1]
+1400a4e70: 48 63 c2   ; MOVSXD RAX,EDX
+1400a4e73: 4d 8d 40 28   ; LEA R8,[R8 + 0x28]
+1400a4e77: ff c2   ; INC EDX
+1400a4e79: 48 8d 04 80   ; LEA RAX,[RAX + RAX*0x4]
+1400a4e7d: 48 8d 40 01   ; LEA RAX,[RAX + 0x1]
+1400a4e81: 48 8d 04 c1   ; LEA RAX,[RCX + RAX*0x8]
+1400a4e85: 49 89 40 d8   ; MOV qword ptr [R8 + -0x28],RAX
+1400a4e89: 49 83 eb 01   ; SUB R11,0x1
+1400a4e8d: 75 e1   ; JNZ 0x1400a4e70  [PC-REL/REF]
+1400a4e8f: 4b 8d 04 92   ; LEA RAX,[R10 + R10*0x4]
+1400a4e93: 48 c7 44 c1 08 00 00 00 00   ; MOV qword ptr [RCX + RAX*0x8 + 0x8],0x0
+
+Raw:    4c 63 d2 4c 8d 41 08 49 ff ca 4c 89 01 4d 85 d2 7e 2d ba 01 00 00 00 4d 8b da 66 0f 1f 44 00 00 48 63 c2 4d 8d 40 28 ff c2 48 8d 04 80 48 8d 40 01 48 8d 04 c1 49 89 40 d8 49 83 eb 01 75 e1 4b 8d 04 92 48 c7 44 c1 08 00 00 00 00
+Masked: 4c 63 d2 4c 8d 41 08 49 ff ca 4c 89 01 4d 85 d2 ?? ?? ba 01 00 00 00 4d 8b da 66 0f 1f 44 00 00 48 63 c2 4d 8d 40 28 ff c2 48 8d 04 80 48 8d 40 01 48 8d 04 c1 49 89 40 d8 49 83 eb 01 ?? ?? 4b 8d 04 92 48 c7 44 c1 08 00 00 00 00
