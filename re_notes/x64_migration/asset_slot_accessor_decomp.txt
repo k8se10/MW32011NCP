@@ -1,0 +1,96 @@
+================================================================
+Function: FUN_14008e3c0 @ 14008e3c0
+----------------------------------------------------------------
+
+void FUN_14008e3c0(int *param_1)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x00014008e3d2. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (*(code *)(&PTR_LAB_1404c25a0)[*param_1])(param_1 + 2,(&PTR_LAB_1404c25a0)[*param_1]);
+  return;
+}
+
+
+---- CALLERS of FUN_14008e3c0 ----
+  CALLER #1: from 1400a58d7 in FUN_1400a5840 @ 1400a5840 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 1400a59d9 in FUN_1400a5950 @ 1400a5950 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 1400a624e in FUN_1400a6220 @ 1400a6220 refType=UNCONDITIONAL_CALL
+  CALLER #4: from 1400a64e7 in FUN_1400a6430 @ 1400a6430 refType=UNCONDITIONAL_CALL
+  CALLER #5: from 1400a655e in FUN_1400a6530 @ 1400a6530 refType=UNCONDITIONAL_CALL
+  CALLER #6: from 1400a65e1 in FUN_1400a6530 @ 1400a6530 refType=UNCONDITIONAL_CALL
+  CALLER #7: from 1400a5df7 in FUN_1400a5ce0 @ 1400a5ce0 refType=UNCONDITIONAL_CALL
+  CALLER #8: from 1400a84cd in FUN_1400a83b0 @ 1400a83b0 refType=UNCONDITIONAL_CALL
+  CALLER #9: from 1400a7a68 in FUN_1400a7990 @ 1400a7990 refType=UNCONDITIONAL_CALL
+  CALLER #10: from 1400a69f4 in FUN_1400a69d0 @ 1400a69d0 refType=UNCONDITIONAL_CALL
+  CALLER #11: from 1400a6a90 in FUN_1400a69d0 @ 1400a69d0 refType=UNCONDITIONAL_CALL
+  CALLER #12: from 1400a7cb1 in FUN_1400a7c80 @ 1400a7c80 refType=UNCONDITIONAL_CALL
+Total callers: 12
+
+================================================================
+Function: FUN_14008e3e0 @ 14008e3e0
+----------------------------------------------------------------
+
+void FUN_14008e3e0(int param_1)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x00014008e3ea. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (*(code *)(&PTR_FUN_1404c2880)[param_1])();
+  return;
+}
+
+
+---- CALLERS of FUN_14008e3e0 ----
+  CALLER #1: from 1400a5570 in FUN_1400a54c0 @ 1400a54c0 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 1400a6687 in FUN_1400a6530 @ 1400a6530 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 1400a669f in FUN_1400a6530 @ 1400a6530 refType=UNCONDITIONAL_CALL
+  CALLER #4: from 1400a66b7 in FUN_1400a6530 @ 1400a6530 refType=UNCONDITIONAL_CALL
+  CALLER #5: from 1400a679a in FUN_1400a6530 @ 1400a6530 refType=UNCONDITIONAL_CALL
+  CALLER #6: from 1400a8519 in FUN_1400a83b0 @ 1400a83b0 refType=UNCONDITIONAL_CALL
+  CALLER #7: from 1400a8554 in FUN_1400a83b0 @ 1400a83b0 refType=UNCONDITIONAL_CALL
+  CALLER #8: from 1400a85e4 in FUN_1400a83b0 @ 1400a83b0 refType=UNCONDITIONAL_CALL
+  CALLER #9: from 1400a6bb3 in FUN_1400a69d0 @ 1400a69d0 refType=UNCONDITIONAL_CALL
+  CALLER #10: from 1400a7d12 in FUN_1400a7c80 @ 1400a7c80 refType=UNCONDITIONAL_CALL
+Total callers: 10
+
+================================================================
+Function: FUN_14008e3f0 @ 14008e3f0
+----------------------------------------------------------------
+
+void FUN_14008e3f0(int *param_1)
+
+{
+                    /* WARNING: Could not recover jumptable at 0x00014008e3fe. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (*(code *)(&PTR_LAB_1404c2710)[*param_1])(param_1 + 2);
+  return;
+}
+
+
+---- CALLERS of FUN_14008e3f0 ----
+  CALLER #1: from 1400a561e in FUN_1400a54c0 @ 1400a54c0 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 1400a5e16 in FUN_1400a5ce0 @ 1400a5ce0 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 1400a856e in FUN_1400a83b0 @ 1400a83b0 refType=UNCONDITIONAL_CALL
+  CALLER #4: from 1400a7d2f in FUN_1400a7c80 @ 1400a7c80 refType=UNCONDITIONAL_CALL
+Total callers: 4
+
+================================================================
+Function: FUN_14008ede0 @ 14008ede0
+----------------------------------------------------------------
+
+void FUN_14008ede0(int param_1)
+
+{
+  LOCK();
+  DAT_14073d698 = DAT_14073d698 + param_1;
+  UNLOCK();
+  return;
+}
+
+
+---- CALLERS of FUN_14008ede0 ----
+  CALLER #1: from 1401b94b8 in FUN_1401b93d0 @ 1401b93d0 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 1401b97dd in FUN_1401b9760 @ 1401b9760 refType=UNCONDITIONAL_CALL
+Total callers: 2
+

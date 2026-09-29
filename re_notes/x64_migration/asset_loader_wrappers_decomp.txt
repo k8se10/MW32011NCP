@@ -1,0 +1,34 @@
+================================================================
+Function: FUN_1401bae70 @ 1401bae70
+----------------------------------------------------------------
+
+void FUN_1401bae70(undefined8 param_1)
+
+{
+  FUN_1401bae80(param_1,FUN_1402b4240);
+  return;
+}
+
+
+---- CALLERS of FUN_1401bae70 ----
+  CALLER #1: from 1401b9498 in FUN_1401b93d0 @ 1401b93d0 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 1401b978e in FUN_1401b9760 @ 1401b9760 refType=UNCONDITIONAL_CALL
+Total callers: 2
+
+================================================================
+Function: FUN_1401bb260 @ 1401bb260
+----------------------------------------------------------------
+
+void FUN_1401bb260(undefined8 param_1)
+
+{
+  FUN_1401bae80(param_1,FUN_1402b4180);
+  return;
+}
+
+
+---- CALLERS of FUN_1401bb260 ----
+  CALLER #1: from 1401b9363 in FUN_1401b9310 @ 1401b9310 refType=UNCONDITIONAL_CALL
+  CALLER #2: from 1401b9cae in FUN_1401b9c60 @ 1401b9c60 refType=UNCONDITIONAL_CALL
+Total callers: 2
+

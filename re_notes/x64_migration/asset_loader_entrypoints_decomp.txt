@@ -1,0 +1,310 @@
+================================================================
+Function: FUN_1401b93d0 @ 1401b93d0
+----------------------------------------------------------------
+
+void FUN_1401b93d0(undefined8 *param_1,undefined8 *param_2)
+
+{
+  undefined2 uVar1;
+  undefined2 uVar2;
+  undefined2 uVar3;
+  undefined4 uVar4;
+  byte *pbVar5;
+  ushort uVar6;
+  ushort uVar7;
+  char cVar8;
+  byte bVar9;
+  ushort uVar10;
+  int iVar11;
+  int iVar12;
+  uint uVar13;
+  undefined8 uVar14;
+  ushort uVar15;
+  int iVar16;
+  int iVar17;
+  uint uVar18;
+  undefined4 uVar19;
+  byte *local_res10;
+  undefined8 in_stack_ffffffffffffff88;
+  undefined8 in_stack_ffffffffffffff98;
+  undefined8 *puVar20;
+  undefined4 uVar21;
+  undefined8 in_stack_ffffffffffffffa0;
+  undefined8 uVar22;
+  undefined4 uVar23;
+  undefined1 local_48 [16];
+  
+  uVar19 = (undefined4)((ulonglong)in_stack_ffffffffffffff98 >> 0x20);
+  uVar21 = (undefined4)((ulonglong)in_stack_ffffffffffffffa0 >> 0x20);
+  uVar13 = (uint)((ulonglong)in_stack_ffffffffffffff88 >> 0x20);
+  pbVar5 = (byte *)*param_1;
+  *param_2 = 0;
+  if (*(char *)(DAT_141884ca8 + 0x10) == '\0') {
+    return;
+  }
+  bVar9 = *(byte *)((longlong)param_2 + 0xb);
+  uVar4 = *(undefined4 *)(pbVar5 + 8);
+  if (*(int *)(pbVar5 + 0xc) == 0) {
+    if (*(char *)((longlong)param_2 + 10) == '\x05') {
+      *(byte *)((longlong)param_2 + 0xb) = bVar9 & 0xfb;
+      bVar9 = (byte)*(undefined2 *)(DAT_141884c00 + 0x10);
+      param_2[2] = 0;
+      uVar15 = *(ushort *)((longlong)param_2 + 0x1a) >> (bVar9 & 0x1f);
+      uVar6 = *(ushort *)(param_2 + 3) >> (bVar9 & 0x1f);
+      uVar10 = 4;
+      if (3 < uVar15) {
+        uVar10 = uVar15;
+      }
+      uVar15 = 4;
+      if (3 < uVar6) {
+        uVar15 = uVar6;
+      }
+      FUN_1401b8e40(param_2,uVar15,uVar10,*pbVar5,CONCAT44(uVar13,0x1000000),uVar4);
+      return;
+    }
+    if ((bVar9 & 4) != 0) {
+      return;
+    }
+    uVar19 = *(undefined4 *)(param_2 + 2);
+    param_2[2] = 0;
+    cVar8 = FUN_1401bae70(param_2);
+    if (cVar8 == '\0') {
+      FUN_14023c700(1,"Couldn\'t load image \'%s\'\n",param_2[4]);
+    }
+    FUN_14008ede0(uVar19);
+    return;
+  }
+  *(byte *)((longlong)param_2 + 0xb) = bVar9 & 0xfb;
+  uVar18 = (uint)*pbVar5;
+  uVar1 = *(undefined2 *)(param_2 + 3);
+  if (*(char *)(param_2 + 1) == '\x03') {
+    FUN_1401b8e40(param_2,uVar1,*(undefined2 *)((longlong)param_2 + 0x1a),uVar18,
+                  (ulonglong)uVar13 << 0x20,uVar4);
+  }
+  else {
+    if (*(char *)(param_2 + 1) != '\x04') {
+      *(undefined2 *)((longlong)param_2 + 0x1a) = uVar1;
+      *(undefined2 *)((longlong)param_2 + 0x1c) = 1;
+      *(undefined1 *)(param_2 + 1) = 5;
+      if (DAT_1418854b6 == '\0') {
+        uVar18 = 1;
+      }
+      FUN_14024a7b0(local_48);
+      uVar14 = CONCAT44(uVar13,uVar4);
+      puVar20 = param_2;
+      iVar11 = (**(code **)(*DAT_1418886d0 + 200))(DAT_1418886d0,uVar1,uVar18,0,uVar14,1,param_2,0);
+      uVar19 = (undefined4)((ulonglong)uVar14 >> 0x20);
+      uVar21 = (undefined4)((ulonglong)puVar20 >> 0x20);
+      FUN_14024a7f0(local_48);
+      if (iVar11 < 0) {
+        uVar14 = FUN_1401bccf0(iVar11);
+        FUN_14023c700(1,"CreateCubeTexture ( %s, %i, %i, %i ) failed: %08x = %s",param_2[4],
+                      *(undefined2 *)(param_2 + 3),CONCAT44(uVar19,uVar18),uVar4,
+                      CONCAT44(uVar21,iVar11),uVar14);
+      }
+      iVar11 = 6;
+      goto LAB_1401b9655;
+    }
+    uVar2 = *(undefined2 *)((longlong)param_2 + 0x1c);
+    uVar3 = *(undefined2 *)((longlong)param_2 + 0x1a);
+    *(undefined1 *)(param_2 + 1) = 4;
+    FUN_14024a7b0(local_48);
+    uVar22 = CONCAT44(uVar21,1);
+    uVar14 = CONCAT44(uVar13,uVar18);
+    puVar20 = param_2;
+    iVar11 = (**(code **)(*DAT_1418886d0 + 0xc0))
+                       (DAT_1418886d0,uVar1,uVar3,uVar2,uVar14,0,CONCAT44(uVar19,uVar4),uVar22,
+                        param_2,0);
+    uVar19 = (undefined4)((ulonglong)uVar14 >> 0x20);
+    uVar21 = (undefined4)((ulonglong)uVar22 >> 0x20);
+    uVar23 = (undefined4)((ulonglong)puVar20 >> 0x20);
+    FUN_14024a7f0(local_48);
+    if (iVar11 < 0) {
+      uVar14 = FUN_1401bccf0(iVar11);
+      FUN_14023c700(1,"Create3DTexture( %s, %i, %i, %i, %i, %i ) failed: %08x = %s",param_2[4],
+                    *(undefined2 *)(param_2 + 3),
+                    CONCAT44(uVar19,(uint)*(ushort *)((longlong)param_2 + 0x1a)),
+                    *(undefined2 *)((longlong)param_2 + 0x1c),0,CONCAT44(uVar21,uVar4),
+                    CONCAT44(uVar23,iVar11),uVar14);
+    }
+  }
+  iVar11 = 1;
+LAB_1401b9655:
+  uVar15 = 1;
+  local_res10 = pbVar5 + 0x10;
+  iVar12 = FUN_1401b9f40(*(undefined4 *)(pbVar5 + 4),*(undefined2 *)(param_2 + 3),
+                         *(undefined2 *)((longlong)param_2 + 0x1a),
+                         *(undefined2 *)((longlong)param_2 + 0x1c));
+  iVar17 = 0;
+  do {
+    if (iVar11 == 1) {
+      uVar19 = 0;
+    }
+    else {
+      uVar19 = FUN_1401b9f70(iVar17);
+    }
+    iVar16 = 0;
+    if (0 < iVar12) {
+      do {
+        FUN_1401ba6d0(param_2,uVar4,uVar19,iVar16,local_res10);
+        bVar9 = (byte)iVar16;
+        uVar7 = *(ushort *)(param_2 + 3) >> (bVar9 & 0x1f);
+        uVar10 = *(ushort *)((longlong)param_2 + 0x1a) >> (bVar9 & 0x1f);
+        uVar6 = *(ushort *)((longlong)param_2 + 0x1c) >> (bVar9 & 0x1f);
+        if (uVar6 < 2) {
+          uVar6 = uVar15;
+        }
+        if (uVar10 < 2) {
+          uVar10 = uVar15;
+        }
+        if (uVar7 < 2) {
+          uVar7 = uVar15;
+        }
+        uVar13 = FUN_1401b9f80(uVar4,uVar7,uVar10,uVar6);
+        iVar16 = iVar16 + 1;
+        local_res10 = local_res10 + uVar13;
+      } while (iVar16 < iVar12);
+    }
+    iVar17 = iVar17 + 1;
+  } while (iVar17 < iVar11);
+  return;
+}
+
+
+---- CALLERS of FUN_1401b93d0 ----
+  CALLER #1: from 14444f1e4 in <none/data> refType=DATA
+  CALLER #2: from 14049a904 in <none/data> refType=DATA
+  CALLER #3: from 14049a93c in <none/data> refType=DATA
+  CALLER #4: from 140092516 in FUN_140092460 @ 140092460 refType=UNCONDITIONAL_CALL
+Total callers: 4
+
+================================================================
+Function: FUN_1401b9760 @ 1401b9760
+----------------------------------------------------------------
+
+void FUN_1401b9760(longlong *param_1)
+
+{
+  longlong lVar1;
+  char cVar2;
+  int iVar3;
+  
+  lVar1 = param_1[2];
+  param_1[2] = 0;
+  if ((*(char *)(DAT_141884ca8 + 0x10) != '\0') && (DAT_14188bc30 == '\0')) {
+    cVar2 = FUN_1401bae70();
+    if (cVar2 == '\0') {
+      FUN_1401b8cb0(param_1);
+    }
+    if (*param_1 == 0) {
+      iVar3 = (**(code **)(*DAT_1418886d0 + 0x18))();
+      if (1 < iVar3 + 0x7789f798U) {
+        FUN_14023c700(1,"Couldn\'t load image \'%s\'\n",param_1[4]);
+      }
+    }
+  }
+  FUN_14008ede0((int)lVar1);
+  return;
+}
+
+
+---- CALLERS of FUN_1401b9760 ----
+  CALLER #1: from 14444f220 in <none/data> refType=DATA
+  CALLER #2: from 1400a6e15 in FUN_1400a6d90 @ 1400a6d90 refType=UNCONDITIONAL_CALL
+Total callers: 2
+
+================================================================
+Function: FUN_1401b9310 @ 1401b9310
+----------------------------------------------------------------
+
+void FUN_1401b9310(longlong *param_1)
+
+{
+  bool bVar1;
+  char cVar2;
+  longlong *plVar3;
+  char local_res8 [32];
+  
+  if (((*(char *)((longlong)param_1 + 10) == '\x03') &&
+      ((*(byte *)((longlong)param_1 + 0xb) & 2) == 0)) &&
+     (FUN_1401ba0a0(param_1,local_res8), *(char *)((longlong)param_1 + 0xc) != local_res8[0])) {
+    if ((longlong *)*param_1 != (longlong *)0x0) {
+      (**(code **)(*(longlong *)*param_1 + 0x10))();
+      *param_1 = 0;
+    }
+    param_1[2] = 0;
+    cVar2 = FUN_1401bb260(param_1);
+    if (cVar2 == '\0') {
+      if ((char)param_1[1] == '\x03') {
+        plVar3 = DAT_141887b30;
+        if ((*(char *)((longlong)param_1 + 9) != '\x05') &&
+           (plVar3 = DAT_141887b10, *(char *)((longlong)param_1 + 9) != '\b')) {
+          plVar3 = DAT_141887b08;
+        }
+        if ((plVar3 == (longlong *)0x0) || (plVar3 = (longlong *)*plVar3, plVar3 == (longlong *)0x0)
+           ) {
+          bVar1 = false;
+        }
+        else {
+          *param_1 = (longlong)plVar3;
+          (**(code **)(*plVar3 + 8))();
+          bVar1 = true;
+        }
+        if (bVar1) {
+          return;
+        }
+      }
+      FUN_14023c700(0,"failed to load image \'%s\'",param_1[4]);
+    }
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_1401b9310 ----
+  CALLER #1: from 14444f1d8 in <none/data> refType=DATA
+  CALLER #2: from 1401c5095 in FUN_1401c5060 @ 1401c5060 refType=UNCONDITIONAL_CALL
+Total callers: 2
+
+================================================================
+Function: FUN_1401b9c60 @ 1401b9c60
+----------------------------------------------------------------
+
+void FUN_1401b9c60(longlong *param_1)
+
+{
+  byte bVar1;
+  char cVar2;
+  
+  if (*param_1 == 0) {
+    bVar1 = *(byte *)((longlong)param_1 + 10);
+    if (bVar1 < 5) {
+      if (bVar1 != 3) {
+        FUN_14023c700(1,"No way to recover image \'%s\' from a lost device",param_1[4]);
+        return;
+      }
+      if ((*(byte *)((longlong)param_1 + 0xb) & 4) == 0) {
+        cVar2 = FUN_1401bb260();
+        if (cVar2 == '\0') {
+          cVar2 = FUN_1401b8cb0(param_1);
+          if (cVar2 == '\0') {
+            FUN_14023c700(1,"Couldn\'t load image \'%s\' to recover from a lost device",param_1[4]);
+            return;
+          }
+        }
+      }
+    }
+    else if (((param_1 < &DAT_141885140) || ((longlong *)0x1418853e7 < param_1)) && (bVar1 == 5)) {
+      FUN_1401ba8c0(param_1);
+      return;
+    }
+  }
+  return;
+}
+
+
+---- CALLERS of FUN_1401b9c60 ----
+  CALLER #1: from 14444f268 in <none/data> refType=DATA
+  CALLER #2: from 1401b9d33 in FUN_1401b9d30 @ 1401b9d30 refType=DATA
+Total callers: 2
+

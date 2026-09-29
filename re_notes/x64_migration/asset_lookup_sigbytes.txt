@@ -1,0 +1,33 @@
+Signature-byte dump of FUN_1400a5950 @ 1400a5950
+(byte offsets relative to function entry point)
+
++0x00  48 89 5C 24 08                 MOV qword ptr [RSP + 0x8],RBX            [PC-RELATIVE/REF -- likely needs wildcarding]
++0x05  48 89 6C 24 10                 MOV qword ptr [RSP + 0x10],RBP           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0A  48 89 74 24 18                 MOV qword ptr [RSP + 0x18],RSI           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x0F  57                             PUSH RDI                                 
++0x10  48 83 EC 20                    SUB RSP,0x20                             
++0x14  48 8B EA                       MOV RBP,RDX                              
++0x17  8B F1                          MOV ESI,ECX                              
++0x19  8B D9                          MOV EBX,ECX                              
++0x1B  48 8B FA                       MOV RDI,RDX                              
++0x1E  66 90                          NOP                                      
++0x20  0F BE 0F                       MOVSX ECX,byte ptr [RDI]                 
++0x23  E8 48 70 2F 00                 CALL 0x14039c9c0                         [PC-RELATIVE/REF -- likely needs wildcarding]
++0x28  83 F8 5C                       CMP EAX,0x5c                             
++0x2B  75 0F                          JNZ 0x1400a598c                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x2D  6B DB 1F                       IMUL EBX,EBX,0x1f                        
++0x30  B8 2F 00 00 00                 MOV EAX,0x2f                             
++0x35  03 D8                          ADD EBX,EAX                              
++0x37  48 FF C7                       INC RDI                                  
++0x3A  EB E4                          JMP 0x1400a5970                          [PC-RELATIVE/REF -- likely needs wildcarding]
++0x3C  85 C0                          TEST EAX,EAX                             
++0x3E  74 0A                          JZ 0x1400a599a                           [PC-RELATIVE/REF -- likely needs wildcarding]
++0x40  6B DB 1F                       IMUL EBX,EBX,0x1f                        
++0x43  03 D8                          ADD EBX,EAX                              
++0x45  48 FF C7                       INC RDI                                  
+
+Raw bytes (72 total): 48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B EA 8B F1 8B D9 48 8B FA 66 90 0F BE 0F E8 48 70 2F 00 83 F8 5C 75 0F 6B DB 1F B8 2F 00 00 00 03 D8 48 FF C7 EB E4 85 C0 74 0A 6B DB 1F 03 D8 48 FF C7
+
+Suggested masked signature (PC-relative/ref instructions fully
+wildcarded -- refine by hand, this is a starting point only):
+?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 57 48 83 EC 20 48 8B EA 8B F1 8B D9 48 8B FA 66 90 0F BE 0F ?? ?? ?? ?? ?? 83 F8 5C ?? ?? 6B DB 1F B8 2F 00 00 00 03 D8 48 FF C7 ?? ?? 85 C0 ?? ?? 6B DB 1F 03 D8 48 FF C7

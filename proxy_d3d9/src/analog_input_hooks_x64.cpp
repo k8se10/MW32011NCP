@@ -12173,6 +12173,157 @@ void InstallFindOrLoadAssetImageDiagHookX64()
         "texture-upscale-cache groundwork) -- FUN_1400a5a20.");
 }
 
+// ---- Level asset-pool table (2026-09-29) -- real map/level-load asset enumeration
+// groundwork -------------------------------------------------------------------
+// Direct instruction: "i think we should re the games actual map loading + asset
+// loading mechanism at binary so we can hijack and reimplement upscaled textures
+// at level load directly!" Investigated whether GfxImage pixel data is loaded
+// EAGERLY at level/zone load (which would give an earlier, one-shot hijack point
+// than the existing per-image Hook_ImageFileLoadX64) -- confirmed NOT the case:
+// decompiling FUN_1401bae70/FUN_1401bb260 (thin wrappers around the already-hooked
+// FUN_1401bae80) and their four real callers (FUN_1401b93d0, FUN_1401b9760,
+// FUN_1401b9310, FUN_1401b9c60 -- the latter two are the native device-lost
+// recovery path, not level load) showed image pixel data is LAZILY demand-loaded
+// at first real material-bind use (FUN_1401b93d0, called from FUN_140092460,
+// material/technique setup) -- there is no earlier native "load everything for
+// this level" step to hook instead.
+//
+// A real, complete, walkable native data structure was found instead: a single,
+// shared, fixed-size (42000 slots x 0x18/24 bytes) flat asset-slot array at
+// ImageBase+0xc75740, hash-indexed via a parallel ushort[42000] bucket array at
+// ImageBase+0xc5cf00 -- confirmed via full decompile of FUN_1400a5950 (asset
+// lookup) and FUN_1400a54c0 (asset creation/insert), and the per-assetType
+// jump-table accessors FUN_14008e3c0/FUN_14008e3e0/FUN_14008e3f0. This table
+// holds a real pointer to EVERY currently-registered asset of EVERY type
+// (assetType==0xa is image, kFindOrLoadAssetImageTypeX64 above), populated at
+// zone/level load -- i.e. it's populated with every image asset the CURRENT
+// level references, whether or not that image's pixel data has actually been
+// demand-loaded yet. This is the real hijack point: walking this table after a
+// map change gives a complete, one-shot list of every image this level will
+// EVER need, which this project could then proactively force through the
+// existing, already-proven Hook_ImageFileLoadX64/Hook_ReadBytesSubstitutionX64
+// capture pipeline instead of waiting for each one to be organically demand-
+// loaded during play. That proactive-trigger step is a real architectural
+// change (calling back into a native engine loader function ourselves, off our
+// own timing) and is deliberately NOT built yet -- this pass only resolves the
+// table safely and confirms it's real and populated, matching this project's
+// own "diagnostic before hijack" convention (same order FindOrLoadAsset/
+// ImageFileLoad's own hooks above were built in).
+//
+// Slot layout (confirmed via FUN_1400a5950's own decompile/disassembly):
+//   +0x00  int    assetType   (0xa == image, kFindOrLoadAssetImageTypeX64)
+//   +0x08  void*  dataPtr     (the real per-type asset pointer, e.g. GfxImage*
+//                              -- NOT dereferenced by this diagnostic; this
+//                              project has no confirmed GfxImage struct layout
+//                              of its own yet, and guessing one isn't worth the
+//                              risk for a read-only stats dump)
+//   +0x12  ushort hashChainNext
+//
+// Both globals are addressed in FUN_1400a5950's own body as a fixed RVA from the
+// module's own preferred image base (`LEA RDI,[0x140000000]` -- a real x64 base
+// relocation, fixed up by the OS loader to the ACTUAL load base at runtime, then
+// `[RDI + 0xc5cf00]`/`[RDI + 0xc75740]` -- not RIP-relative addressing, so
+// SigScan::ResolveRipRelative doesn't apply here) -- resolved as
+// GetModuleHandleA(nullptr) + the fixed RVA below, validated by first confirming
+// this exact function's own signature still matches this build (CLAUDE.md SS5:
+// "validate a scanned signature actually resolved... before installing a hook
+// on it" -- same discipline applies to trusting a fixed-RVA global).
+//
+// Signature: FUN_1400a5950's own real prologue, 35 bytes, entirely deterministic
+// (no embedded absolute/relative addresses at all within this span -- confirmed
+// via DumpSigBytes.java's own PC-relative flags, all of which land at +0x23
+// onward, past what this signature covers). Independently re-derivable via
+// DumpSigBytes.java against 0x1400a5950 if this ever needs re-verifying.
+constexpr const char* kAssetPoolLookupSignature =
+    "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B EA 8B F1 8B D9 48 8B FA 66 90 0F BE 0F";
+
+constexpr uintptr_t kAssetHashTableRvaX64 = 0xc5cf00;   // ushort[42000]
+constexpr uintptr_t kAssetSlotArrayRvaX64 = 0xc75740;   // 42000 * 0x18-byte slots
+constexpr int kAssetPoolSlotCountX64 = 42000;
+constexpr size_t kAssetPoolSlotStrideX64 = 0x18;
+
+uint16_t* g_assetHashTableX64 = nullptr;
+uint8_t* g_assetSlotArrayX64 = nullptr;
+bool g_assetPoolResolvedX64 = false;
+
+// Resolved once at startup and cached -- CLAUDE.md's own signature-scanning
+// policy (SS5/SS10.3). Read-only groundwork only: does not install any hook,
+// does not call into the engine, just resolves two real global addresses so a
+// later diagnostic (and, eventually, a real proactive-preload feature) can
+// walk the table safely.
+void ResolveAssetPoolGlobalsX64()
+{
+    SigScan::Result r = SigScan::FindPatternInMainModule(kAssetPoolLookupSignature);
+    if (!r.found) {
+        LogFromController("[x64-asset-pool] FATAL: asset-pool lookup function signature did not "
+            "resolve -- level asset-pool enumeration inactive this session.");
+        return;
+    }
+    HMODULE mainModule = GetModuleHandleA(nullptr);
+    if (mainModule == nullptr) {
+        LogFromController("[x64-asset-pool] FATAL: GetModuleHandleA(nullptr) returned null.");
+        return;
+    }
+    uintptr_t moduleBase = reinterpret_cast<uintptr_t>(mainModule);
+    g_assetHashTableX64 = reinterpret_cast<uint16_t*>(moduleBase + kAssetHashTableRvaX64);
+    g_assetSlotArrayX64 = reinterpret_cast<uint8_t*>(moduleBase + kAssetSlotArrayRvaX64);
+    g_assetPoolResolvedX64 = true;
+    char buf[220];
+    sprintf_s(buf, "[x64-asset-pool] resolved -- lookup fn @ 0x%llX, hash table @ %p, slot array @ %p "
+        "(module base 0x%llX).",
+        static_cast<unsigned long long>(r.address), (void*)g_assetHashTableX64, (void*)g_assetSlotArrayX64,
+        static_cast<unsigned long long>(moduleBase));
+    LogFromController(buf);
+}
+
+// Read-only diagnostic: walks the whole 42000-slot table and logs how many
+// slots are populated at all vs. how many are real image assets, to confirm
+// this table is real/live/populated before any proactive-preload logic ever
+// gets built on top of it. No engine calls, no struct-layout guessing beyond
+// the already-confirmed assetType/dataPtr fields, capped work (one pass over
+// a fixed 42000-entry array) -- safe to call once per map change.
+void LogAssetPoolImageStatsX64()
+{
+    if (!g_assetPoolResolvedX64 || g_assetSlotArrayX64 == nullptr) {
+        LogFromController("[x64-asset-pool] stats dump skipped -- globals not resolved.");
+        return;
+    }
+
+    int populatedSlots = 0;
+    int imageSlots = 0;
+    constexpr int kMaxSamplePointers = 8;
+    void* samplePointers[kMaxSamplePointers] = {};
+    int sampleCount = 0;
+
+    // Slot 0 is the real native "null asset" sentinel (hash-chain terminator,
+    // confirmed via FUN_1400a5950's own `if (uVar2 == 0) return 0;` check) --
+    // start at 1, matching the engine's own convention.
+    for (int i = 1; i < kAssetPoolSlotCountX64; ++i) {
+        const uint8_t* slot = g_assetSlotArrayX64 + static_cast<size_t>(i) * kAssetPoolSlotStrideX64;
+        int32_t assetType = *reinterpret_cast<const int32_t*>(slot + 0x00);
+        void* dataPtr = *reinterpret_cast<void* const*>(slot + 0x08);
+        if (dataPtr == nullptr) continue; // unpopulated slot
+        ++populatedSlots;
+        if (assetType == kFindOrLoadAssetImageTypeX64) {
+            ++imageSlots;
+            if (sampleCount < kMaxSamplePointers) samplePointers[sampleCount++] = dataPtr;
+        }
+    }
+
+    char buf[400];
+    int written = sprintf_s(buf, "[x64-asset-pool] table walk: %d/%d slots populated, %d are images. "
+        "Sample dataPtrs:",
+        populatedSlots, kAssetPoolSlotCountX64, imageSlots);
+    for (int i = 0; i < sampleCount && written > 0 && written < static_cast<int>(sizeof(buf)) - 20; ++i) {
+        int appended = sprintf_s(buf + written, sizeof(buf) - written, " %p", samplePointers[i]);
+        if (appended > 0) written += appended;
+    }
+    LogFromController(buf);
+}
+
+extern "C" void ResolveAssetPoolGlobalsX64_Exported() { ResolveAssetPoolGlobalsX64(); }
+extern "C" void LogAssetPoolImageStatsX64_Exported() { LogAssetPoolImageStatsX64(); }
+
 // ---- Universal per-image file-load diagnostic (2026-09-28) ----------------------
 // Found by tracing REAL callers back from the already-established, already-hooked
 // CreateTexture device call (asset_capture.cpp's first-N caller trace), per direct

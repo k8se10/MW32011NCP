@@ -50,6 +50,12 @@ void InstallReadBytesSubstitutionHookX64(); // defined in analog_input_hooks_x64
 void InstallImageScratchPoolWideningHookX64(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, real root-cause fix for the native 26MB loose-image-scratch
     // pool a 4x-upscaled substituted texture can exceed (FUN_1401ba830).
+extern "C" void ResolveAssetPoolGlobalsX64_Exported(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-29, level-load asset-pool enumeration groundwork (real map/asset-
+    // loading RE, direct instruction). Read-only: resolves the shared 42000-slot
+    // native asset table + its hash-bucket array, does not install any hook or
+    // call into the engine. See that function's own header comment for the full
+    // finding.
 namespace TexturePrecacheOrchestrator { void EnsurePrecacheStarted(); } // defined in
     // texture_precache_orchestrator.cpp, 2026-09-28 -- real, opt-out, only starts a
     // background thread when TextureRenderRes>1 and the on-disk marker is stale/missing.
@@ -972,6 +978,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
             InstallReadBytesSubstitutionHookX64(); // 2026-09-28, the real substitution
                 // mechanism's second hook -- see Hook_ImageFileLoadX64/
                 // Hook_ReadBytesSubstitutionX64's own comments (analog_input_hooks_x64.cpp).
+            ResolveAssetPoolGlobalsX64_Exported(); // 2026-09-29, level-load asset-pool
+                // enumeration groundwork -- resolves the shared native asset table so
+                // overlay_hud.cpp's own map-change detection can dump real stats from it.
             TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
                 // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
                 // own header comment. Starts a background thread only when the on-disk

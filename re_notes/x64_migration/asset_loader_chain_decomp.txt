@@ -1,0 +1,290 @@
+================================================================
+Function: FUN_1401bae80 @ 1401bae80
+----------------------------------------------------------------
+
+undefined8 FUN_1401bae80(longlong param_1,code *param_2)
+
+{
+  char cVar1;
+  int iVar2;
+  longlong lVar3;
+  longlong lVar4;
+  undefined8 uVar5;
+  int iVar6;
+  uint uVar7;
+  ulonglong uVar8;
+  undefined8 local_res8;
+  char local_68;
+  char local_67;
+  char local_66;
+  char local_65;
+  byte local_64;
+  short local_5e;
+  short local_5c;
+  int local_58 [4];
+  undefined1 local_48 [64];
+  
+  iVar2 = FUN_1402ca430(local_48,0x40,"%s%s%s","images/",*(undefined8 *)(param_1 + 0x20),
+                        &DAT_1404138e4);
+  if ((iVar2 < 0) || (lVar3 = (*param_2)(local_48,&local_res8), lVar3 < 0)) {
+    return 0;
+  }
+  lVar4 = FUN_1402b5ec0(&local_68,0x20,local_res8);
+  if ((((lVar4 != 0x20) || (local_68 != 'I')) || (local_67 != 'W')) ||
+     ((local_66 != 'i' || (local_65 != '\b')))) {
+    FUN_1402b3e90(local_res8);
+    return 0;
+  }
+  if ((local_64 & 3) == 0) {
+    if (local_5e <= local_5c) {
+      local_5c = local_5e;
+    }
+    if (0x1f < local_5c) goto LAB_1401baf59;
+  }
+  *(byte *)(param_1 + 0xb) = *(byte *)(param_1 + 0xb) | 2;
+LAB_1401baf59:
+  FUN_1401ba0a0(param_1,param_1 + 0xc);
+  cVar1 = FUN_140009ea0(*(undefined8 *)(param_1 + 0x20));
+  if (cVar1 == '\0') {
+    uVar8 = (ulonglong)*(byte *)(param_1 + 0xc);
+  }
+  else {
+    uVar8 = 0;
+  }
+  if (local_58[0] != lVar3) {
+    FUN_14023c700(0,"Image file corrupt.");
+  }
+  iVar2 = local_58[uVar8];
+  iVar6 = iVar2 + -0x20;
+  uVar5 = FUN_1401ba830(iVar6);
+  uVar7 = iVar2 - 0x1dU & 0xfffffffc;
+  lVar3 = FUN_1402b5ec0(uVar5,(longlong)iVar6,local_res8);
+  if (lVar3 == iVar6) {
+    FUN_1402b3e90(local_res8);
+    FUN_1401bac70(param_1,&local_68,uVar5);
+    DAT_1418853fc = DAT_1418853fc - uVar7;
+    return 1;
+  }
+  DAT_1418853fc = DAT_1418853fc - uVar7;
+  FUN_1402b3e90(local_res8);
+  return 0;
+}
+
+
+---- CALLERS of FUN_1401bae80 ----
+  CALLER #1: from 14444f3a0 in <none/data> refType=DATA
+  CALLER #2: from 14049ab74 in <none/data> refType=DATA
+  CALLER #3: from 14049ab84 in <none/data> refType=DATA
+  CALLER #4: from 1401bae77 in FUN_1401bae70 @ 1401bae70 refType=UNCONDITIONAL_CALL
+  CALLER #5: from 1401bb267 in FUN_1401bb260 @ 1401bb260 refType=UNCONDITIONAL_CALL
+Total callers: 5
+
+================================================================
+Function: FUN_1400a5a20 @ 1400a5a20
+----------------------------------------------------------------
+
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+undefined8 FUN_1400a5a20(int param_1,undefined8 param_2,int param_3)
+
+{
+  char cVar1;
+  int iVar2;
+  int iVar3;
+  longlong lVar4;
+  undefined4 local_38;
+  undefined4 uStack_34;
+  undefined4 uStack_30;
+  undefined4 uStack_2c;
+  undefined4 local_28;
+  undefined4 uStack_24;
+  undefined4 uStack_20;
+  undefined4 uStack_1c;
+  
+  iVar3 = 0;
+LAB_1400a5a42:
+  FUN_1402ee4b0();
+  LOCK();
+  DAT_140c5cee8 = DAT_140c5cee8 + 1;
+  UNLOCK();
+  while (DAT_140c5ceec != 0) {
+    Sleep(0);
+  }
+  lVar4 = FUN_1400a5950(param_1,param_2);
+  LOCK();
+  DAT_140c5cee8 = DAT_140c5cee8 + -1;
+  UNLOCK();
+  if (lVar4 != 0) goto LAB_1400a5a9d;
+  if (param_1 == 0x2d) {
+    return 0;
+  }
+  cVar1 = FUN_14024ad70();
+  if (cVar1 == '\0') goto LAB_1400a5b54;
+LAB_1400a5b87:
+  if (lVar4 == 0) {
+    FUN_14024a7b0();
+    do {
+      if (DAT_140c5cee8 == 0) {
+        LOCK();
+        UNLOCK();
+        if (DAT_140c5ceec == 0) goto LAB_1400a5bd8;
+        LOCK();
+        UNLOCK();
+      }
+      Sleep(0);
+    } while( true );
+  }
+  goto LAB_1400a5a9d;
+LAB_1400a5b08:
+  DAT_140c5cee4 = 1;
+  _DAT_140c5cef0 = local_38;
+  uRam0000000140c5cef4 = uStack_34;
+  uRam0000000140c5cef8 = uStack_30;
+  uRam0000000140c5cefc = uStack_2c;
+  DAT_1407bd868 = lVar4;
+  DAT_140c5cee0 = iVar2;
+  DAT_140c5ceec = DAT_140c5ceec + 1;
+  FUN_1400a3530();
+  LOCK();
+  DAT_140c5ceec = DAT_140c5ceec + -1;
+  UNLOCK();
+  FUN_14024a7f0();
+  if ((iVar2 == 0) && ((*(byte *)(lVar4 + 0x11) & 5) == 0)) {
+LAB_1400a5b54:
+    if (iVar3 == 0) {
+      iVar3 = FUN_1402f2210();
+      iVar2 = FUN_140249e20();
+      if (iVar2 != 0) goto LAB_1400a5a42;
+      cVar1 = FUN_14024a250();
+      if (cVar1 != '\0') {
+        FUN_1401d3660();
+      }
+    }
+    iVar2 = FUN_140249e20();
+    if (iVar2 == 0) goto LAB_1400a5c0e;
+    goto LAB_1400a5b87;
+  }
+  goto LAB_1400a5c84;
+LAB_1400a5c0e:
+  cVar1 = FUN_14024a250();
+  if (cVar1 != '\0') {
+    FUN_1402eec10();
+  }
+  FUN_1401d2c50();
+  Sleep(1);
+  FUN_1401d2d40();
+  goto LAB_1400a5a42;
+LAB_1400a5bd8:
+  _DAT_140c5cef0 = local_28;
+  uRam0000000140c5cef4 = uStack_24;
+  uRam0000000140c5cef8 = uStack_20;
+  uRam0000000140c5cefc = uStack_1c;
+  DAT_140c5ceec = DAT_140c5ceec + 1;
+  lVar4 = FUN_1400a5950(param_1,param_2);
+  if (lVar4 == 0) {
+    if (param_3 == 0) {
+      LOCK();
+      DAT_140c5ceec = DAT_140c5ceec + -1;
+      UNLOCK();
+      FUN_14024a7f0(&DAT_140c5cef0);
+      return 0;
+    }
+    lVar4 = FUN_1400a54c0(param_1,param_2);
+    cVar1 = FUN_14024ad70();
+    if (cVar1 == '\0') {
+      *(byte *)(lVar4 + 0x11) = *(byte *)(lVar4 + 0x11) | 1;
+    }
+    LOCK();
+    DAT_140c5ceec = DAT_140c5ceec + -1;
+    UNLOCK();
+    FUN_14024a7f0(&DAT_140c5cef0);
+  }
+  else {
+    LOCK();
+    DAT_140c5ceec = DAT_140c5ceec + -1;
+    UNLOCK();
+    FUN_14024a7f0(&DAT_140c5cef0);
+LAB_1400a5a9d:
+    cVar1 = FUN_14024ad70();
+    if ((cVar1 == '\0') && ((*(byte *)(lVar4 + 0x11) & 5) == 0)) {
+      iVar2 = FUN_140249e20();
+      FUN_14024a7b0();
+      do {
+        if (DAT_140c5cee8 == 0) {
+          LOCK();
+          UNLOCK();
+          if (DAT_140c5ceec == 0) goto LAB_1400a5b08;
+          LOCK();
+          UNLOCK();
+        }
+        Sleep(0);
+      } while( true );
+    }
+  }
+LAB_1400a5c84:
+  return *(undefined8 *)(lVar4 + 8);
+}
+
+
+---- CALLERS of FUN_1400a5a20 ----
+  CALLER #1: from 14444094c in <none/data> refType=DATA
+  CALLER #2: from 140289b7a in FUN_140289a60 @ 140289a60 refType=UNCONDITIONAL_CALL
+  CALLER #3: from 1401f02a3 in FUN_1401f0290 @ 1401f0290 refType=UNCONDITIONAL_CALL
+  CALLER #4: from 14028a6ab in FUN_14028a680 @ 14028a680 refType=UNCONDITIONAL_CALL
+  CALLER #5: from 1402bfe07 in FUN_1402bfdf0 @ 1402bfdf0 refType=UNCONDITIONAL_CALL
+  CALLER #6: from 1402bff87 in FUN_1402bff70 @ 1402bff70 refType=UNCONDITIONAL_CALL
+  CALLER #7: from 1402c0446 in FUN_1402c0430 @ 1402c0430 refType=UNCONDITIONAL_CALL
+  CALLER #8: from 14002104e in FUN_140020f60 @ 140020f60 refType=UNCONDITIONAL_CALL
+  CALLER #9: from 14002106c in FUN_140020f60 @ 140020f60 refType=UNCONDITIONAL_CALL
+  CALLER #10: from 14026f63a in FUN_14026f600 @ 14026f600 refType=UNCONDITIONAL_CALL
+  CALLER #11: from 14026f673 in FUN_14026f600 @ 14026f600 refType=UNCONDITIONAL_CALL
+  CALLER #12: from 1402bfe67 in FUN_1402bfe50 @ 1402bfe50 refType=UNCONDITIONAL_CALL
+  CALLER #13: from 1402c0314 in FUN_1402c02f0 @ 1402c02f0 refType=UNCONDITIONAL_CALL
+  CALLER #14: from 1402c038e in FUN_1402c0370 @ 1402c0370 refType=UNCONDITIONAL_CALL
+  CALLER #15: from 14023ffe3 in FUN_14023ffb0 @ 14023ffb0 refType=UNCONDITIONAL_CALL
+  CALLER #16: from 1400a79c1 in FUN_1400a7990 @ 1400a7990 refType=UNCONDITIONAL_CALL
+  CALLER #17: from 1402fad6f in FUN_1402fad50 @ 1402fad50 refType=UNCONDITIONAL_CALL
+  CALLER #18: from 1400e6951 in FUN_1400e6940 @ 1400e6940 refType=UNCONDITIONAL_CALL
+  CALLER #19: from 14019f4c2 in FUN_14019f4a0 @ 14019f4a0 refType=UNCONDITIONAL_CALL
+  CALLER #20: from 1401c49b5 in FUN_1401c49a0 @ 1401c49a0 refType=UNCONDITIONAL_CALL
+  CALLER #21: from 1401c4a1d in FUN_1401c49f0 @ 1401c49f0 refType=UNCONDITIONAL_CALL
+  CALLER #22: from 1402af9a3 in FUN_1402af910 @ 1402af910 refType=UNCONDITIONAL_CALL
+  CALLER #23: from 1401b9b62 in FUN_1401b9980 @ 1401b9980 refType=UNCONDITIONAL_CALL
+  CALLER #24: from 1401b9b7f in FUN_1401b9980 @ 1401b9980 refType=UNCONDITIONAL_CALL
+  CALLER #25: from 1401b9b9c in FUN_1401b9980 @ 1401b9980 refType=UNCONDITIONAL_CALL
+  CALLER #26: from 1401b9bb9 in FUN_1401b9980 @ 1401b9980 refType=UNCONDITIONAL_CALL
+  CALLER #27: from 1401b9bd6 in FUN_1401b9980 @ 1401b9980 refType=UNCONDITIONAL_CALL
+  CALLER #28: from 1401b9bf3 in FUN_1401b9980 @ 1401b9980 refType=UNCONDITIONAL_CALL
+  CALLER #29: from 1401c0565 in FUN_1401c0550 @ 1401c0550 refType=UNCONDITIONAL_CALL
+  CALLER #30: from 1401c491d in FUN_1401c48f0 @ 1401c48f0 refType=UNCONDITIONAL_CALL
+  CALLER #31: from 1400a8c1a in FUN_1400a8c00 @ 1400a8c00 refType=UNCONDITIONAL_CALL
+  CALLER #32: from 1402c02d4 in FUN_1402c02a0 @ 1402c02a0 refType=UNCONDITIONAL_CALL
+  CALLER #33: from 1400a7ca2 in FUN_1400a7c80 @ 1400a7c80 refType=UNCONDITIONAL_CALL
+  CALLER #34: from 1400a7cc6 in FUN_1400a7c80 @ 1400a7c80 refType=UNCONDITIONAL_CALL
+  CALLER #35: from 14012e9a2 in FUN_14012e970 @ 14012e970 refType=UNCONDITIONAL_CALL
+  CALLER #36: from 1402585da in FUN_1402585a0 @ 1402585a0 refType=UNCONDITIONAL_CALL
+  CALLER #37: from 140253716 in FUN_140253700 @ 140253700 refType=UNCONDITIONAL_CALL
+  CALLER #38: from 14025b807 in FUN_14025b7f0 @ 14025b7f0 refType=UNCONDITIONAL_CALL
+  CALLER #39: from 140172c00 in FUN_140172bd0 @ 140172bd0 refType=UNCONDITIONAL_CALL
+  CALLER #40: from 14028a630 in FUN_14028a600 @ 14028a600 refType=UNCONDITIONAL_CALL
+  CALLER #41: from 1401c46e1 in FUN_1401c46c0 @ 1401c46c0 refType=UNCONDITIONAL_CALL
+  CALLER #42: from 140230e44 in FUN_140230e10 @ 140230e10 refType=UNCONDITIONAL_CALL
+  CALLER #43: from 140230ef8 in FUN_140230eb0 @ 140230eb0 refType=UNCONDITIONAL_CALL
+  CALLER #44: from 14023e0a4 in FUN_14023dd40 @ 14023dd40 refType=UNCONDITIONAL_CALL
+  CALLER #45: from 14023e985 in FUN_14023e920 @ 14023e920 refType=UNCONDITIONAL_CALL
+  CALLER #46: from 14030411d in FUN_140304110 @ 140304110 refType=UNCONDITIONAL_CALL
+  CALLER #47: from 1402c26ed in FUN_1402c26e0 @ 1402c26e0 refType=UNCONDITIONAL_CALL
+  CALLER #48: from 1400208e1 in FUN_1400208d0 @ 1400208d0 refType=UNCONDITIONAL_CALL
+  CALLER #49: from 1401c4bba in FUN_1401c4ba0 @ 1401c4ba0 refType=UNCONDITIONAL_CALL
+  CALLER #50: from 14003f201 in FUN_14003f1f0 @ 14003f1f0 refType=UNCONDITIONAL_CALL
+  CALLER #51: from 14003f221 in FUN_14003f210 @ 14003f210 refType=UNCONDITIONAL_CALL
+  CALLER #52: from 1401b7cbd in FUN_1401b7cb0 @ 1401b7cb0 refType=UNCONDITIONAL_CALL
+  CALLER #53: from 1400d0b0d in FUN_1400d0b00 @ 1400d0b00 refType=UNCONDITIONAL_CALL
+  CALLER #54: from 1401c082d in FUN_1401c0820 @ 1401c0820 refType=UNCONDITIONAL_CALL
+  CALLER #55: from 14028b06d in FUN_14028b060 @ 14028b060 refType=UNCONDITIONAL_CALL
+  CALLER #56: from 1402b162d in FUN_1402b1620 @ 1402b1620 refType=UNCONDITIONAL_CALL
+  CALLER #57: from 1402de05d in FUN_1402de050 @ 1402de050 refType=UNCONDITIONAL_CALL
+  CALLER #58: from 1401c4b8d in FUN_1401c4b80 @ 1401c4b80 refType=UNCONDITIONAL_CALL
+  CALLER #59: from 14023f4dd in FUN_14023f4d0 @ 14023f4d0 refType=UNCONDITIONAL_CALL
+Total callers: 59
+

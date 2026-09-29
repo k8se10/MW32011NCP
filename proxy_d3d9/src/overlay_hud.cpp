@@ -137,6 +137,9 @@ extern "C" const char* GetDvarStringX64_Exported(const char* name); // analog_in
     // pattern, for the real `coop_mapName` string dvar (2026-09-26, direct instruction: "lets add the map
     // detection via the map string"), so a log spanning multiple maps can be split/correlated automatically
     // instead of relying on a human noting timestamps.
+extern "C" void LogAssetPoolImageStatsX64_Exported(); // analog_input_hooks_x64.cpp -- 2026-09-29, level-load
+    // asset-pool enumeration groundwork; dumps real populated/image-slot counts from the shared native
+    // 42000-slot asset table on every real map change (see that function's own header comment).
     // is genuinely at its own in-game pause menu" signal (the existing `menuActive`/`IsMenuActiveX64_Exported`
     // flags are a blanket "some menu/UI is active" bit that also fires for the main menu and loading screens,
     // per this issue's own already-documented correction), which repeatedly forced guessing pause-vs-live state
@@ -8091,7 +8094,19 @@ HRESULT WINAPI Hook_EndScene(void* device)
             sprintf_s(mapBuf, "[x64-map-diag] map changed: \"%s\" -> \"%s\" at frame=%lld",
                        s_lastMapName, currentMapName, s_frameCounter);
             LogFromController(mapBuf);
+            // 2026-09-29, level-load asset-pool enumeration groundwork (direct
+            // instruction to RE the map/asset-load mechanism so upscaled textures
+            // could eventually be hijacked in at level load) -- dump real table
+            // stats on every real map change to confirm the table is live/populated
+            // with this level's own real image assets, before any proactive-preload
+            // logic is built on top of it. Skips the very first transition (cold
+            // DLL init, s_lastMapName still empty, no real level loaded yet) --
+            // checked BEFORE the strncpy_s below overwrites s_lastMapName.
+            const bool wasRealTransition = (s_lastMapName[0] != '\0');
             strncpy_s(s_lastMapName, currentMapName, _TRUNCATE);
+            if (wasRealTransition) {
+                LogAssetPoolImageStatsX64_Exported();
+            }
         }
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
