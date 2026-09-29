@@ -497,9 +497,33 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
     node->scaleMultiplier = scaleMultiplier;
     node->next = nullptr;
 
+    // Inserted in ascending pixel-count order, not appended FIFO (2026-09-29,
+    // direct observation: "maybe the issue is that were not sorting via
+    // texture size then processing accordingly (it shouldnt be uniform)").
+    // With real GPU submission now correctly serialized (RunInferenceOnTileRgb's
+    // own header comment) only ONE job's inference can ever be in flight at a
+    // time regardless of worker-thread count -- a large texture queued early
+    // (FIFO order) could sit at the front and block every small, fast job
+    // behind it for its own full processing time, making a real session look
+    // completely stalled (queued climbing, nothing completing) even though
+    // work genuinely is happening. Small/common textures (UI, icons, most
+    // weapon textures) now jump ahead of large ones queued earlier, so
+    // completions happen steadily and visibly throughout a session instead of
+    // in one large batch at the end; large world textures still get processed
+    // eventually, just after the cheap ones already queued. O(n) insert is
+    // fine here -- this runs once per texture LOAD EVENT (not per frame), and
+    // real sessions queue in the hundreds/low thousands, not a hot path.
+    uint64_t newJobPixels = static_cast<uint64_t>(width) * height;
     EnterCriticalSection(&g_pendingLock);
-    if (g_pendingTail) g_pendingTail->next = node; else g_pendingHead = node;
-    g_pendingTail = node;
+    PendingJob* prev = nullptr;
+    PendingJob* cur = g_pendingHead;
+    while (cur && (static_cast<uint64_t>(cur->width) * cur->height) <= newJobPixels) {
+        prev = cur;
+        cur = cur->next;
+    }
+    node->next = cur;
+    if (prev) prev->next = node; else g_pendingHead = node;
+    if (!cur) g_pendingTail = node;
     LeaveCriticalSection(&g_pendingLock);
 
     MarkInFlight(name);

@@ -75,30 +75,25 @@ namespace
     // real tiled-ESRGAN tools (e.g. Real-ESRGAN-ncnn-vulkan's own --tilesize
     // option) use.
     //
-    // RAISED 256 -> 512, 2026-09-29, direct instruction ("the texture
-    // caching is criminally slow cant we use more cpu to brute force it
-    // faster"). Real answer: more WORKER threads doesn't help the actual
-    // bottleneck -- RunInferenceOnTileRgb's own real GPU submission is now
-    // correctly serialized (see that function's own header comment, same
-    // day: concurrent Vulkan compute across threads was silently corrupting
-    // extraction, not actually safe the way ncnn's CPU-only concurrency
-    // model is). With submission serialized, throughput is bounded by the
-    // NUMBER of GPU round-trips, each carrying real fixed submission/sync
-    // overhead independent of tile size -- so the actual lever is fewer,
-    // bigger tiles, not more threads fighting over one queue. At 256, a
-    // real, common 512x512 weapon texture (this session's own log is full
-    // of them) needed 4 separate serialized round-trips; a 1024x1024 needed
-    // 16. At 512, those drop to 1 and 4 respectively -- a real 4x reduction
-    // in round-trip count for the most common real texture sizes this
-    // feature actually processes. Safe from a peak-VRAM standpoint despite
-    // 12 configured worker threads (TextureUpscaleWorkerThreads): since GPU
-    // submission is serialized to one at a time regardless of worker count,
-    // inference VRAM pressure is bounded by ONE tile's own working set, not
-    // multiplied by thread count -- confirmed against this session's own
-    // live GPU-memory headroom (Task Manager: 9.3/11.0GB dedicated already
-    // in use by the whole game, ~1.7GB free) before choosing 512 over a
-    // larger value, to stay within that real margin.
-    constexpr int kTileMaxDim = 512;
+    // RAISED 256 -> 512 same day, then REVERTED back to 256 within the same
+    // session after a real live test -- the "fewer round trips = faster"
+    // theory didn't hold up. Round-trip fixed overhead was never the real
+    // bottleneck once GPU submission is correctly serialized (see
+    // RunInferenceOnTileRgb's own header comment): total GPU compute time
+    // across the backlog is roughly proportional to total pixels processed
+    // regardless of tile size, so making tiles 4x bigger just means each
+    // individual serialized call takes proportionally ~4x longer, with no
+    // net throughput win -- and a real, worse cost: with only one GPU call
+    // in flight at a time, a single large 512x512 texture now occupies that
+    // one slot for far longer, making the whole queue look completely
+    // stalled (a live session queued 986 real jobs and completed ZERO before
+    // this was caught). 256 is this model class's own real, proven-safe tile
+    // size (matches real tiled-ESRGAN tooling conventions); the actual fix
+    // for perceived/real throughput is QueueUpscaleJob's own new size-sorted
+    // insertion (this file's sibling, texture_upscale_worker.cpp) --
+    // process small/cheap jobs first so completions happen steadily, not one
+    // giant serialized call blocking everything behind it.
+    constexpr int kTileMaxDim = 256;
     constexpr int kTileOverlap = 16;
 
     // Runs the real Real-ESRGAN inference on ONE already-RGB, already-sized
