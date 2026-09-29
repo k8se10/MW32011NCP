@@ -211,7 +211,7 @@ namespace
         LeaveCriticalSection(&g_carriedOverLock);
     }
 
-    bool BuildManifestPath(char* outPath, size_t outPathSize)
+    bool BuildManifestPath(char* outPath, size_t outPathSize, const char* fileName)
     {
         char path[MAX_PATH];
         GetModuleFileNameA(nullptr, path, MAX_PATH); // same convention as
@@ -219,28 +219,22 @@ namespace
             // that loaded us.
         char* lastSlash = strrchr(path, '\\');
         if (lastSlash) *(lastSlash + 1) = '\0';
-        strcat_s(path, "texture_upscale_cache\\pending_manifest.txt");
+        strcat_s(path, "texture_upscale_cache\\");
+        strcat_s(path, fileName);
         if (strlen(path) + 1 > outPathSize) return false;
         strcpy_s(outPath, outPathSize, path);
         return true;
     }
 
-    // Called exactly once, from InitWorkerOnceCallback below, before any real
-    // queuing can happen -- reads last session's own leftover pending-name
-    // list (if any) into g_carriedOverHead. A missing file (first-ever
-    // launch, or a session that finished its entire backlog and left nothing
-    // pending) is the expected common case, not an error. Line-based, plain
-    // text, one real image name per line -- intentionally simple; this is a
-    // best-effort priority hint, not critical state, so a partially-written
-    // or slightly stale file degrades gracefully (worst case: a name that's
-    // actually already cached gets a harmless priority boost once, then
-    // RemoveCarriedOver clears it the moment it's confirmed cached again).
-    void LoadPendingManifest()
+    // Loads a plain, one-name-per-line text file into g_carriedOverHead --
+    // shared by both LoadPendingManifest (the live, per-session file) and the
+    // bundled basemap below. Returns the number of names actually loaded (0
+    // if the file doesn't exist, which is a real, expected case for both
+    // callers, not an error).
+    int LoadNamesFromFile(const char* path)
     {
-        char path[MAX_PATH];
-        if (!BuildManifestPath(path, sizeof(path))) return;
         FILE* f = nullptr;
-        if (fopen_s(&f, path, "r") != 0 || !f) return; // no manifest -- fine, nothing to carry over
+        if (fopen_s(&f, path, "r") != 0 || !f) return 0;
         char line[256];
         int loadedCount = 0;
         while (fgets(line, sizeof(line), f)) {
@@ -255,10 +249,58 @@ namespace
             ++loadedCount;
         }
         fclose(f);
-        if (loadedCount > 0) {
-            char buf[160];
-            sprintf_s(buf, "[texture-upscale-continuity] loaded %d pending name(s) carried over from a prior session.",
-                loadedCount);
+        return loadedCount;
+    }
+
+    // Called exactly once, from InitWorkerOnceCallback below, before any real
+    // queuing can happen -- loads TWO sources into g_carriedOverHead, both
+    // best-effort priority hints, never critical state (a partially-written
+    // or slightly stale file degrades gracefully: worst case, a name that's
+    // actually already cached gets a harmless priority boost once, then
+    // RemoveCarriedOver clears it the moment it's confirmed cached again).
+    //
+    // 1. texture_names_basemap.txt -- a real, bundled, shipped-with-the-mod
+    //    list (2026-09-29, direct request: "ive now documented every single
+    //    texture in that text thats used in campaign and survival... we
+    //    should install this as the basemap before it scans for active use
+    //    ones"). 17,004 real names -- the deduped union of every already-
+    //    cached texture (real .iwi files in texture_upscale_cache\, scale
+    //    suffix stripped) and everything still genuinely pending, both
+    //    accumulated across extensive real Campaign+Survival play, confirmed
+    //    by the user as the real total. Committed to the repo
+    //    (proxy_d3d9/bundled_data/) and deployed by proxy_d3d9.vcxproj's own
+    //    DeployTextureUpscaleAssets target -- so a FRESH install starts with
+    //    this coverage already known, instead of needing the same extensive
+    //    playtime to rediscover it session by session. Loaded FIRST, per the
+    //    direct request's own "before it scans" ordering (though since both
+    //    sources merge into the same set, the practical effect is the same
+    //    either way -- kept in this order for clarity, matching the request
+    //    literally).
+    // 2. pending_manifest.txt -- the live, per-session file
+    //    PersistPendingManifestIfDue writes; carries forward whatever a
+    //    PRIOR session left genuinely still-pending (a real, growing
+    //    superset of the static basemap for names the basemap didn't cover,
+    //    or that were added to the game/discovered since the basemap was
+    //    last refreshed).
+    void LoadPendingManifest()
+    {
+        char basemapPath[MAX_PATH];
+        int basemapCount = 0;
+        if (BuildManifestPath(basemapPath, sizeof(basemapPath), "texture_names_basemap.txt")) {
+            basemapCount = LoadNamesFromFile(basemapPath);
+        }
+
+        char pendingPath[MAX_PATH];
+        int pendingCount = 0;
+        if (BuildManifestPath(pendingPath, sizeof(pendingPath), "pending_manifest.txt")) {
+            pendingCount = LoadNamesFromFile(pendingPath);
+        }
+
+        if (basemapCount > 0 || pendingCount > 0) {
+            char buf[220];
+            sprintf_s(buf, "[texture-upscale-continuity] loaded %d name(s) from the bundled basemap and "
+                "%d carried over from a prior session's own pending queue.",
+                basemapCount, pendingCount);
             LogFromController(buf);
         }
     }
@@ -280,7 +322,7 @@ namespace
         s_lastWriteMs = now;
 
         char path[MAX_PATH];
-        if (!BuildManifestPath(path, sizeof(path))) return;
+        if (!BuildManifestPath(path, sizeof(path), "pending_manifest.txt")) return;
         FILE* f = nullptr;
         if (fopen_s(&f, path, "w") != 0 || !f) return; // real failure -- skip this
             // period's write silently; the next period tries again, and losing

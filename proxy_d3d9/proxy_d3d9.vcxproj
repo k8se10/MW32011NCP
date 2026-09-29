@@ -392,6 +392,14 @@
     <Copy SourceFiles="@(RealesrganModelFiles)" DestinationFolder="$(OutDir)realesrgan_models\" SkipUnchangedFiles="true" Condition="'@(RealesrganModelFiles)' != ''" />
     <MakeDir Directories="$(OutDir)custom_assets" Condition="!Exists('$(OutDir)custom_assets')" />
     <Copy SourceFiles="@(CustomAssetFiles)" DestinationFolder="$(OutDir)custom_assets\" SkipUnchangedFiles="true" Condition="'@(CustomAssetFiles)' != ''" />
+    <!-- Session-continuity basemap (2026-09-29): a real, comprehensive list of
+         texture names accumulated across extensive Campaign+Survival play,
+         bundled so a FRESH install starts with this coverage already known
+         instead of needing the same extensive playtime to rediscover it. See
+         texture_upscale_worker.cpp's own LoadPendingManifest for how this is
+         merged with the live, per-session pending_manifest.txt at startup. -->
+    <MakeDir Directories="$(OutDir)texture_upscale_cache" Condition="!Exists('$(OutDir)texture_upscale_cache')" />
+    <Copy SourceFiles="bundled_data\texture_names_basemap.txt" DestinationFolder="$(OutDir)texture_upscale_cache\" SkipUnchangedFiles="true" />
   </Target>
 
   <!-- 2026-09-28: ships a real, already-built Unlinker.exe (tools/iw5oat's own
