@@ -5,6 +5,11 @@
 #include <cstring>
 #include <cstdlib>
 
+#include "texture_upscale_dxt_codec.h" // TextureUpscaleDxt::CompressedSize --
+    // real correctness validation below.
+#include "texture_upscale_iwi_writer.h" // TextureUpscaleIwi::Format -- same
+    // format enum below.
+
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
 namespace TextureUpscaleCache
@@ -118,6 +123,41 @@ namespace
         if (outSize) *outSize = static_cast<uint32_t>(size);
         return buffer;
     }
+
+    // Real correctness validation (2026-09-30) -- a truncated write (this
+    // project has now hit three real crashes/hangs mid-session while the
+    // worker was actively writing cache files) can leave a file on disk
+    // that reports a plausible size (Windows' own file-size metadata can
+    // update before the actual data is flushed) but whose content is
+    // garbage -- StoreUpscaledIwi's own temp-file-then-rename discipline
+    // protects a concurrent READER from ever seeing a PARTIAL write, but
+    // does nothing for a write that was already fully "renamed into place"
+    // before a crash cut off the underlying flush. Live-reported: a
+    // skybox that looked genuinely corrupt (not a decode/encode bug --
+    // manually deleting and letting it recapture through the exact same
+    // pipeline produced a correct result) turned out to be exactly this.
+    // This feature's own cache ALWAYS writes DXT5 (see ProcessJob's own
+    // header comment: "always re-encoded as DXT5 regardless of source
+    // format"), always as a single mip -- so a real, cheap, definitive
+    // check is possible: the header's own declared format/width/height
+    // must produce an EXACT expected total file size; any mismatch means
+    // the file is truncated, extended, or otherwise not what this feature
+    // itself would ever have written, and is treated as fully corrupt.
+    bool ValidateCachedIwi(const uint8_t* data, uint32_t size)
+    {
+        constexpr uint32_t kIwiHeaderSize = 0x20;
+        if (!data || size <= kIwiHeaderSize) return false;
+        if (data[0] != 'I' || data[1] != 'W' || data[2] != 'i' || data[3] != 8) return false;
+        int8_t format = static_cast<int8_t>(data[0x08]);
+        if (format != static_cast<int8_t>(TextureUpscaleIwi::Format::DXT5)) return false; // this
+            // feature's own writer never emits anything else to its own cache
+        uint16_t width = *reinterpret_cast<const uint16_t*>(data + 0x0A);
+        uint16_t height = *reinterpret_cast<const uint16_t*>(data + 0x0C);
+        if (width == 0 || height == 0) return false;
+        uint32_t expectedTotal = kIwiHeaderSize +
+            TextureUpscaleDxt::CompressedSize(width, height, TextureUpscaleDxt::BlockFormat::BC3);
+        return expectedTotal == size;
+    }
 }
 
 uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, uint32_t* outSize)
@@ -128,7 +168,24 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
     char path[MAX_PATH];
     if (!BuildCacheFilePath(imageName, scaleMultiplier, path, sizeof(path))) return nullptr;
 
-    return ReadWholeFile(path, outSize);
+    uint32_t size = 0;
+    uint8_t* data = ReadWholeFile(path, &size);
+    if (!data) return nullptr;
+
+    if (!ValidateCachedIwi(data, size)) {
+        char buf[300];
+        sprintf_s(buf, "[texture-upscale-cache] CORRUPT cache file detected and deleted: '%.256s' "
+            "(%u bytes) -- will be treated as a miss and recaptured/regenerated the next time this "
+            "image is loaded.", path, size);
+        LogFromController(buf);
+        free(data);
+        DeleteFileA(path); // real, deliberate: never let a confirmed-corrupt file linger to be
+            // served again or independently rediscovered -- forces a genuine rebuild.
+        return nullptr;
+    }
+
+    if (outSize) *outSize = size;
+    return data;
 }
 
 // Lightweight existence check (2026-09-29) -- GetFileAttributesA, never a
