@@ -1281,6 +1281,12 @@ void WriteDefaultConfig(const char* path)
         "; replacement of the real allocator function. Default 256 (vanilla is 26,\n"
         "; clamped 26..2048).\n"
         "ImageScratchMB=%d\n"
+        "; Real, hardware-scalable worker-thread count for the texture-upscale-cache\n"
+        "; background pipeline (2026-09-29). Per-texture latency is dominated by real\n"
+        "; tiled GPU inference cost -- a stronger GPU (e.g. an RTX 2080 Ti) can safely\n"
+        "; run more concurrent submissions than this conservative default. Default 3,\n"
+        "; clamped 1..16.\n"
+        "TextureUpscaleWorkerThreads=%d\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
         "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
@@ -1417,6 +1423,7 @@ void WriteDefaultConfig(const char* path)
         g_modConfig.occlusionLodScaleFixX64 ? 1 : 0,
         g_modConfig.dlssModeX64,
         g_modConfig.imageScratchMB,
+        g_modConfig.textureUpscaleWorkerThreads,
         g_modConfig.dlssNeuralRenderingEnabledX64 ? 1 : 0,
         g_modConfig.gpuCaptureEnabled ? 1 : 0,
         g_modConfig.gpuSyncTimingLogging ? 1 : 0,
@@ -1768,6 +1775,11 @@ void LoadModConfig()
         int v = GetPrivateProfileIntA("Experimental", "ImageScratchMB", g_modConfig.imageScratchMB, path);
         ClampIntSetting("Experimental", "ImageScratchMB", v, 26, 2048, 256);
         g_modConfig.imageScratchMB = v;
+    }
+    {
+        int v = GetPrivateProfileIntA("Experimental", "TextureUpscaleWorkerThreads", g_modConfig.textureUpscaleWorkerThreads, path);
+        ClampIntSetting("Experimental", "TextureUpscaleWorkerThreads", v, 1, 16, 3);
+        g_modConfig.textureUpscaleWorkerThreads = v;
     }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);
     ReadFloat(path, "Video", "FsrSharpenStrength", g_modConfig.fsrSharpenStrength);

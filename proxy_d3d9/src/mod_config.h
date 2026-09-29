@@ -924,6 +924,23 @@ struct ModConfig
     // 2048 in ReadImageScratchMB.
     int imageScratchMB = 256;
 
+    // [Experimental] TextureUpscaleWorkerThreads (2026-09-29) -- real,
+    // hardware-scalable worker-thread count for the texture-upscale-cache
+    // background pipeline (TextureUpscaleWorker::kWorkerThreadCount is now
+    // read from this instead of a fixed compile-time constant). Direct
+    // instruction: "add customisable worker threads(hardware makes this a
+    // great option) - in my config i want 12(2080 ti hardware so) but for
+    // default should be 3". Per-texture latency here is dominated by real
+    // tiled GPU inference cost (see texture_upscale_ncnn.cpp's kTileMaxDim),
+    // so the right value genuinely depends on the player's own GPU headroom
+    // -- 3 is a conservative default safe on modest hardware, higher values
+    // are a real, informed bet a player with strong GPU headroom (e.g. a
+    // 2080 Ti) can make for themselves. Clamped 1 to 16 in
+    // ReadTextureUpscaleWorkerThreads -- the upper bound is a real sanity
+    // ceiling (each thread is a genuine concurrent GPU submission; this
+    // project has no live throughput data yet justifying more than that).
+    int textureUpscaleWorkerThreads = 3;
+
     // [Video] CustomAssetOverrides (2026-09-28, generalized same day) --
     // real, general, zero-code-change custom asset substitution: any real,
     // correctly-formatted .iwi file dropped into custom_assets\ (named

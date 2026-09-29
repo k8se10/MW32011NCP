@@ -9,6 +9,8 @@
 #include "texture_upscale_iwi_writer.h"
 #include "texture_upscale_ncnn.h"
 #include "texture_upscale_cache.h"
+#include "mod_config.h" // g_modConfig.textureUpscaleWorkerThreads -- see
+    // EnsureWorkerStarted's own comment on the real thread-count read.
 #include "overlay_hud.h" // ShowOverlayMessageUntilDismissed -- the one-time
     // "caching is building, expect hitching" notice below, real player-facing
     // warning-modal use, not per-job toast spam (see the 2026-09-29 removal
@@ -67,22 +69,23 @@ namespace
     // that's genuinely safe (ncnn's own documented per-thread-Extractor
     // concurrency model, not something this project invented).
     //
-    // Widened 3 -> 6 (2026-09-29, same day, direct follow-up: "caching rn
-    // is over 15s per texture which for over 1000 textures is wild... we
-    // also need more parralellism"). Real per-texture latency this slow is
-    // dominated by tiled inference cost (large world textures split into
-    // many 256x256 tiles, each a real GPU round trip -- see
-    // texture_upscale_ncnn.cpp's kTileMaxDim), so this is still a real bet
-    // that the GPU has headroom for more concurrent submissions rather than
-    // a proven scaling curve -- doubling is a genuine, honest guess at the
-    // right next step, not benchmarked against actual measured throughput
-    // at 3 vs. 6 yet. If 6 doesn't meaningfully improve wall-clock drain
-    // rate, that's real evidence this workload is already GPU-saturated and
-    // more threads would just add contention, not throughput -- worth
-    // checking via the status bar's own live progress rate before pushing
-    // this higher again.
-    constexpr int kWorkerThreadCount = 6;
-    HANDLE g_workerThreadHandles[kWorkerThreadCount] = {};
+    // Made customizable (2026-09-29, direct instruction: "add customisable
+    // worker threads(hardware makes this a great option) - in my config i
+    // want 12(2080 ti hardware so) but for default should be 3") -- real
+    // per-texture latency is dominated by tiled GPU inference cost (large
+    // world textures split into many 256x256 tiles, each a real GPU round
+    // trip -- see texture_upscale_ncnn.cpp's kTileMaxDim), so the right
+    // thread count genuinely depends on the player's own GPU headroom, not
+    // a single fixed constant this project can pick for everyone. The real
+    // count is `[Experimental] TextureUpscaleWorkerThreads` in
+    // mw3ncp_config.ini (mod_config.h/.cpp, default 3, clamped 1..16 --
+    // ClampIntSetting there is the real source of truth for the bounds).
+    // kMaxWorkerThreadCount here is just the array's fixed storage size,
+    // matching that same clamp ceiling -- the array is always allocated at
+    // its max size; only the first N (the real configured count) ever get a
+    // real thread.
+    constexpr int kMaxWorkerThreadCount = 16;
+    HANDLE g_workerThreadHandles[kMaxWorkerThreadCount] = {};
 
     // In-flight dedup set -- separate from the on-disk cache check in
     // Hook_ImageFileLoadX64 (analog_input_hooks_x64.cpp), which only ever
@@ -402,7 +405,14 @@ namespace
         g_pendingLockInit = true;
         InitializeCriticalSection(&g_inFlightLock);
         g_inFlightLockInit = true;
-        for (int i = 0; i < kWorkerThreadCount; ++i) {
+        // Real, live config value, already clamped 1..16 by mod_config.cpp's
+        // own ClampIntSetting at load time -- clamped again here purely as a
+        // defensive array-bounds safety net, not because the config layer is
+        // untrusted.
+        int threadCount = g_modConfig.textureUpscaleWorkerThreads;
+        if (threadCount < 1) threadCount = 1;
+        if (threadCount > kMaxWorkerThreadCount) threadCount = kMaxWorkerThreadCount;
+        for (int i = 0; i < threadCount; ++i) {
             g_workerThreadHandles[i] = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
         }
         return TRUE;
