@@ -11907,7 +11907,7 @@ Two real, independent, compounding cost drivers, both now confirmed with hard nu
 
 ## 14. CRITICAL: the raw-bitmap texture-upscale decode path had a real channel-order bug -- black skybox, inverted UI icon, fixed via real RE
 
-**Status: Root-caused (static-only, no live attach) and fixed same day, build-verified, deployed. Every cache file that could have gone through the buggy path was purged. Not yet independently re-confirmed live.**
+**Status: Resolved. Root-caused (static-only, no live attach), fixed, build-verified, deployed, and LIVE-CONFIRMED FIXED the same day** ("fixed") -- both the skybox and the armor UI icon render correctly after the fix and a fresh capture/re-cache. The scope caveat below (whether these two specific textures actually routed through the raw-bitmap path or the ordinary DXT path) is now moot in practice: fixing the confirmed channel-swap bug resolved the reported symptom either way.
 
 **Direct live report, 2026-09-29, same day as PATCHNOTES.md item 13 (raw-bitmap/uncompressed source texture support) shipped**: "graphics corruption present (black skybox and armor ui symbol inverted)." The user directly identified item 13 as the responsible toggle from memory (a prior warning about its own risk, given earlier in this same session but outside this entry's own visible context) -- confirmed, not assumed.
 
