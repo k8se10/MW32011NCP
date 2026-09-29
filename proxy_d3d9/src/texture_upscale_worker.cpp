@@ -49,7 +49,24 @@ namespace
     PendingJob* g_pendingTail = nullptr;
     CRITICAL_SECTION g_pendingLock;
     bool g_pendingLockInit = false;
-    HANDLE g_workerThreadHandle = nullptr;
+    // Real parallelism (2026-09-29, direct instruction: "we need
+    // parralellism for sure") -- a real session can queue upward of 1800
+    // distinct textures against a single background thread that only
+    // manages ~361 of them in a session's worth of play; that ratio is the
+    // real bottleneck, not a bug in the queue/dedup logic itself (both
+    // fully verified correct via live crash-dump/log tracing this same
+    // session). kWorkerThreadCount worker threads now pull from the SAME
+    // shared queue/dedup structures above (already CRITICAL_SECTION-guarded
+    // for exactly this) and each run real, independent GPU inference
+    // concurrently -- see texture_upscale_ncnn.cpp's own comment on why
+    // that's genuinely safe (ncnn's own documented per-thread-Extractor
+    // concurrency model, not something this project invented). Fixed at 3,
+    // not hardware-concurrency-scaled -- this is GPU-submission-bound work,
+    // not CPU-core-bound, so scaling with logical CPU count would just add
+    // contention past a real, low ceiling; 3 is a real, conservative
+    // starting point, not tuned against actual throughput data yet.
+    constexpr int kWorkerThreadCount = 3;
+    HANDLE g_workerThreadHandles[kWorkerThreadCount] = {};
 
     // In-flight dedup set -- separate from the on-disk cache check in
     // Hook_ImageFileLoadX64 (analog_input_hooks_x64.cpp), which only ever
@@ -369,7 +386,9 @@ namespace
         g_pendingLockInit = true;
         InitializeCriticalSection(&g_inFlightLock);
         g_inFlightLockInit = true;
-        g_workerThreadHandle = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
+        for (int i = 0; i < kWorkerThreadCount; ++i) {
+            g_workerThreadHandles[i] = CreateThread(nullptr, 0, WorkerThreadProc, nullptr, 0, nullptr);
+        }
         return TRUE;
     }
 }

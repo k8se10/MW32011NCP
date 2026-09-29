@@ -81,7 +81,19 @@ namespace
     // tile. Caller owns the returned buffer (malloc'd, tileWidth*4 x
     // tileHeight*4 x 3 bytes RGB, no alpha -- alpha is handled once, at the
     // whole-image level, by the public UpscaleRGBA4x below, not per-tile).
-    // Must be called with g_netLock already held.
+    //
+    // Safe to call concurrently from multiple worker threads (2026-09-29,
+    // real parallelism added to drain a genuinely large real-world backlog
+    // faster) -- this function already creates its own, fresh, purely
+    // local `ncnn::Extractor` on every single call and never mutates
+    // `g_net` itself (only ever reads it, after load) -- exactly ncnn's own
+    // documented safe concurrency model ("Extractor is not thread-safe
+    // itself, but multiple threads may each create and use their own
+    // Extractor from the same already-loaded Net concurrently"). The only
+    // real synchronization this feature ever needed was around the ONE-TIME
+    // model load, which EnsureModelLoaded already handles with its own
+    // internal lock -- see UpscaleRGBA4x's own comment for why the old
+    // whole-call lock was removed.
     uint8_t* RunInferenceOnTileRgb(const uint8_t* rgb, int tileWidth, int tileHeight, int* outTileWidth, int* outTileHeight)
     {
         // Same real, already-proven ncnn::Mat::from_pixels API this file's
@@ -208,8 +220,16 @@ uint8_t* UpscaleRGBA4x(const uint8_t* rgba, uint32_t width, uint32_t height, uin
     if (!rgba || width == 0 || height == 0) return nullptr;
     if (!EnsureModelLoaded()) return nullptr;
 
-    ScopedSrwLock lock(&g_netLock);
-
+    // Real parallelism (2026-09-29, direct instruction: "we need
+    // parralellism for sure") -- the lock that used to wrap this entire
+    // function's body is REMOVED here. It was never actually protecting
+    // anything past model load: `g_net` is read-only from this point on
+    // (RunInferenceOnTileRgb's own comment explains why concurrent
+    // Extractor use from multiple threads on one already-loaded Net is
+    // ncnn's own documented-safe pattern), and every buffer below
+    // (srcRgb/srcAlpha/rgbaOut/etc.) is local to this call, never shared
+    // across threads. EnsureModelLoaded above still has its own internal
+    // lock guaranteeing the one-time load itself stays race-free.
     const int w = static_cast<int>(width), h = static_cast<int>(height);
     const int outW = w * kRealScaleFactor, outH = h * kRealScaleFactor;
 
