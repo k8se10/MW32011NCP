@@ -12505,14 +12505,25 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
             // [x64-capture-outcome] (2026-09-29, temporary) -- world-geometry
             // material names (ch_concretewall02_col etc.) reach this hook's
             // own name-logging but never produce a "queued" line downstream.
-            // Bounded to 500 fires; logs exactly what
-            // QueueUpscaleJobFromIwiFile's own real rejection points check --
-            // magic bytes, declared format/width/height, and the computed
-            // base-mip size against the real captured size -- so a live
-            // in-level playthrough can show which one actually trips for
-            // these assets, rather than guessing further.
+            // Logs exactly what QueueUpscaleJobFromIwiFile's own real
+            // rejection points check -- magic bytes, declared format/width/
+            // height, and the computed base-mip size against the real
+            // captured size -- so a live in-level playthrough can show which
+            // one actually trips for these assets, rather than guessing
+            // further.
+            //
+            // Round 2 (2026-09-29): the original 500-fire cap was entirely
+            // consumed by main-menu UI assets (cardicon_*/ammo_counter_*
+            // killstreak/prestige icons -- hundreds of them) before a single
+            // Dome level texture was ever captured -- confirmed via the real
+            // log, zero world-geometry names among the 500. Widened to 20000
+            // (matching [x64-allname-diag]'s own bound) and UI-prefix names
+            // already confirmed uninteresting are skipped so budget goes
+            // toward whatever's actually still unexplained.
+            bool looksLikeKnownUiAsset = (_strnicmp(cap.name, "cardicon_", 9) == 0)
+                || (_strnicmp(cap.name, "ammo_counter_", 13) == 0);
             static int s_captureOutcomeDiagCount = 0;
-            if (s_captureOutcomeDiagCount < 500) {
+            if (!looksLikeKnownUiAsset && s_captureOutcomeDiagCount < 20000) {
                 ++s_captureOutcomeDiagCount;
                 bool magicOk = cap.size > 0x20 && cap.buffer[0] == 'I' && cap.buffer[1] == 'W'
                     && cap.buffer[2] == 'i' && cap.buffer[3] == 8;
