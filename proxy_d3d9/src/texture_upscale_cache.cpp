@@ -112,7 +112,11 @@ namespace
             // through to the real, original image), but log it once so a
             // corrupt file doesn't silently and permanently shadow a real
             // texture.
-            char buf[300];
+            // Widened 2026-09-30 as part of the same sweep that found and fixed a
+            // real, live sprintf_s overflow crash in this file's own corrupt-file
+            // log line below -- this one's real worst case (~410 bytes) also
+            // exceeded a 300-byte buffer, just hadn't been hit live yet.
+            char buf[600];
             sprintf_s(buf, "[texture-upscale-cache] WARNING: '%.256s' read %zu of %ld expected bytes -- "
                 "treating as a miss, falling back to the original image", path, readBytes, size);
             LogFromController(buf);
@@ -173,7 +177,14 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
     if (!data) return nullptr;
 
     if (!ValidateCachedIwi(data, size)) {
-        char buf[300];
+        // Real, live-confirmed crash (2026-09-30, FAIL_FAST_INVALID_ARG via
+        // sprintf_s): the original buf[300] was genuinely too small for this
+        // line's own real worst case (literal text ~170 bytes + up to 256
+        // bytes for the truncated path + up to 10 digits for %u) -- the same
+        // recurring sprintf_s-overflow bug class this project has hit many
+        // times before, this time self-inflicted in this exact fix. Widened
+        // with real margin, not just barely over the computed worst case.
+        char buf[600];
         sprintf_s(buf, "[texture-upscale-cache] CORRUPT cache file detected and deleted: '%.256s' "
             "(%u bytes) -- will be treated as a miss and recaptured/regenerated the next time this "
             "image is loaded.", path, size);
@@ -220,9 +231,14 @@ bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t*
     char tempPath[MAX_PATH];
     sprintf_s(tempPath, "%s.tmp", path);
 
+    // Every buf[] below widened to 600 in the same 2026-09-30 sweep that found
+    // and fixed a real, live sprintf_s overflow crash in this file (all four
+    // of these real worst-case computations exceed a 300-byte buffer once the
+    // %.256s path substitution is near its own real max, just hadn't been hit
+    // live yet).
     FILE* f = nullptr;
     if (fopen_s(&f, tempPath, "wb") != 0 || !f) {
-        char buf[300];
+        char buf[600];
         sprintf_s(buf, "[texture-upscale-cache] FAILED to open '%.256s' for write", tempPath);
         LogFromController(buf);
         return false;
@@ -230,7 +246,7 @@ bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t*
     size_t written = fwrite(iwiData, 1, iwiSize, f);
     fclose(f);
     if (written != iwiSize) {
-        char buf[300];
+        char buf[600];
         sprintf_s(buf, "[texture-upscale-cache] FAILED to write '%.256s' -- wrote %zu of %u bytes", tempPath, written, iwiSize);
         LogFromController(buf);
         DeleteFileA(tempPath);
@@ -238,7 +254,7 @@ bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t*
     }
 
     if (!MoveFileExA(tempPath, path, MOVEFILE_REPLACE_EXISTING)) {
-        char buf[300];
+        char buf[600];
         sprintf_s(buf, "[texture-upscale-cache] FAILED to finalize '%.256s' (MoveFileExA error=%lu)", path, GetLastError());
         LogFromController(buf);
         DeleteFileA(tempPath);
