@@ -12506,6 +12506,14 @@ void* g_imagePoolExpandedBufferX64 = nullptr; // never freed -- lives for the wh
     // background-resource convention.
 size_t g_imagePoolExpandedBufferBytesX64 = 0; // set once, alongside g_imagePoolExpandedBufferX64 --
     // needed by the integrity-check hook below to bound-check a popped object.
+long long g_imagePoolValidPopCountX64 = 0; // real running count of successful (in-range) pops
+    // since construction (2026-09-30) -- direct user insight: "been in from day one but
+    // was only exposed once our pipeline was good enough to expose it (enough iwis
+    // cached)" -- i.e. this is volume-triggered, not something a specific commit
+    // introduced (already confirmed: reproduces identically at 15bdce12b, the pool-
+    // expansion feature's own introduction commit). Logged in the CRITICAL line below
+    // so the exact pop count corruption first appears at can be directly correlated
+    // against the [texture-upscale-sub] cache-hit counters already in the same log.
 
 // ---- Real free-list integrity check on the ALLOCATE side (2026-09-30) ------------
 // Direct instruction, following a real live crash: a native memcpy
@@ -12572,13 +12580,15 @@ void* __fastcall Hook_ImagePoolAllocX64(void* headAddrPtr)
             // real worst-case output" bug class) -- this literal alone is ~350 bytes
             // before any %p substitution.
         sprintf_s(buf, "[x64-image-pool-expand] CRITICAL: corrupted free-list pop -- popped "
-            "object %p is OUTSIDE the expanded pool's own real range [%p, %p). Returning NULL "
-            "instead of a wild pointer -- the caller's own existing fatal-error path takes over "
-            "from here (same clean, contained stop the native 4448-object limit already has), "
-            "not a memory-corruption crash.", obj, reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi));
+            "object %p is OUTSIDE the expanded pool's own real range [%p, %p) after %lld real "
+            "valid pops since construction. Returning NULL instead of a wild pointer -- the "
+            "caller's own existing fatal-error path takes over from here (same clean, contained "
+            "stop the native 4448-object limit already has), not a memory-corruption crash.",
+            obj, reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi), g_imagePoolValidPopCountX64);
         LogFromController(buf);
         return nullptr;
     }
+    ++g_imagePoolValidPopCountX64;
     return obj;
 }
 
@@ -12734,6 +12744,7 @@ void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
 
     g_imagePoolExpandedBufferX64 = pool;
     g_imagePoolExpandedBufferBytesX64 = bytes;
+    g_imagePoolValidPopCountX64 = 0;
     char buf[260];
     sprintf_s(buf, "[x64-image-pool-expand] REPLACED the real static pool with a genuinely "
         "contiguous %lld-object buffer (native was %d, +%d extra) -- %zu bytes committed via "
