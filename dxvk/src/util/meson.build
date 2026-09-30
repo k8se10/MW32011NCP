@@ -1,6 +1,4 @@
 util_src = files([
-  'iw5_build_identity.cpp',
-  'iw5_signature_scan.cpp',
   'util_env.cpp',
   'util_string.cpp',
   'util_fps_limiter.cpp',
