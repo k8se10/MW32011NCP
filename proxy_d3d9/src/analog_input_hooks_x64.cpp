@@ -12862,11 +12862,18 @@ constexpr DWORD kPendingRepopulateIntervalMs = 60 * 1000; // 1 real minute -- di
 void CollectCarriedOverNameCallback(const char* name, void* userData)
 {
     (void)userData;
-    // Real, deliberate skip (2026-09-30, added for periodic re-population):
-    // don't re-add a name that's already genuinely cached on disk -- cheap
-    // (GetFileAttributesA, no real read) and avoids the refresh pass
-    // needlessly re-walking thousands of already-done names every interval.
-    if (TextureUpscaleCache::CacheEntryExists(name, g_modConfig.textureRenderRes)) return;
+    // REVERTED same day (2026-09-30): an upfront CacheEntryExists filter
+    // here was live-confirmed to cause a real, repeating frame-rate stutter
+    // (a menu session dropped to ~15fps/79ms frames the instant a periodic
+    // refresh fired) -- thousands of synchronous GetFileAttributesA calls,
+    // all done in one burst on the game's own main/render thread (this
+    // callback runs inline from PumpLevelImageNameResolveX64, which is
+    // called from the per-frame Hook_EndScene body, not a background
+    // thread). The "skip already-cached names" benefit is real and kept,
+    // just moved to where it belongs: PumpLevelImageNameResolveX64's own
+    // ALREADY-rate-limited per-frame drain loop (a handful of checks per
+    // frame, not thousands in one synchronous burst) -- see that
+    // function's own comment.
     PendingNameNode* node = static_cast<PendingNameNode*>(malloc(sizeof(PendingNameNode)));
     if (!node) return; // real OOM -- stop silently, keep whatever's already collected
     strncpy_s(node->name, name, _TRUNCATE);
@@ -12899,8 +12906,9 @@ void PopulatePendingNamesFromCarriedOverX64()
     char buf[220];
     if (isRepopulate) {
         ++g_pendingNameRepopulateCount;
-        sprintf_s(buf, "[x64-level-preload] name-driven fetch: periodic refresh #%d found %d "
-            "still-uncached name(s) to retry.", g_pendingNameRepopulateCount, count);
+        sprintf_s(buf, "[x64-level-preload] name-driven fetch: periodic refresh #%d re-queued %d "
+            "known name(s) for another round of retries (already-cached ones are skipped cheaply "
+            "per-frame during drain, not filtered here).", g_pendingNameRepopulateCount, count);
     } else {
         sprintf_s(buf, "[x64-level-preload] name-driven fetch: %d known name(s) queued for real "
             "FindOrLoadAsset resolution.", count);
@@ -12938,6 +12946,18 @@ void PumpLevelImageNameResolveX64()
         g_pendingNameHead = node->next;
         if (g_pendingNameHead == nullptr) g_pendingNameTail = nullptr;
 
+        // Real, deliberate skip (2026-09-30, moved here from the bulk populate
+        // pass after that version was live-confirmed to cause a real frame-rate
+        // stutter -- see CollectCarriedOverNameCallback's own comment). Same
+        // real benefit (skip a name already cached on disk without a wasted
+        // FindOrLoadAsset + downstream round trip), but bounded to at most
+        // kMaxPerFrame GetFileAttributesA calls per frame instead of
+        // thousands in one synchronous burst.
+        if (TextureUpscaleCache::CacheEntryExists(node->name, g_modConfig.textureRenderRes)) {
+            free(node);
+            continue;
+        }
+
         void* dataPtr = nullptr;
         __try {
             dataPtr = g_realFindOrLoadAssetX64(kFindOrLoadAssetImageTypeX64, node->name, 1);
@@ -12946,6 +12966,28 @@ void PumpLevelImageNameResolveX64()
         }
 
         if (dataPtr != nullptr) {
+            // Real, one-time diagnostic (2026-09-30): a full session found
+            // ZERO real "[x64-level-preload] triggered" events despite
+            // thousands of names resolving successfully -- meaning
+            // `alreadyLoaded` below has evaluated true for EVERY single
+            // resolved name, every time. Dumping the real 40-byte object's
+            // raw content for a sample directly settles whether offset 0
+            // is a meaningful "loaded" signal or always-non-null noise,
+            // rather than continuing to guess or trace 59 generic callers.
+            static int s_rawDumpCount = 0;
+            if (s_rawDumpCount < 30) {
+                __try {
+                    const unsigned long long* q = reinterpret_cast<const unsigned long long*>(dataPtr);
+                    char dbuf[300];
+                    sprintf_s(dbuf, "[x64-findorload-rawdump] '%.200s' dataPtr=%p q0=%016llX q1=%016llX "
+                        "q2=%016llX q3=%016llX q4=%016llX", node->name, dataPtr, q[0], q[1], q[2], q[3], q[4]);
+                    LogFromController(dbuf);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    LogFromController("[x64-findorload-rawdump] EXCEPTION reading raw struct bytes");
+                }
+                ++s_rawDumpCount;
+            }
+
             bool alreadyLoaded = true;
             __try {
                 alreadyLoaded = (*reinterpret_cast<void* const*>(dataPtr) != nullptr);
