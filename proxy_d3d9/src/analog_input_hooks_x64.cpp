@@ -12841,14 +12841,40 @@ void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
 // texture-upscale-cache pipeline's own substitution work stretching out individual
 // load times) to make the window land often enough to observe.
 //
-// Real fix: make the write and the read mutually exclusive ourselves, with a lock this
-// project owns, since the native code's own intended mechanism (the always-signaled
-// event) doesn't actually do this. Hooks the ONLY confirmed writer
-// (`FUN_1400a8090`) and the ONLY consumer whose read of this global feeds directly into
-// asset-pool registration (`FUN_1400a69d0`) to acquire a shared CRITICAL_SECTION around
-// the real call -- never touches the call's own arguments/return value, purely adds
-// mutual exclusion around whatever native code already does. Matches this project's own
-// established "install once, never uninstall, log unconditionally" pattern.
+// REAL FIX, CORRECTED 2026-09-30 (same day) -- the first version of this fix
+// deadlocked the game on launch (live-reported: "now game freezes and stops
+// responding before even drawing a frame"). Root cause of THAT regression,
+// understood, not just reverted: `FUN_1400a8090` (the writer) has its OWN
+// internal busy-wait loop (`while (cVar1 != '\0') { Sleep(0x19); cVar1 =
+// DAT_140c5cee6; }`) waiting on a condition that real engine code elsewhere
+// (very plausibly reachable only through `FUN_1400a69d0`, the reader) is
+// responsible for clearing. Wrapping `FUN_1400a8090`'s ENTIRE call in a
+// blocking CRITICAL_SECTION -- including that internal wait -- meant the
+// writer could hold the lock while waiting on progress that only the reader
+// (now blocked on the SAME lock) could ever provide. A classic, self-inflicted
+// deadlock, not a native engine one.
+//
+// The real, safe fix uses NO blocking lock at all -- a seqlock-style
+// generation counter instead, which cannot deadlock by construction because
+// the writer NEVER waits on anything this project owns:
+//   - The writer hook increments a shared counter to ODD before calling
+//     through, and back to EVEN after -- a plain `InterlockedIncrement`,
+//     never blocks, never waits, so `FUN_1400a8090`'s own internal busy-wait
+//     runs exactly as it always has, completely unaffected by us.
+//   - The reader hook, before calling through, spins (bounded, `Sleep(0)`,
+//     never more than 1000 iterations) only until the counter is next seen
+//     EVEN -- i.e. it merely DELAYS entering the real call until the writer
+//     isn't actively mid-update, it never blocks or retries the real call
+//     itself. Retrying the real call outright was considered and rejected:
+//     `FUN_1400a69d0` always unconditionally allocates a pool object on
+//     every call and can take a real "Attempting to override asset" FATAL
+//     path for asset types whose own per-type override-count table entry is
+//     under 2 -- calling it a second time for the same name is not free of
+//     real side effects, so this fix only ever calls it once.
+// This closes the same real race (the reader is now overwhelmingly unlikely
+// to enter the native call while the writer's own two-instruction update
+// window is open, vs. never being protected at all before) without
+// introducing any new blocking relationship between the two threads.
 constexpr const char* kZoneLoadWorkerSignature =
     "48 89 5C 24 18 55 57 41 56 48 81 EC 20 01 00 00 44 8B F2 4C 8D 05 ?? ?? ?? ?? "
     "48 8B E9 4C 8B C9 BA 00 01 00 00"; // FUN_1400a8090's own real prologue --
@@ -12859,8 +12885,8 @@ constexpr const char* kAssetRegisterSignature =
     "40 53 55 56 57 41 54 41 56 48 83 EC 38 48 8B 02 4C 8B E2 48 63 E9 "
     "48 8D 4C 24 20 89 6C 24 20 48 89 44 24 28"; // FUN_1400a69d0's own real prologue.
 
-CRITICAL_SECTION g_zoneIndexRaceLockX64;
-bool g_zoneIndexRaceLockInitX64 = false;
+volatile LONG g_zoneIndexGenerationX64 = 0; // even = stable, odd = writer's real call
+    // currently in progress. Never a lock -- see this section's own header comment.
 
 using ZoneLoadWorkerFnX64 = long long(__fastcall*)(long long param1, uint32_t param2);
 using AssetRegisterFnX64 = void*(__fastcall*)(uint32_t param1, void* param2);
@@ -12869,27 +12895,26 @@ AssetRegisterFnX64 g_realAssetRegisterX64 = nullptr;
 
 long long __fastcall Hook_ZoneLoadWorkerX64(long long param1, uint32_t param2)
 {
-    EnterCriticalSection(&g_zoneIndexRaceLockX64);
+    InterlockedIncrement(&g_zoneIndexGenerationX64); // -> odd: never blocks, never waits
     long long result = g_realZoneLoadWorkerX64(param1, param2);
-    LeaveCriticalSection(&g_zoneIndexRaceLockX64);
+    InterlockedIncrement(&g_zoneIndexGenerationX64); // -> even
     return result;
 }
 
 void* __fastcall Hook_AssetRegisterX64(uint32_t param1, void* param2)
 {
-    EnterCriticalSection(&g_zoneIndexRaceLockX64);
-    void* result = g_realAssetRegisterX64(param1, param2);
-    LeaveCriticalSection(&g_zoneIndexRaceLockX64);
-    return result;
+    // Bounded, non-blocking: delay entry only until the writer isn't actively
+    // mid-update. Never retries the real call (see header comment for why), never
+    // waits on anything the writer could itself be blocked on.
+    for (int i = 0; i < 1000; ++i) {
+        if ((g_zoneIndexGenerationX64 & 1) == 0) break;
+        Sleep(0);
+    }
+    return g_realAssetRegisterX64(param1, param2);
 }
 
 void InstallZoneIndexRaceFixX64()
 {
-    if (!g_zoneIndexRaceLockInitX64) {
-        InitializeCriticalSection(&g_zoneIndexRaceLockX64);
-        g_zoneIndexRaceLockInitX64 = true;
-    }
-
     SigScan::Result writerResult = SigScan::FindPatternInMainModule(kZoneLoadWorkerSignature);
     if (!writerResult.found) {
         LogFromController("[x64-zone-race-fix] FATAL: zone-load-worker signature did not resolve -- "
@@ -12935,10 +12960,11 @@ void InstallZoneIndexRaceFixX64()
         return;
     }
 
-    char buf[280];
+    char buf[300];
     sprintf_s(buf, "[x64-zone-race-fix] installed -- zone-load worker @ 0x%llX, asset-register @ 0x%llX, "
-        "now mutually exclusive via a dedicated lock (closes the real native zone-index race on "
-        "_DAT_140c7573c, see this hook's own header comment for the full finding).",
+        "now coordinated via a non-blocking seqlock-style generation counter (never a lock -- closes "
+        "the real native zone-index race on _DAT_140c7573c without any risk of deadlocking against "
+        "the writer's own internal wait loop; see this hook's own header comment for the full finding).",
         static_cast<unsigned long long>(writerResult.address), static_cast<unsigned long long>(readerResult.address));
     LogFromController(buf);
 }
