@@ -72,7 +72,6 @@ namespace dxvk {
     this->seamlessCubes                 = config.getOption<bool>        ("d3d9.seamlessCubes",                 false);
     this->textureMemory                 = config.getOption<int32_t>     ("d3d9.textureMemory",                 100) << 20;
     this->deviceLossOnFocusLoss         = config.getOption<bool>        ("d3d9.deviceLossOnFocusLoss",         false);
-    this->iw5RenderPassBridge           = config.getOption<bool>        ("d3d9.iw5RenderPassBridge",           false);
     this->samplerLodBias                = config.getOption<float>       ("d3d9.samplerLodBias",                0.0f);
     this->clampNegativeLodBias          = config.getOption<bool>        ("d3d9.clampNegativeLodBias",          false);
     this->countLosableResources         = config.getOption<bool>        ("d3d9.countLosableResources",         true);

@@ -707,7 +707,6 @@ namespace dxvk {
   struct Direct3DState9 : public D3D9DeviceState {
 
     std::array<Com<D3D9Surface, false>, caps::MaxSimultaneousRenderTargets> renderTargets;
-    int32_t engineRenderTargetId = -1;
     Com<D3D9Surface, false> depthStencil;
 
   };
