@@ -12701,6 +12701,57 @@ struct LevelPreloadQueueNode
 };
 LevelPreloadQueueNode* g_levelPreloadQueueHead = nullptr;
 LevelPreloadQueueNode* g_levelPreloadQueueTail = nullptr;
+
+// Real, empirically-resolved "not yet loaded" sentinel (2026-09-30). The
+// [x64-findorload-rawdump] diagnostic settled this decisively: offset 0 of
+// FindOrLoadAsset's returned per-type object is NOT null for a freshly
+// registered, not-yet-loaded image -- it's a SHARED, CONSTANT pointer (the
+// same exact value, e.g. 0x6F09D060, across 30 real samples spanning wildly
+// different image names) to what is almost certainly one shared default/
+// placeholder texture object every unloaded image temporarily points at.
+// The original `!= nullptr` check for `alreadyLoaded` therefore evaluated
+// true for every single resolve, every time -- explaining why the real
+// proactive force-load trigger had fired ZERO times across full real
+// sessions despite thousands of names resolving successfully. Resolved
+// dynamically at runtime (never hardcoded) via a deliberately-fake probe
+// name guaranteed to never be a real registered asset, so this stays
+// correct across ASLR/different launches rather than trusting one
+// hardcoded address. The one real, permanent cost: this registers one
+// genuinely bogus entry in the real image pool for the rest of the
+// session -- negligible against the pool's real capacity (4448, or 8448
+// with ImagePoolRealExpansion's default +4000). Used by BOTH real
+// proactive-preload mechanisms in this file (the table-walk-based
+// QueueLevelImagePreloadX64 below, and the name-driven
+// PumpLevelImageNameResolveX64 further down) -- they share this exact bug.
+void* g_placeholderImageDataX64 = nullptr;
+bool g_placeholderImageDataResolveAttempted = false;
+
+void EnsurePlaceholderImageDataResolvedX64()
+{
+    if (g_placeholderImageDataResolveAttempted) return;
+    g_placeholderImageDataResolveAttempted = true;
+    if (g_realFindOrLoadAssetX64 == nullptr) return;
+
+    void* placeholderObj = nullptr;
+    __try {
+        placeholderObj = g_realFindOrLoadAssetX64(kFindOrLoadAssetImageTypeX64,
+            "ncp_deliberately_nonexistent_placeholder_probe_9f3a7c21", 1);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        placeholderObj = nullptr;
+    }
+    if (placeholderObj == nullptr) return;
+
+    __try {
+        g_placeholderImageDataX64 = *reinterpret_cast<void* const*>(placeholderObj);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_placeholderImageDataX64 = nullptr;
+        return;
+    }
+    char buf[200];
+    sprintf_s(buf, "[x64-level-preload] resolved the real 'not yet loaded' placeholder sentinel: %p",
+        g_placeholderImageDataX64);
+    LogFromController(buf);
+}
 int g_levelPreloadQueuedCount = 0;
 int g_levelPreloadTriggeredCount = 0;
 
@@ -12718,6 +12769,9 @@ void QueueLevelImagePreloadX64()
         LogFromController("[x64-level-preload] skipped -- asset-pool globals or trigger function not resolved.");
         return;
     }
+    EnsurePlaceholderImageDataResolvedX64(); // this function may run before the
+        // name-driven pump ever does -- make sure the sentinel is resolved
+        // regardless of which proactive-preload mechanism runs first.
 
     int queuedThisPass = 0;
     for (int i = 1; i < kAssetPoolSlotCountX64; ++i) {
@@ -12726,9 +12780,20 @@ void QueueLevelImagePreloadX64()
         void* dataPtr = *reinterpret_cast<void* const*>(slot + 0x08);
         if (dataPtr == nullptr || assetType != kFindOrLoadAssetImageTypeX64) continue;
 
+        // Real fix (2026-09-30, known_issues_x64.md): offset 0 is NOT null for a
+        // freshly-registered, not-yet-loaded image -- it's a shared, constant
+        // "default placeholder" pointer every unloaded image temporarily points
+        // at (confirmed via the [x64-findorload-rawdump] diagnostic, 30 real
+        // samples, identical value across wildly different names). The old
+        // `!= nullptr` check evaluated true for every image, meaning this whole
+        // proactive-preload pass never actually queued anything real. Compare
+        // against the real, runtime-resolved placeholder sentinel instead --
+        // see EnsurePlaceholderImageDataResolvedX64's own header comment.
         bool alreadyLoaded = true;
         __try {
-            alreadyLoaded = (*reinterpret_cast<void* const*>(dataPtr) != nullptr);
+            void* firstField = *reinterpret_cast<void* const*>(dataPtr);
+            alreadyLoaded = (firstField != nullptr) &&
+                (g_placeholderImageDataX64 == nullptr || firstField != g_placeholderImageDataX64);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             continue; // can't safely inspect this slot -- skip it rather than guess
         }
@@ -12935,6 +13000,7 @@ void PumpLevelImageNameResolveX64()
         // skip this frame's proactive fetch work entirely rather than keep piling
         // on more real native image loads. See this gate's own header comment.
 
+    EnsurePlaceholderImageDataResolvedX64();
     PopulatePendingNamesFromCarriedOverX64();
     if (g_pendingNameHead == nullptr) return;
 
@@ -12988,9 +13054,15 @@ void PumpLevelImageNameResolveX64()
                 ++s_rawDumpCount;
             }
 
+            // Real fix (2026-09-30) -- see EnsurePlaceholderImageDataResolvedX64's
+            // own header comment for the full [x64-findorload-rawdump]-confirmed
+            // finding: offset 0 is a shared placeholder pointer, not null, for a
+            // genuinely unloaded image. Compare against the real sentinel instead.
             bool alreadyLoaded = true;
             __try {
-                alreadyLoaded = (*reinterpret_cast<void* const*>(dataPtr) != nullptr);
+                void* firstField = *reinterpret_cast<void* const*>(dataPtr);
+                alreadyLoaded = (firstField != nullptr) &&
+                    (g_placeholderImageDataX64 == nullptr || firstField != g_placeholderImageDataX64);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 alreadyLoaded = true; // can't safely inspect -- skip rather than guess
             }
