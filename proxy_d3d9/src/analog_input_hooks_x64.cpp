@@ -12550,6 +12550,14 @@ long long g_imagePoolValidPopCountX64 = 0; // real running count of successful (
 // issue #13 already identified as the correct, safe failure mode, instead of
 // a wild-pointer crash. This makes the observable failure mode identical to
 // what a player would see if the pool exhausted normally, not a new one.
+// Forward declarations -- real definitions live further down this file,
+// alongside InstallZoneIndexRaceFixX64 (2026-10-01), but the corruption-detection
+// log line below (Hook_ImagePoolAllocX64) needs to reference them to correlate
+// the two findings in one place.
+extern volatile LONG g_zoneLoadWorkerCallCountX64;
+extern volatile LONG g_assetRegisterCallCountX64;
+extern volatile LONG g_assetRegisterSpinObservedCountX64;
+
 constexpr uintptr_t kPerTypeAllocFnTableRvaX64 = 0x4c2c80; // real per-type ALLOCATE
     // (pop) function-pointer table -- PTR_LAB_1404c2c80 in the decompile,
     // resolved the same non-hardcoded way as every other per-type table this
@@ -12575,16 +12583,18 @@ void* __fastcall Hook_ImagePoolAllocX64(void* headAddrPtr)
     uintptr_t hi = lo + g_imagePoolExpandedBufferBytesX64;
     uintptr_t o = reinterpret_cast<uintptr_t>(obj);
     if (o < lo || o >= hi) {
-        char buf[600]; // generous margin, per this project's own standing lesson
-            // (CLAUDE.md's recurring "buffer sized by eyeballing, not computing the
-            // real worst-case output" bug class) -- this literal alone is ~350 bytes
-            // before any %p substitution.
+        char buf[700]; // generous margin -- computed, not eyeballed (see this
+            // project's own recurring sprintf_s lesson, now hit six times).
         sprintf_s(buf, "[x64-image-pool-expand] CRITICAL: corrupted free-list pop -- popped "
             "object %p is OUTSIDE the expanded pool's own real range [%p, %p) after %lld real "
-            "valid pops since construction. Returning NULL instead of a wild pointer -- the "
-            "caller's own existing fatal-error path takes over from here (same clean, contained "
-            "stop the native 4448-object limit already has), not a memory-corruption crash.",
-            obj, reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi), g_imagePoolValidPopCountX64);
+            "valid pops since construction. zoneLoadWorkerCalls=%ld assetRegisterCalls=%ld "
+            "assetRegisterRaceWindowObserved=%ld (see InstallZoneIndexRaceFixX64's own header "
+            "comment -- if the race count is 0, the zone-index race theory is NOT what's causing "
+            "this specific corruption). Returning NULL instead of a wild pointer -- the caller's "
+            "own existing fatal-error path takes over from here (same clean, contained stop the "
+            "native 4448-object limit already has), not a memory-corruption crash.",
+            obj, reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi), g_imagePoolValidPopCountX64,
+            g_zoneLoadWorkerCallCountX64, g_assetRegisterCallCountX64, g_assetRegisterSpinObservedCountX64);
         LogFromController(buf);
         return nullptr;
     }
@@ -12893,8 +12903,26 @@ using AssetRegisterFnX64 = void*(__fastcall*)(uint32_t param1, void* param2);
 ZoneLoadWorkerFnX64 g_realZoneLoadWorkerX64 = nullptr;
 AssetRegisterFnX64 g_realAssetRegisterX64 = nullptr;
 
+// Real, live diagnostic counters (2026-10-01) -- the pop-count-vs-corruption
+// correlation stayed roughly unchanged (pop #1974 vs. the earlier 2000-5400
+// range) after this fix shipped, which is NOT what a meaningfully-closed race
+// should look like. Before assuming the fix needs more tuning, confirm the
+// most basic fact this session's own log can't currently answer: is the
+// database thread / zone-load path even ACTIVE during a session that still
+// corrupts, and does the reader hook ever actually observe the writer
+// mid-update (i.e. does the real race window ever get hit at all)? If
+// g_zoneLoadWorkerCallCountX64 is 0, this whole mechanism is irrelevant to
+// this specific corruption and the root-cause theory needs revisiting, not
+// the fix's own timing precision.
+volatile LONG g_zoneLoadWorkerCallCountX64 = 0;
+volatile LONG g_assetRegisterCallCountX64 = 0;
+volatile LONG g_assetRegisterSpinObservedCountX64 = 0; // real count of calls where
+    // the reader actually saw an odd (writer-in-progress) generation at least once
+    // before proceeding -- i.e. the race window was genuinely, observably live.
+
 long long __fastcall Hook_ZoneLoadWorkerX64(long long param1, uint32_t param2)
 {
+    InterlockedIncrement(&g_zoneLoadWorkerCallCountX64);
     InterlockedIncrement(&g_zoneIndexGenerationX64); // -> odd: never blocks, never waits
     long long result = g_realZoneLoadWorkerX64(param1, param2);
     InterlockedIncrement(&g_zoneIndexGenerationX64); // -> even
@@ -12903,11 +12931,13 @@ long long __fastcall Hook_ZoneLoadWorkerX64(long long param1, uint32_t param2)
 
 void* __fastcall Hook_AssetRegisterX64(uint32_t param1, void* param2)
 {
+    InterlockedIncrement(&g_assetRegisterCallCountX64);
     // Bounded, non-blocking: delay entry only until the writer isn't actively
     // mid-update. Never retries the real call (see header comment for why), never
     // waits on anything the writer could itself be blocked on.
     for (int i = 0; i < 1000; ++i) {
         if ((g_zoneIndexGenerationX64 & 1) == 0) break;
+        if (i == 0) InterlockedIncrement(&g_assetRegisterSpinObservedCountX64);
         Sleep(0);
     }
     return g_realAssetRegisterX64(param1, param2);
