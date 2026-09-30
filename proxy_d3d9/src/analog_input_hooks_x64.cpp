@@ -12712,44 +12712,39 @@ LevelPreloadQueueNode* g_levelPreloadQueueTail = nullptr;
 // The original `!= nullptr` check for `alreadyLoaded` therefore evaluated
 // true for every single resolve, every time -- explaining why the real
 // proactive force-load trigger had fired ZERO times across full real
-// sessions despite thousands of names resolving successfully. Resolved
-// dynamically at runtime (never hardcoded) via a deliberately-fake probe
-// name guaranteed to never be a real registered asset, so this stays
-// correct across ASLR/different launches rather than trusting one
-// hardcoded address. The one real, permanent cost: this registers one
-// genuinely bogus entry in the real image pool for the rest of the
-// session -- negligible against the pool's real capacity (4448, or 8448
-// with ImagePoolRealExpansion's default +4000). Used by BOTH real
-// proactive-preload mechanisms in this file (the table-walk-based
-// QueueLevelImagePreloadX64 below, and the name-driven
-// PumpLevelImageNameResolveX64 further down) -- they share this exact bug.
+// sessions despite thousands of names resolving successfully.
+//
+// REVERSED same day (round 2): the first version of this fix resolved the
+// sentinel via a deliberately-fake probe name guaranteed not to be a real
+// asset -- live-confirmed to FREEZE the game before it even reached the
+// main menu (frame 2 never advanced). The real native `FindOrLoadAsset`
+// (`FUN_1400a5a20`) has real retry/wait loops in its own decompiled body;
+// a name with no real backing `.iwi` file on disk at all almost certainly
+// takes a fundamentally different, much worse path (a genuine failed-disk-
+// read retry loop) than a REAL name that simply hasn't been touched yet
+// this session -- an assumption this project made without verifying it,
+// the same mistake this whole investigation exists to stop repeating.
+// Fixed by removing the fake-probe call entirely: the sentinel is now
+// captured OPPORTUNISTICALLY from the very first REAL, already-being-
+// processed dataPtr either proactive-preload mechanism sees this session
+// (see TryCapturePlaceholderSentinelX64 below) -- never a name this
+// project invents itself, so it can never touch a code path real organic
+// play wouldn't also reach. Worst case if the very first real name happens
+// to already be loaded (a wrong captured "sentinel"): the trigger simply
+// fails to fire for that one mismatch, the same already-known-safe
+// degraded behavior this project shipped before any of this investigation
+// started -- never a new crash or freeze.
 void* g_placeholderImageDataX64 = nullptr;
-bool g_placeholderImageDataResolveAttempted = false;
+bool g_placeholderImageDataCaptured = false;
 
-void EnsurePlaceholderImageDataResolvedX64()
+void TryCapturePlaceholderSentinelX64(void* firstFieldOfRealDataPtr)
 {
-    if (g_placeholderImageDataResolveAttempted) return;
-    g_placeholderImageDataResolveAttempted = true;
-    if (g_realFindOrLoadAssetX64 == nullptr) return;
-
-    void* placeholderObj = nullptr;
-    __try {
-        placeholderObj = g_realFindOrLoadAssetX64(kFindOrLoadAssetImageTypeX64,
-            "ncp_deliberately_nonexistent_placeholder_probe_9f3a7c21", 1);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        placeholderObj = nullptr;
-    }
-    if (placeholderObj == nullptr) return;
-
-    __try {
-        g_placeholderImageDataX64 = *reinterpret_cast<void* const*>(placeholderObj);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        g_placeholderImageDataX64 = nullptr;
-        return;
-    }
+    if (g_placeholderImageDataCaptured) return;
+    g_placeholderImageDataCaptured = true;
+    g_placeholderImageDataX64 = firstFieldOfRealDataPtr;
     char buf[200];
-    sprintf_s(buf, "[x64-level-preload] resolved the real 'not yet loaded' placeholder sentinel: %p",
-        g_placeholderImageDataX64);
+    sprintf_s(buf, "[x64-level-preload] opportunistically captured the real 'not yet loaded' "
+        "placeholder sentinel from the first real resolve this session: %p", g_placeholderImageDataX64);
     LogFromController(buf);
 }
 int g_levelPreloadQueuedCount = 0;
@@ -12769,10 +12764,6 @@ void QueueLevelImagePreloadX64()
         LogFromController("[x64-level-preload] skipped -- asset-pool globals or trigger function not resolved.");
         return;
     }
-    EnsurePlaceholderImageDataResolvedX64(); // this function may run before the
-        // name-driven pump ever does -- make sure the sentinel is resolved
-        // regardless of which proactive-preload mechanism runs first.
-
     int queuedThisPass = 0;
     for (int i = 1; i < kAssetPoolSlotCountX64; ++i) {
         const uint8_t* slot = g_assetSlotArrayX64 + static_cast<size_t>(i) * kAssetPoolSlotStrideX64;
@@ -12788,7 +12779,13 @@ void QueueLevelImagePreloadX64()
         // `!= nullptr` check evaluated true for every image, meaning this whole
         // proactive-preload pass never actually queued anything real. Compare
         // against the real, runtime-resolved placeholder sentinel instead --
-        // see EnsurePlaceholderImageDataResolvedX64's own header comment.
+        // see TryCapturePlaceholderSentinelX64's own header comment. This
+        // function walks the FULL registered-asset table (many already
+        // genuinely loaded), so it deliberately does NOT opportunistically
+        // capture the sentinel itself -- the name-driven pump below, which
+        // only ever sees our own speculative, likely-still-unloaded fetches,
+        // is the safer source and runs first in practice (every frame vs.
+        // only on a map change).
         bool alreadyLoaded = true;
         __try {
             void* firstField = *reinterpret_cast<void* const*>(dataPtr);
@@ -13000,7 +12997,6 @@ void PumpLevelImageNameResolveX64()
         // skip this frame's proactive fetch work entirely rather than keep piling
         // on more real native image loads. See this gate's own header comment.
 
-    EnsurePlaceholderImageDataResolvedX64();
     PopulatePendingNamesFromCarriedOverX64();
     if (g_pendingNameHead == nullptr) return;
 
@@ -13054,13 +13050,18 @@ void PumpLevelImageNameResolveX64()
                 ++s_rawDumpCount;
             }
 
-            // Real fix (2026-09-30) -- see EnsurePlaceholderImageDataResolvedX64's
+            // Real fix (2026-09-30) -- see TryCapturePlaceholderSentinelX64's
             // own header comment for the full [x64-findorload-rawdump]-confirmed
             // finding: offset 0 is a shared placeholder pointer, not null, for a
-            // genuinely unloaded image. Compare against the real sentinel instead.
+            // genuinely unloaded image. Compare against the real sentinel instead,
+            // opportunistically capturing it from the first real resolve this
+            // session sees (this pump's own speculative fetches are the safest
+            // real source -- see that function's own header comment for why the
+            // original fake-probe-name approach was reverted).
             bool alreadyLoaded = true;
             __try {
                 void* firstField = *reinterpret_cast<void* const*>(dataPtr);
+                if (firstField != nullptr) TryCapturePlaceholderSentinelX64(firstField);
                 alreadyLoaded = (firstField != nullptr) &&
                     (g_placeholderImageDataX64 == nullptr || firstField != g_placeholderImageDataX64);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
