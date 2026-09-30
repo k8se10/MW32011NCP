@@ -7989,6 +7989,14 @@ void DrawTextureCacheStatusBar(void* device)
 
 HRESULT WINAPI Hook_EndScene(void* device)
 {
+    // Set inside the map-change-detection block below, consumed AFTER the
+    // real g_origEndScene call further down this same function -- declared
+    // here at function scope (not nested) so both sites can see it. See the
+    // consumption site's own comment for why (2026-09-30, a real live boot
+    // freeze forced moving every proactive-preload call to after frame
+    // presentation, not before it).
+    static bool s_deferredQueueLevelPreload = false;
+
     // 2026-09-24 -- real render-thread diagnostic, renderer_architecture_map.md
     // section 4/6's own still-open question ("whether the render backend runs on
     // its own thread on PC"). Logs only on a real CHANGE of calling thread ID (not
@@ -8140,18 +8148,11 @@ HRESULT WINAPI Hook_EndScene(void* device)
                 // 2026-09-29, the actual "hijack" step -- queues every not-yet-loaded
                 // image this level's own asset table references for proactive preload.
                 // A no-op unless [Video] ProactiveLevelTexturePreload=1 (default OFF).
-                // PumpLevelImagePreloadX64_Exported() (below, every frame) drains this
-                // queue a few entries at a time.
-                QueueLevelImagePreloadX64_Exported();
+                // Deferred to after the real EndScene call below (2026-09-30) --
+                // see that call site's own comment.
+                s_deferredQueueLevelPreload = true;
             }
         }
-
-        // 2026-09-29, drains a few queued proactive-preload entries per frame
-        // (see QueueLevelImagePreloadX64_Exported above) -- a real no-op, cheap
-        // early-out when the feature is disabled or the queue is empty.
-        PumpLevelImagePreloadX64_Exported();
-        PumpLevelImageNameResolveX64_Exported(); // 2026-09-29, name-driven fetch --
-            // see its own header comment (analog_input_hooks_x64.cpp).
 
         if ((s_frameCounter % 30) == 0 || frameMs >= 40.0) {
             // 2026-09-26: direct user report -- "cl paused flag doesnt work
@@ -8522,6 +8523,28 @@ HRESULT WINAPI Hook_EndScene(void* device)
 #if defined(_M_X64) || defined(_WIN64)
     if (g_modConfig.gpuSyncTimingLogging) GpuSyncMarkX64("frame-end");
 #endif
+
+    // Real fix (2026-09-30), moved here from BEFORE g_origEndScene above after
+    // a real, live-confirmed boot freeze: the proactive-preload trigger calls
+    // a real native file load synchronously -- a genuinely uncached first load
+    // of a real multi-megabyte .iwi file blocked the frame for 1.3+ seconds
+    // (diskReadOpsThisSecond spiked to 117354 at the exact frame), and since
+    // the old call site ran BEFORE the real EndScene/Present call-through,
+    // that block delayed frame presentation itself -- the game looked
+    // completely frozen rather than just hitching between frames. Running
+    // these here instead means any blocking I/O happens strictly AFTER the
+    // current frame has already been presented -- the visible frame already
+    // reached the screen; only the return to the game's own per-frame loop
+    // is delayed, the same class of stall a real disk-bound native asset
+    // load would cause anyway. See known_issues_x64.md issue #19's newest
+    // round for the complete incident record.
+    if (s_deferredQueueLevelPreload) {
+        s_deferredQueueLevelPreload = false;
+        QueueLevelImagePreloadX64_Exported();
+    }
+    PumpLevelImagePreloadX64_Exported();
+    PumpLevelImageNameResolveX64_Exported(); // 2026-09-29, name-driven fetch --
+        // see its own header comment (analog_input_hooks_x64.cpp).
 
     return gpuSyncHr;
 }
