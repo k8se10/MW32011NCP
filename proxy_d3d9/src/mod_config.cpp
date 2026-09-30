@@ -878,6 +878,12 @@ void WriteDefaultConfig(const char* path)
         "; real texture's OWN original resolution (e.g. '4x'), not a fixed target --\n"
         "; GfxImage assets span everything from 1x1 utility textures to large world\n"
         "; diffuse maps, so a single absolute target would be wrong for most of them.\n"
+        "; GPU INTENSITY NOTE (2026-10-01): this is the real master switch for this\n"
+        "; project's whole runtime AI (real-ESRGAN) texture-upscale pipeline -- any\n"
+        "; value above '1x' is genuinely, significantly GPU-intensive. Only\n"
+        "; recommended at '4x' on an RTX 2080 or better; on weaker GPUs expect real\n"
+        "; hitching while a session is actively caching, and consider a lower\n"
+        "; multiplier or leaving this at '1x' entirely.\n"
         "TextureRenderRes=%s\n"
         "; CustomAssetOverrides (2026-09-28) -- real, general, zero-code-change\n"
         "; custom asset substitution: drop a real .iwi file into custom_assets\\\n"
@@ -1283,7 +1289,10 @@ void WriteDefaultConfig(const char* path)
         "; auto-switches to DLAA for that session only, with an on-screen notice, and\n"
         "; never rewrites this value itself.\n"
         "DLSSModeX64=%d\n"
-        "; Real, root-cause fix (2026-09-29) for the native engine's own fixed 26MB\n"
+        "[Video]\n"
+        "; Real, load-bearing part of the runtime AI texture-upscale pipeline, not an\n"
+        "; experimental/dev-only knob (promoted from [Experimental] 2026-10-01) -- real,\n"
+        "; root-cause fix (2026-09-29) for the native engine's own fixed 26MB\n"
         "; \"loose-image scratch\" pool (memory_ceiling_analysis.md limit #2), sized for\n"
         "; vanilla asset dimensions -- a single 4x-upscaled world texture (e.g. ~32MB)\n"
         "; already exceeds it, triggering the native \"Needed to allocate at least %%.1f\n"
@@ -1291,11 +1300,15 @@ void WriteDefaultConfig(const char* path)
         "; replacement of the real allocator function. Default 256 (vanilla is 26,\n"
         "; clamped 26..2048).\n"
         "ImageScratchMB=%d\n"
+        "[Experimental]\n"
         "; Real, hardware-scalable worker-thread count for the texture-upscale-cache\n"
-        "; background pipeline (2026-09-29). Per-texture latency is dominated by real\n"
-        "; tiled GPU inference cost -- a stronger GPU (e.g. an RTX 2080 Ti) can safely\n"
-        "; run more concurrent submissions than this conservative default. Default 3,\n"
-        "; clamped 1..16.\n"
+        "; background pipeline (2026-09-29). Largely made redundant by a later change\n"
+        "; (2026-10-01): real GPU submission inside the upscale pipeline is now\n"
+        "; serialized to one at a time regardless of this setting -- only CPU-side\n"
+        "; decode/tiling/compositing/file I/O actually stay parallel across worker\n"
+        "; threads now, so raising this mostly adds modest CPU-side overlap, not real\n"
+        "; GPU throughput. The real GPU-intensity knob/recommendation now lives on\n"
+        "; TextureRenderRes itself, under [Video] above. Default 3, clamped 1..16.\n"
         "TextureUpscaleWorkerThreads=%d\n"
         "; Real dev/QoL toggle (2026-09-29): closes the game process automatically\n"
         "; once the texture-upscale-cache backlog is genuinely finished -- no job\n"
@@ -1323,7 +1336,10 @@ void WriteDefaultConfig(const char* path)
         "; committed once via VirtualAlloc at startup. Default more than doubles\n"
         "; real capacity for a trivial one-time ~174KB.\n"
         "ImagePoolExtraCapacity=%d\n"
-        "; Real, configurable safety ceiling (percent, 10-99, default 80), checked\n"
+        "[Video]\n"
+        "; Real, load-bearing safety ceiling for the runtime texture-upscale pipeline,\n"
+        "; not an experimental/dev-only knob (promoted from [Experimental] 2026-10-01) --\n"
+        "; real, configurable safety ceiling (percent, 10-99, default 80), checked\n"
         "; against BOTH real system RAM load (GlobalMemoryStatusEx) AND real VRAM\n"
         "; usage (driver-authoritative DXGI QueryVideoMemoryInfo) before the\n"
         "; name-driven proactive texture-fetch pump does more risky work. Added\n"
@@ -1334,6 +1350,7 @@ void WriteDefaultConfig(const char* path)
         "; either real signal is at or above this percent, the fetch pump stops\n"
         "; taking on new work for that frame rather than continuing unbounded.\n"
         "MaxMemoryUsagePercentForProactiveFeatures=%d\n"
+        "[Experimental]\n"
         "; Real groundwork only, not a working evaluate path yet (DLSS 5 \"Neural\n"
         "; Rendering,\" officially GeForce RTX 50-series/Blackwell only per NVIDIA's own\n"
         "; docs). 0 = off (default), 1 = on -- feature registration/load-status\n"
@@ -1826,8 +1843,8 @@ void LoadModConfig()
     ReadBool(path, "Video", "BulkTexturePrecache", g_modConfig.bulkTexturePrecacheEnabled);
     ReadBool(path, "Video", "ProactiveLevelTexturePreload", g_modConfig.proactiveLevelTexturePreloadEnabled);
     {
-        int v = GetPrivateProfileIntA("Experimental", "ImageScratchMB", g_modConfig.imageScratchMB, path);
-        ClampIntSetting("Experimental", "ImageScratchMB", v, 26, 2048, 256);
+        int v = GetPrivateProfileIntA("Video", "ImageScratchMB", g_modConfig.imageScratchMB, path);
+        ClampIntSetting("Video", "ImageScratchMB", v, 26, 2048, 256);
         g_modConfig.imageScratchMB = v;
     }
     {
@@ -1843,8 +1860,8 @@ void LoadModConfig()
         g_modConfig.imagePoolExtraCapacity = v;
     }
     {
-        int v = GetPrivateProfileIntA("Experimental", "MaxMemoryUsagePercentForProactiveFeatures", g_modConfig.maxMemoryUsagePercentForProactiveFeatures, path);
-        ClampIntSetting("Experimental", "MaxMemoryUsagePercentForProactiveFeatures", v, 10, 99, 80);
+        int v = GetPrivateProfileIntA("Video", "MaxMemoryUsagePercentForProactiveFeatures", g_modConfig.maxMemoryUsagePercentForProactiveFeatures, path);
+        ClampIntSetting("Video", "MaxMemoryUsagePercentForProactiveFeatures", v, 10, 99, 80);
         g_modConfig.maxMemoryUsagePercentForProactiveFeatures = v;
     }
     ReadBool(path, "Video", "FsrSharpenEnabled", g_modConfig.fsrSharpenEnabled);

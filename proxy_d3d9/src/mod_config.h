@@ -931,9 +931,19 @@ struct ModConfig
     // format's own parsing/formatting, matching this project's own established
     // ParseGraphicsApi/GraphicsApiName pattern for a formatted (not plain-integer)
     // config value.
+    //
+    // **GPU intensity note, added 2026-10-01**: this is the real master switch for
+    // this project's whole runtime AI texture-upscale pipeline (real-ESRGAN via
+    // ncnn) -- any value above `1` is genuinely, significantly GPU-intensive, not
+    // a minor cosmetic toggle. Only recommended at `4x` on an RTX 2080 (or better);
+    // on weaker GPUs, expect real hitching while a session is actively caching
+    // (see TextureUpscaleCache's own one-time "expect hitching" warning modal) and
+    // consider a lower multiplier or leaving this at `1` (off) entirely.
     int textureRenderRes = 1;
 
-    // [Experimental] ImageScratchMB (2026-09-29) -- real, root-cause fix for
+    // [Video] ImageScratchMB (2026-09-29, promoted from [Experimental]
+    // 2026-10-01 -- real, load-bearing part of the runtime texture-upscale
+    // pipeline, not an experimental/dev-only knob) -- real, root-cause fix for
     // the native engine's own fixed 26MB "loose-image scratch" bump-allocator
     // pool (FUN_1401ba830, re_notes/x64_migration/memory_ceiling_analysis.md
     // limit #2), sized decades ago for vanilla asset dimensions. Live-reported
@@ -955,15 +965,20 @@ struct ModConfig
     // read from this instead of a fixed compile-time constant). Direct
     // instruction: "add customisable worker threads(hardware makes this a
     // great option) - in my config i want 12(2080 ti hardware so) but for
-    // default should be 3". Per-texture latency here is dominated by real
-    // tiled GPU inference cost (see texture_upscale_ncnn.cpp's kTileMaxDim),
-    // so the right value genuinely depends on the player's own GPU headroom
-    // -- 3 is a conservative default safe on modest hardware, higher values
-    // are a real, informed bet a player with strong GPU headroom (e.g. a
-    // 2080 Ti) can make for themselves. Clamped 1 to 16 in
-    // ReadTextureUpscaleWorkerThreads -- the upper bound is a real sanity
-    // ceiling (each thread is a genuine concurrent GPU submission; this
-    // project has no live throughput data yet justifying more than that).
+    // default should be 3".
+    // **Largely made redundant by a later change, 2026-10-01 note**: the
+    // real GPU (Vulkan compute) submission inside `RunInferenceOnTileRgb`
+    // was subsequently found to need its own serialization -- only one
+    // thread's GPU submission can genuinely run at a time regardless of
+    // this setting; decode/tiling/compositing/file I/O around it are what
+    // actually stay parallel across worker threads now. Raising this past a
+    // small number mostly adds CPU-side overlap, not real GPU throughput --
+    // NOT promoted out of [Experimental] for this reason, and the
+    // "recommended on a 2080 Ti"-class GPU guidance now lives on
+    // `TextureRenderRes` itself (the real GPU-intensity knob) instead of
+    // here. Left in place, not removed, since modest CPU-side gains are
+    // still real; just not the load-bearing GPU scaling knob it was
+    // designed to be. Clamped 1 to 16 in ReadTextureUpscaleWorkerThreads.
     int textureUpscaleWorkerThreads = 3;
 
     // [Experimental] AutoExitOnCacheComplete (2026-09-29) -- real dev/QoL
@@ -1013,7 +1028,8 @@ struct ModConfig
     // capacity for a trivial, one-time ~174KB.
     int imagePoolExtraCapacity = 4000;
 
-    // [Experimental] MaxMemoryUsagePercentForProactiveFeatures (2026-09-29) --
+    // [Video] MaxMemoryUsagePercentForProactiveFeatures (2026-09-29,
+    // promoted from [Experimental] 2026-10-01) --
     // real, configurable safety ceiling (percent, checked against BOTH real
     // system RAM load via GlobalMemoryStatusEx AND real VRAM usage via the
     // driver-authoritative DXGI QueryVideoMemoryInfo query -- see
