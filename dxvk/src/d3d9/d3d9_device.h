@@ -1511,6 +1511,10 @@ namespace dxvk {
         && !m_state.renderTargets[Index]->IsNull();
     }
 
+    inline int32_t GetEngineRenderTargetId() const {
+      return m_state.engineRenderTargetId;
+    }
+
     inline D3D9ShaderMasks VSShaderMasks() const {
       return m_state.vertexShader != nullptr
         ? m_state.vertexShader->GetCommonShader()->GetShaderMask()

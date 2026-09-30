@@ -9,6 +9,11 @@ DXVK build/usage/architecture documentation, entirely unmodified, now lives at
 [`DXVK_UPSTREAM_README.md`](DXVK_UPSTREAM_README.md) instead) — see
 `LICENSE` for DXVK's own real, unchanged license (zlib/libpng).
 
+The optional IW5 render-pass bridge uses upstream MinHook v1.3.4
+(commit `c3fcafdc10146beb5919319d0683e44e3c30d537`) under its BSD 2-Clause
+license; the complete upstream notice and HDE attributions are in
+[`third_party/minhook/LICENSE.txt`](third_party/minhook/LICENSE.txt).
+
 ## Why this fork exists
 
 Forked 2026-09-23, direct instruction, mid-investigation into a real,
@@ -72,16 +77,29 @@ Concretely, this means:
   unrelated game (or an unrelated build of this same game) this DXVK build
   might also end up loaded into, and any patch here can never interfere
   with `MW32011NCP`'s own hooks by assuming a process/game context that
-  isn't actually true at runtime. The real, concrete mechanism for this is
-  not yet built — `MW32011NCP`'s own `game_exe_detect.h`
-  (`GetModuleFileNameA` against the process's own main module, compared
-  case-insensitively against known binary names) is the closest existing
-  precedent and real reference implementation for the same underlying
-  problem, though this fork needs its own, independent version of that
-  logic per the "must not be NCP-reliant" requirement above — real,
-  scoped, not-yet-started work.
+  isn't actually true at runtime. The independent DXVK implementation now
+  includes a bounded SP PE identity gate; its use by the optional bridge
+  remains unverified in a running game. `MW32011NCP`'s own
+  `game_exe_detect.h` (`GetModuleFileNameA` against the process's main
+  module, compared case-insensitively against known binary names) was a
+  reference for the general detection problem, not a dependency.
 
-## Real status, 2026-09-23
+## Current tessellation status, 2026-09-27
+
+The fork has a native Windows x64 Meson baseline build and a separately
+verified Vulkan driver-level TCS/TES pipeline-creation proof, but no
+validated tessellation output. Current source contains an opt-in,
+SP-build-gated experimental D3D9 TCS/TES attempt for eligible indexed
+triangle-list draws in engine target 2. Its fixed-level TES linearly
+interpolates VS outputs (flat subdivision), not PN triangles or smooth
+curvature; target 2 and its buffer/declaration checks do not identify a
+verified static prop. The latest compile fails at
+`src/d3d9/d3d9_tessellation.cpp:182` because `ir::Type::getBaseType()` is
+called without its required argument. The prototype is preserved as
+uncompiled and unvalidated; no game was launched, injected, or deployed.
+See issue #3 in `re_notes/known_issues.md`.
+
+## Historical status, 2026-09-23
 
 - Forked and merged into `MW32011NCP` as a real, history-preserving
   `git subtree` at `dxvk/` (see that repo's `CLAUDE.md`/`AGENTS.md` "Nested
