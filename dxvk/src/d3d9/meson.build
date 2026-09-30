@@ -32,6 +32,7 @@ d3d9_src = [
   'd3d9_common_buffer.cpp',
   'd3d9_buffer.cpp',
   'd3d9_shader.cpp',
+  'd3d9_tessellation.cpp',
   'd3d9_vertex_declaration.cpp',
   'd3d9_query.cpp',
   'd3d9_shader_validator.cpp',
@@ -52,6 +53,19 @@ d3d9_src = [
   'd3d9_shader_analysis.cpp',
 ]
 
+d3d9_include_dirs = [ dxvk_include_path ]
+
+if platform == 'windows'
+  d3d9_include_dirs += [ include_directories('../../third_party/minhook/include') ]
+  d3d9_src += [
+    'iw5_render_target_bridge.cpp',
+    '../../third_party/minhook/src/buffer.c',
+    '../../third_party/minhook/src/hook.c',
+    '../../third_party/minhook/src/trampoline.c',
+    '../../third_party/minhook/src/hde/hde64.c',
+  ]
+endif
+
 d3d9_ld_args      = []
 d3d9_link_depends = []
 
@@ -62,7 +76,7 @@ endif
 
 d3d9_dll = shared_library(dxvk_name_prefix+'d3d9', d3d9_src, glsl_generator.process(d3d9_shaders), d3d9_res,
   dependencies        : [ dxbc_spirv_dep, dxvk_dep ],
-  include_directories : dxvk_include_path,
+  include_directories : d3d9_include_dirs,
   install             : true,
   vs_module_defs      : 'd3d9'+def_spec_ext,
   link_args           : d3d9_ld_args,
