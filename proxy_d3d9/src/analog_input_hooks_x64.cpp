@@ -12739,6 +12739,51 @@ void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
         "contiguous %lld-object buffer (native was %d, +%d extra) -- %zu bytes committed via "
         "VirtualAlloc @ %p.", newCount, count, extra, bytes, pool);
     LogFromController(buf);
+
+    // Real self-check (2026-09-30): corruption was observed firing on
+    // effectively the FIRST real pop, immediately after construction, with
+    // zero real gameplay in between -- and this reproduced identically with
+    // the entire tessellation/render-pass-bridge merge fully reverted
+    // (verified byte-for-byte identical to the pre-merge commit). That
+    // timing rules out a runtime double-release/lifecycle bug (there's no
+    // time for one) and points squarely at construction itself. Walk the
+    // chain we JUST built, before the game ever touches it, and verify it's
+    // actually well-formed: exactly `newCount` reachable nodes, strictly
+    // increasing addresses at the expected stride, terminating in NULL.
+    {
+        long long reached = 0;
+        char* expected = base;
+        bool malformed = false;
+        void* cursor = pool;
+        while (cursor != nullptr && reached < newCount + 4) { // real cap, a few past
+            // newCount so a genuinely malformed/cyclic chain can't hang this check
+            if (cursor != static_cast<void*>(expected)) {
+                char badBuf[400];
+                sprintf_s(badBuf, "[x64-image-pool-expand] SELF-CHECK FAILED: node #%lld is %p, "
+                    "expected %p (stride/order mismatch) -- the chain is malformed IMMEDIATELY "
+                    "after construction, before the game has touched it at all.",
+                    reached, cursor, static_cast<void*>(expected));
+                LogFromController(badBuf);
+                malformed = true;
+                break;
+            }
+            cursor = *reinterpret_cast<void**>(cursor);
+            expected += kImagePoolObjectStrideX64;
+            ++reached;
+        }
+        if (!malformed) {
+            char checkBuf[300];
+            if (reached == newCount && cursor == nullptr) {
+                sprintf_s(checkBuf, "[x64-image-pool-expand] self-check OK: %lld nodes, correct "
+                    "stride, terminates in NULL -- construction is well-formed.", reached);
+            } else {
+                sprintf_s(checkBuf, "[x64-image-pool-expand] SELF-CHECK FAILED: chain reached "
+                    "%lld nodes (expected exactly %lld) before terminating at cursor=%p -- "
+                    "malformed immediately after construction.", reached, newCount, cursor);
+            }
+            LogFromController(checkBuf);
+        }
+    }
 }
 
 void InstallImagePoolExpandHookX64()
