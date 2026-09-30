@@ -12960,7 +12960,11 @@ void InstallZoneIndexRaceFixX64()
         return;
     }
 
-    char buf[300];
+    char buf[600]; // generous margin, computed not eyeballed this time -- the real
+        // literal text alone (before either %llX substitution) is already ~330
+        // bytes; buf[300] crashed the game on every single launch (the same
+        // recurring undersized-sprintf_s bug class this project has now hit six
+        // times, this one self-inflicted in the very fix meant to close a crash).
     sprintf_s(buf, "[x64-zone-race-fix] installed -- zone-load worker @ 0x%llX, asset-register @ 0x%llX, "
         "now coordinated via a non-blocking seqlock-style generation counter (never a lock -- closes "
         "the real native zone-index race on _DAT_140c7573c without any risk of deadlocking against "
