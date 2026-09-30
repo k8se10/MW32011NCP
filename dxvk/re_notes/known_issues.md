@@ -12,7 +12,7 @@ investigation rounds after, `issue #N` cross-reference form.
 
 - [#1](#1-motion-blur-post-process-pass-produces-no-visible-effect) — Motion blur post-process pass produces no visible effect — **Resolved (not a DXVK bug)**
 - [#2](#2-dlss-required-vk_nvx-extensions-never-enabled-on-native-windows) — DLSS-required `VK_NVX_*` extensions never enabled on native Windows — **Partially Resolved**
-- [#3](#3-iw5-tessellation-needs-a-standalone-render-pass-bridge) — IW5 tessellation needs a standalone render-pass bridge — **Investigating**
+- [#3](#3-iw5-tessellation-needs-a-standalone-render-pass-bridge) — IW5 tessellation needs a standalone render-pass bridge — **Investigating (real PN-triangle math now builds clean; never live-tested)**
 
 ---
 
@@ -610,3 +610,71 @@ no draw was captured or identified as a static prop. The separate native
 Vulkan pipeline proof above remains driver-level pipeline-creation evidence
 only. Neither it nor this uncompiled D3D9 attempt demonstrates tessellation
 output in DXVK or MW3.
+
+### Real PN-triangle position bending implemented; the fork now builds clean, 2026-09-30
+
+**Status update: the compile error above is fixed, and the TES has been
+upgraded from flat linear subdivision to genuine PN-triangle (Phong/curved-
+triangle, Vlachos et al. 2001) position bending. Still not live-tested --
+neither this shader code nor the render-pass bridge it depends on has ever
+been loaded into a real game process.**
+
+A real, working native-Windows x64 Meson/MinGW build toolchain (MSYS2 +
+`x86_64-w64-mingw32-gcc`/`g++` 15.2.0 + Meson 1.10.1 + Ninja 1.13.2 +
+`glslangValidator` from the installed Vulkan SDK) was stood up on this
+machine and used to actually build this fork end to end -- the same real
+toolchain-naming mismatch the 2026-09-27 baseline round already documented
+(`ar`/`strip`/`windres` unprefixed vs. the checked-in cross file's
+`x86_64-w64-mingw32-*` names) was worked around with an adapted cross file
+kept outside the repository, matching that round's own precedent.
+
+**The compile error** (`ir::Type::getBaseType()` called without its
+required `memberIdx` argument) was a one-line fix -- confirmed via
+`ir.h`'s own definition that a plain scalar/vector `Type` stores itself as
+a one-member struct internally, so `getBaseType(0u)` is the correct call
+for a non-aggregate type.
+
+**The real upgrade, not just the fix**: `buildEvaluationShader` was
+restructured from a single pass (declare + linearly blend every varying,
+including position) into two passes -- the first declares and loads every
+varying's three real per-control-point corner values and records which
+varying (if any) is `SV_POSITION` and which (if any) has a real `NORMAL`
+semantic; the second computes final output values, using the standard
+linear barycentric blend for every varying EXCEPT position, which -- when
+a real `NORMAL` output exists on the vertex shader -- is evaluated as a
+genuine cubic Bezier surface using the real Vlachos PN-triangle control-
+point construction (`b_ij = (2*Pi + Pj - dot(Pj-Pi, Ni)*Ni) / 3` for the
+six edge points, `b111 = E + (E-V)/2` for the center point, standard
+Bernstein-basis cubic evaluation at the real hardware tessellator's own
+barycentric coordinate). Falls back to the original flat/linear blend for
+position too when no real `NORMAL` output is found (or it has an
+unsupported arity), a safe degradation rather than a hard requirement.
+`w`/`rhw` is linearly blended regardless (bending clip-space `w` has no
+real geometric meaning), matching standard PN-triangle practice of only
+curving the spatial `xyz`.
+
+This is the real "honest first milestone" the original 2026-09-27 handoff
+scoped: bends existing low-poly geometry toward its true normal-implied
+smooth surface using only data the game already has, no displacement/
+heightmap data required. Shader debug names updated from
+`-iw5-flat-tess-*` to `-iw5-pntri-tess-*` to match.
+
+**Build-verified**: the full Meson/Ninja build completed 35/35 targets with
+zero errors, producing a real `d3d9.dll` (10,936,161 bytes,
+`build_x64/src/d3d9/d3d9.dll`).
+
+**What this does NOT establish, honestly bounded, same as every prior
+round**: the render-pass bridge this shader path depends on has still
+never been exercised in a live game process (the 2026-09-27 round's own
+live-capture request was blocked on unavailable approval, and this round
+did not attempt a live launch either). The eligibility heuristics gating
+which draws reach this code path are still conservative approximations,
+not real per-object static-prop classification -- RT2 is a whole scene
+pass, not one object. This built DXVK is also not what the live game
+currently loads: `MW32011NCP`'s own `[Video] GraphicsApi=Vulkan` mode
+loads the separately-vendored, prebuilt, official DXVK v3.1.1 release
+binary (`proxy_d3d9/third_party/dxvk/x64/d3d9.dll`), not this fork's own
+build -- swapping that is a real, separate, deliberate decision this round
+did not make. Real next step, unchanged from the 2026-09-27 round's own
+framing: get one real, live in-game frame through this exact code path
+before any broader claim about tessellation "working."

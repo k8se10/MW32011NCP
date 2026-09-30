@@ -20,8 +20,11 @@ file instead of the normal winevulkan/vulkan-1 search — needed so
 Streamline's own `sl.interposer.dll` can sit in front of DXVK's
 `vkCreateInstance`/`vkCreateDevice` calls for its mandatory swapchain hooks.
 Both off by default, so behavior is unchanged unless set. An opt-in,
-experimental IW5-SP render-pass bridge and an uncompiled D3D9 tessellation
-prototype are also present. The prototype is not a verified working feature.
+experimental IW5-SP render-pass bridge and a D3D9 tessellation prototype are
+also present -- the prototype now builds clean and does genuine PN-triangle
+(Phong) position bending using real per-vertex normals, not flat
+subdivision, but has never been exercised in a live game process. Not a
+verified working feature yet.
 
 ### What's New
 1. **`dxvk.enableNvCudaInteropNative` (default `False`).** Upstream enables
@@ -57,9 +60,12 @@ prototype are also present. The prototype is not a verified working feature.
    can emit rate-limited diagnostics for indexed draws in scene target 2.
    Source also contains an experimental TCS/TES attempt gated by this option,
    target 2, indexed triangle-list draws, and a conservative vertex-layout/
-   buffer eligibility check. It uses a fixed tessellation level and flat
-   barycentric interpolation of VS outputs; it is not PN/smooth curvature,
-   does not identify a verified static prop, and has not compiled or been
+   buffer eligibility check. It uses a fixed tessellation level; position is
+   now bent using real, genuine PN-triangle (Phong/curved-triangle) cubic
+   Bezier evaluation against the real per-vertex normal when the vertex
+   shader has one (falling back to flat/linear blend otherwise), every other
+   varying still uses flat barycentric interpolation. It builds clean as of
+   2026-09-30 but does not identify a verified static prop and has not been
    game-tested. Do not treat it as a working feature. The bridge itself has
    not been live-tested. See `re_notes/known_issues.md` issue #3.
 
@@ -77,10 +83,17 @@ prototype are also present. The prototype is not a verified working feature.
    driver-level pipeline creation only: no draw was issued, no D3D9 frontend
    path was changed, and no game output is claimed. See issue #3 in
    `re_notes/known_issues.md`.
-3. **D3D9 tessellation integration attempt (2026-09-27).** The current
-   source attempts to synthesize per-shader TCS/TES modules and switch an
-   eligible indexed draw to three-control-point patches. The latest Meson
-   compile fails in `d3d9_tessellation.cpp` because
-   `ir::Type::getBaseType()` is called without its required argument. The
-   code is intentionally preserved as an unverified experiment; no game
-   validation or static-prop identification has occurred.
+3. **D3D9 tessellation integration attempt (2026-09-27), fixed and upgraded to real PN-triangle math (2026-09-30).** The current
+   source synthesizes per-shader TCS/TES modules and switches an eligible
+   indexed draw to three-control-point patches. The original 2026-09-27
+   compile failure (`ir::Type::getBaseType()` called without its required
+   argument) is fixed. The TES was also restructured from flat linear
+   interpolation of every VS output into genuine PN-triangle position
+   bending (real Vlachos et al. cubic Bezier control-point construction
+   using the vertex shader's own real NORMAL output, when present) -- the
+   real "honest first milestone" this feature's own original handoff
+   scoped, not the fake/flat placeholder. Build-verified: the full fork
+   builds 35/35 targets clean via a real, working native-Windows
+   Meson/MinGW toolchain. Still an unverified experiment; no game
+   validation or static-prop identification has occurred, and this DXVK
+   build is not what `MW32011NCP` currently loads live.
