@@ -1808,6 +1808,7 @@ void LoadModConfig()
     ReadBool(path, "Gyro", "InvertYaw", g_modConfig.gyroInvertYaw);
     ReadBool(path, "Gyro", "OnlyWhileAds", g_modConfig.gyroOnlyWhileAds);
     ReadGraphicsApi(path, g_modConfig.graphicsApi);
+    ReadBool(path, "Video", "DxvkUseBundledFile", g_modConfig.dxvkUseBundledFile);
     ReadBool(path, "Video", "StreamlineEnabled", g_modConfig.streamlineEnabled);
     {
         int v = GetPrivateProfileIntA("Experimental", "DLSSModeX64", g_modConfig.dlssModeX64, path);

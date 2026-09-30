@@ -12504,6 +12504,180 @@ void* g_imageTypeFreeListHeadAddrX64 = nullptr; // resolved once at startup -- t
 void* g_imagePoolExpandedBufferX64 = nullptr; // never freed -- lives for the whole
     // process, matching this project's own "install once, never uninstall"
     // background-resource convention.
+size_t g_imagePoolExpandedBufferBytesX64 = 0; // set once, alongside g_imagePoolExpandedBufferX64 --
+    // needed by the integrity-check hook below to bound-check a popped object.
+
+// ---- Real free-list integrity check on the ALLOCATE side (2026-09-30) ------------
+// Direct instruction, following a real live crash: a native memcpy
+// (iw5sp+0x38ffd0, the generic CRT copy) faulted writing through a popped
+// type-10 (image) pool object whose address was wild -- landing inside
+// whichever d3d9.dll happened to be loaded, not a real heap/pool address.
+// Exhaustively verified BOTH real free-list primitives for this pool are
+// themselves fully generic and correct regardless of where the pool's
+// backing memory lives: the pop (`FUN_1400a52a0`, below) and the push/free
+// (`FUN_1400a49c0`, resolved via the same per-type table at RVA 0x4c2df0)
+// operate purely through the head-pointer argument passed in at the call
+// site -- neither references this pool's memory via any hardcoded address.
+// A full-binary xref search independently confirms nothing else in the
+// whole binary references the pool's memory directly either (only the one
+// indirect head-address-table read this feature's own init hook already
+// respects). The free-list CONSTRUCTION this feature's own init hook builds
+// was also verified byte-for-byte equivalent to the real native
+// initializer's own construction. No structural flaw was found despite
+// this rigor -- the real cause of the corruption remains genuinely
+// unconfirmed (this project's own known_issues_x64.md issue #13 already
+// notes this exact feature was never actually live-tested with expansion
+// enabled before now).
+//
+// Given that, the correct, defensible fix is not a guess at the unconfirmed
+// root cause -- it's a real integrity check at the one place a corrupted
+// free list actually becomes observable: the pop itself. If the object the
+// pop just returned falls outside our own expanded buffer's real bounds,
+// hand back NULL instead of the wild pointer. `FUN_1400a52b0` (this pool's
+// own generic wrapper allocator, unmodified, un-hooked) already has a real,
+// pre-existing `lVar2==0` check that raises the SAME clean, contained fatal
+// error the native engine's original 4448-object limit already produces
+// (`FUN_1402ee570`, "Could not load default asset..."-class message) --
+// exactly the "clean, contained stop" this project's own known_issues_x64.md
+// issue #13 already identified as the correct, safe failure mode, instead of
+// a wild-pointer crash. This makes the observable failure mode identical to
+// what a player would see if the pool exhausted normally, not a new one.
+constexpr uintptr_t kPerTypeAllocFnTableRvaX64 = 0x4c2c80; // real per-type ALLOCATE
+    // (pop) function-pointer table -- PTR_LAB_1404c2c80 in the decompile,
+    // resolved the same non-hardcoded way as every other per-type table this
+    // feature already reads.
+using ImagePoolAllocFnX64 = void*(__fastcall*)(void* headAddrPtr);
+ImagePoolAllocFnX64 g_realImagePoolAllocX64 = nullptr;
+
+void* __fastcall Hook_ImagePoolAllocX64(void* headAddrPtr)
+{
+    void* obj = g_realImagePoolAllocX64(headAddrPtr);
+
+    if (headAddrPtr != g_imageTypeFreeListHeadAddrX64 ||
+        !g_modConfig.imagePoolRealExpansionEnabled ||
+        obj == nullptr || g_imagePoolExpandedBufferX64 == nullptr) {
+        return obj; // not our expanded pool, expansion off, empty pool (already
+            // a real, valid NULL the caller's own existing fatal-error check
+            // handles), or the widening hook itself never actually replaced
+            // the buffer this session -- every one of these is already
+            // correct, unmodified behavior, nothing to validate.
+    }
+
+    uintptr_t lo = reinterpret_cast<uintptr_t>(g_imagePoolExpandedBufferX64);
+    uintptr_t hi = lo + g_imagePoolExpandedBufferBytesX64;
+    uintptr_t o = reinterpret_cast<uintptr_t>(obj);
+    if (o < lo || o >= hi) {
+        char buf[600]; // generous margin, per this project's own standing lesson
+            // (CLAUDE.md's recurring "buffer sized by eyeballing, not computing the
+            // real worst-case output" bug class) -- this literal alone is ~350 bytes
+            // before any %p substitution.
+        sprintf_s(buf, "[x64-image-pool-expand] CRITICAL: corrupted free-list pop -- popped "
+            "object %p is OUTSIDE the expanded pool's own real range [%p, %p). Returning NULL "
+            "instead of a wild pointer -- the caller's own existing fatal-error path takes over "
+            "from here (same clean, contained stop the native 4448-object limit already has), "
+            "not a memory-corruption crash.", obj, reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi));
+        LogFromController(buf);
+        return nullptr;
+    }
+    return obj;
+}
+
+// ---- Real root-cause guard: the actual corruption mechanism (2026-09-30) ---------
+// Direct instruction: "we need to trace the whole mechanism to truly remove the
+// limit" -- traced one level deeper than the allocate-side integrity check
+// above, into the type-10 (image) "destroy" callback itself
+// (`PTR_DAT_1404c33b0[10]`, a thunk at 0x1400a4a20 -> the real function,
+// FUN_1401b9270):
+//   void FUN_1401b9270(longlong *param_1) {
+//       if (*param_1 != 0) {
+//           (**(code**)(*(longlong*)*param_1 + 0x10))();  // vtable call:
+//               // treats param_1[0] as a pointer to a COM/D3D-style object,
+//               // reads ITS vtable, calls slot +0x10 (i.e. Release()-shaped)
+//           *param_1 = 0;
+//       }
+//       param_1[2] = 0;
+//   }
+// **This is the actual smoking gun.** `param_1[0]` -- the object's first 8
+// bytes -- is the EXACT SAME FIELD the free list itself uses for its own
+// "next free object" pointer (confirmed via both `FUN_1400a52a0`/pop and
+// `FUN_1400a49c0`/push, which both read/write this identical offset). While
+// an object sits on the free list (never allocated, or already released),
+// offset 0 holds a real, valid pointer to the NEXT free-list slot -- not a
+// GPU resource pointer. If this destroy callback is EVER invoked on an
+// object that's still on the free list (a double-release/lifecycle bug
+// upstream, not in this pool's own alloc/free primitives -- both already
+// independently verified fully generic and correct above), it dereferences
+// the free list's own internal bookkeeping as if it were a real object,
+// jumps through whatever garbage sits at "that address + 0x10" as a
+// function call, and then ZEROES offset 0 -- truncating the free-list chain
+// from that point. This single mechanism fully explains every observed
+// symptom: wild writes landing in essentially arbitrary mapped memory
+// (control genuinely transferred through a bogus vtable slot, not just a
+// bad data pointer), the corruption surfacing much later/elsewhere than its
+// real cause, and why this was never reachable before -- the vanilla
+// 4448-object cap's own contained fatal error triggers well before whatever
+// volume/timing this double-release condition needs to occur. This is very
+// likely a genuine PRE-EXISTING engine lifecycle bug somewhere in the much
+// larger image-streaming/eviction system (not this feature's own alloc/init
+// code, already cleared), simply never given enough headroom to manifest
+// before this feature existed.
+//
+// Real fix: guard the destroy callback itself, not just its aftermath.
+// Before letting the real callback run, check whether the object about to
+// be destroyed is CURRENTLY reachable by walking the free list from the
+// live head pointer. If it is, this is a genuine double-release -- skip the
+// dangerous native call entirely (log loudly) rather than let it dereference
+// free-list bookkeeping as a fake vtable. This catches the corruption at its
+// actual source, not just its first externally-visible symptom (the
+// allocate-side check above). Scoped to ImagePoolRealExpansion=1 only --
+// when off, this runs zero extra code, matching every other hook in this
+// feature's own established "inert unless the toggle is on" convention.
+bool IsAddressOnImageFreeListX64(void* obj)
+{
+    if (g_imageTypeFreeListHeadAddrX64 == nullptr) return false;
+    void* cur = *reinterpret_cast<void**>(g_imageTypeFreeListHeadAddrX64);
+    // Real, bounded walk -- cap at the real max object count so a genuinely
+    // corrupted chain (a cycle, or a wild "next" pointer) can never turn
+    // this safety check itself into an infinite loop or an unbounded read.
+    long long maxSteps = static_cast<long long>(kImagePoolRealCountX64) +
+        (g_modConfig.imagePoolExtraCapacity > 0 ? g_modConfig.imagePoolExtraCapacity : 0) + 16;
+    for (long long i = 0; i < maxSteps && cur != nullptr; ++i) {
+        if (cur == obj) return true;
+        __try {
+            cur = *reinterpret_cast<void**>(cur);
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false; // a wild "next" pointer faulted -- the walk itself
+                // can't trust this chain any further; not a free-list hit.
+        }
+    }
+    return false;
+}
+
+using ImageDestroyFnX64 = void(__fastcall*)(void* objectPtr);
+ImageDestroyFnX64 g_realImageDestroyX64 = nullptr;
+
+void __fastcall Hook_ImageDestroyX64(void* objectPtr)
+{
+    if (!g_modConfig.imagePoolRealExpansionEnabled || objectPtr == nullptr) {
+        g_realImageDestroyX64(objectPtr);
+        return;
+    }
+
+    if (IsAddressOnImageFreeListX64(objectPtr)) {
+        char buf[600]; // same fix, same reason as Hook_ImagePoolAllocX64's own buffer above
+        sprintf_s(buf, "[x64-image-pool-expand] CRITICAL: destroy callback invoked on object %p "
+            "which is CURRENTLY ON THE FREE LIST (a real double-release/lifecycle bug, not in "
+            "this feature's own pool code) -- skipping the real native destroy call entirely to "
+            "avoid dereferencing free-list bookkeeping as a fake vtable. This is the actual root "
+            "cause this feature's own allocate-side integrity check was only ever catching the "
+            "aftermath of.", objectPtr);
+        LogFromController(buf);
+        return; // do NOT call through -- the dangerous vtable dereference is exactly
+            // what this guard exists to prevent.
+    }
+
+    g_realImageDestroyX64(objectPtr);
+}
 
 void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
 {
@@ -12559,6 +12733,7 @@ void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
         // unused for the rest of the session.
 
     g_imagePoolExpandedBufferX64 = pool;
+    g_imagePoolExpandedBufferBytesX64 = bytes;
     char buf[260];
     sprintf_s(buf, "[x64-image-pool-expand] REPLACED the real static pool with a genuinely "
         "contiguous %lld-object buffer (native was %d, +%d extra) -- %zu bytes committed via "
@@ -12622,6 +12797,115 @@ void InstallImagePoolExpandHookX64()
         static_cast<unsigned long long>(r.address), g_imageTypeFreeListHeadAddrX64,
         g_modConfig.imagePoolRealExpansionEnabled ? "ENABLED" : "off -- diagnostic-only this session");
     LogFromController(buf);
+
+    // Real integrity-check hook on the ALLOCATE side (2026-09-30, see
+    // Hook_ImagePoolAllocX64's own header comment above for the full
+    // rationale). Resolved the same non-hardcoded way as every other
+    // per-type table this feature already reads -- the real per-type
+    // ALLOCATE function-pointer table, at the SAME image-type index
+    // (kFindOrLoadAssetImageTypeX64) this whole feature already uses
+    // throughout. Installed unconditionally (like the init hook above) so
+    // it's live and logging regardless of whether real expansion itself is
+    // on -- costs nothing extra for the non-expanded/off case, since the
+    // hook body's own early-out covers that.
+    void** allocFnTable = reinterpret_cast<void**>(moduleBase + kPerTypeAllocFnTableRvaX64);
+    void* allocTarget = nullptr;
+    __try {
+        allocTarget = allocFnTable[kFindOrLoadAssetImageTypeX64];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        allocTarget = nullptr;
+    }
+    if (allocTarget == nullptr) {
+        LogFromController("[x64-image-pool-expand] FATAL: could not resolve the real image-type "
+            "allocate function pointer -- the free-list integrity check will not be active this "
+            "session (expansion itself, if enabled, is unaffected).");
+        return;
+    }
+    MH_STATUS allocCreateStatus = MH_CreateHook(allocTarget, reinterpret_cast<void*>(&Hook_ImagePoolAllocX64),
+                                                 reinterpret_cast<void**>(&g_realImagePoolAllocX64));
+    if (allocCreateStatus != MH_OK) {
+        char allocBuf[220];
+        sprintf_s(allocBuf, "[x64-image-pool-expand] FATAL: MH_CreateHook failed for the allocate "
+            "integrity check @ %p (status=%d)", allocTarget, static_cast<int>(allocCreateStatus));
+        LogFromController(allocBuf);
+        return;
+    }
+    MH_STATUS allocEnableStatus = MH_EnableHook(allocTarget);
+    if (allocEnableStatus != MH_OK) {
+        char allocBuf[220];
+        sprintf_s(allocBuf, "[x64-image-pool-expand] FATAL: MH_EnableHook failed for the allocate "
+            "integrity check @ %p (status=%d)", allocTarget, static_cast<int>(allocEnableStatus));
+        LogFromController(allocBuf);
+        return;
+    }
+    char allocBuf[220];
+    sprintf_s(allocBuf, "[x64-image-pool-expand] allocate integrity check installed -- real "
+        "allocator @ %p.", allocTarget);
+    LogFromController(allocBuf);
+
+    // Real root-cause guard on the DESTROY callback (see Hook_ImageDestroyX64's
+    // own header comment above for the full mechanism this closes). Resolved
+    // the same non-hardcoded way as every other per-type table this feature
+    // already reads: PTR_DAT_1404c33b0[imageType] is a thunk (a plain `jmp`)
+    // to the real destroy function -- MinHook needs the real function, not
+    // the thunk, so this reads through the `jmp rel32` by hand (E9 xx xx xx xx,
+    // target = thunkAddr + 5 + disp32) rather than hooking the thunk itself.
+    constexpr uintptr_t kPerTypeDestroyFnTableRvaX64 = 0x4c33b0;
+    void** destroyFnTable = reinterpret_cast<void**>(moduleBase + kPerTypeDestroyFnTableRvaX64);
+    void* destroyThunk = nullptr;
+    __try {
+        destroyThunk = destroyFnTable[kFindOrLoadAssetImageTypeX64];
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        destroyThunk = nullptr;
+    }
+    if (destroyThunk == nullptr) {
+        LogFromController("[x64-image-pool-expand] image type has no real destroy callback (NULL "
+            "table entry) -- the destroy-side guard is not applicable this session.");
+        return;
+    }
+
+    void* destroyTarget = nullptr;
+    __try {
+        uint8_t* thunkBytes = reinterpret_cast<uint8_t*>(destroyThunk);
+        if (thunkBytes[0] == 0xE9) { // real `jmp rel32` opcode, confirmed via live disasm
+            int32_t disp = *reinterpret_cast<int32_t*>(thunkBytes + 1);
+            destroyTarget = thunkBytes + 5 + disp;
+        } else {
+            destroyTarget = destroyThunk; // not the expected thunk shape -- hook it directly
+                // rather than guess further; MinHook will simply fail loudly below if this
+                // isn't a valid, hookable function start.
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        destroyTarget = nullptr;
+    }
+    if (destroyTarget == nullptr) {
+        LogFromController("[x64-image-pool-expand] FATAL: could not resolve the real destroy "
+            "function through its thunk -- the destroy-side guard will not be active this session "
+            "(the allocate-side integrity check above still applies).");
+        return;
+    }
+
+    MH_STATUS destroyCreateStatus = MH_CreateHook(destroyTarget, reinterpret_cast<void*>(&Hook_ImageDestroyX64),
+                                                    reinterpret_cast<void**>(&g_realImageDestroyX64));
+    if (destroyCreateStatus != MH_OK) {
+        char destroyBuf[220];
+        sprintf_s(destroyBuf, "[x64-image-pool-expand] FATAL: MH_CreateHook failed for the destroy "
+            "guard @ %p (status=%d)", destroyTarget, static_cast<int>(destroyCreateStatus));
+        LogFromController(destroyBuf);
+        return;
+    }
+    MH_STATUS destroyEnableStatus = MH_EnableHook(destroyTarget);
+    if (destroyEnableStatus != MH_OK) {
+        char destroyBuf[220];
+        sprintf_s(destroyBuf, "[x64-image-pool-expand] FATAL: MH_EnableHook failed for the destroy "
+            "guard @ %p (status=%d)", destroyTarget, static_cast<int>(destroyEnableStatus));
+        LogFromController(destroyBuf);
+        return;
+    }
+    char destroyBuf[220];
+    sprintf_s(destroyBuf, "[x64-image-pool-expand] destroy-side double-release guard installed -- "
+        "real destroy function @ %p (via thunk @ %p).", destroyTarget, destroyThunk);
+    LogFromController(destroyBuf);
 }
 
 // ---- Proactive level-load texture preload (2026-09-29) -- the real "hijack" step

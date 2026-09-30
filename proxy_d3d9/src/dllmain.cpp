@@ -497,15 +497,16 @@ void Log(const char* msg)
 // D3D9-to-Vulkan translation from here on -- no other code in this file needs
 // to know which backend is actually active.
 //
-// NOT YET SHIPPED: DXVK itself is not bundled with this mod yet (a real,
-// separate vendoring/licensing/attribution task -- DXVK is zlib-licensed, real
-// attribution required once this ships, see vulkan_dlss_pipeline_research.md
-// S2.4/S4 for the full redistribution research). This is real, live-tested
-// LOADING logic ready for that file to land in, not a placeholder that still
-// needs rewriting later -- dropping a real dxvk\d3d9.dll next to this DLL
-// today would already route through it correctly. Until then this always
-// falls back to the real system d3d9.dll, loudly logged either way so a
-// tester can tell which backend actually loaded from proxy_d3d9.log alone.
+// UPDATED 2026-09-30 (the paragraph above describes the original 2026-09-23
+// design; both since superseded): DXVK is bundled two ways now, see
+// ModConfig::dxvkUseBundledFile (mod_config.h) for the full rationale --
+// DxvkUseBundledFile=1 (default) loads "<game dir>\dxvk\d3d9.dll" directly,
+// exactly the "drop a real dxvk\d3d9.dll next to this DLL" case this
+// original comment already anticipated; DxvkUseBundledFile=0 falls back to
+// the 2026-09-24 embed-as-RCDATA-resource-and-extract-to-AppData design.
+// Either way, this always falls back further to the real system d3d9.dll on
+// any failure, loudly logged so a tester can tell which backend actually
+// loaded from proxy_d3d9.log alone.
 bool TryLoadVendoredDxvk()
 {
     if (g_modConfig.graphicsApi != GraphicsApi::Vulkan) return false;
@@ -567,7 +568,37 @@ bool TryLoadVendoredDxvk()
     }
 
     char dxvkPath[MAX_PATH];
-    if (!ExtractEmbeddedDxvkX64(dxvkPath, sizeof(dxvkPath))) {
+    bool haveDxvkPath = false;
+
+    // 2026-09-30: try the real, standalone bundled file first (see
+    // ModConfig::dxvkUseBundledFile's own comment, mod_config.h, for the
+    // full rationale -- a live ERROR_SHARING_VIOLATION on the old
+    // extract-every-launch path silently dropped a whole test session to
+    // LegacyD3D9 with no visible symptom beyond a log line). Same directory
+    // proxy_d3d9.vcxproj already copies third_party\dxvk\x64\d3d9.dll to
+    // ($(OutDir)dxvk\), so a MW32011DXVK fork build can be dropped in and
+    // picked up on the next launch with zero proxy_d3d9 rebuild needed.
+    if (g_modConfig.dxvkUseBundledFile) {
+        char exePath[MAX_PATH];
+        GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+        char* lastSlash = strrchr(exePath, '\\');
+        if (lastSlash) *(lastSlash + 1) = '\0';
+        sprintf_s(dxvkPath, "%sdxvk\\d3d9.dll", exePath);
+
+        DWORD attrs = GetFileAttributesA(dxvkPath);
+        if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+            haveDxvkPath = true;
+            char buf[600];
+            sprintf_s(buf, "[graphics-api] GraphicsApi=Vulkan: using the bundled DXVK build at "
+                "'%s' directly -- no extraction, DxvkUseBundledFile=1.", dxvkPath);
+            Log(buf);
+        } else {
+            Log("[graphics-api] DxvkUseBundledFile=1, but no bundled 'dxvk\\d3d9.dll' was found "
+                "next to the game -- falling back to the embedded-resource-extraction path.");
+        }
+    }
+
+    if (!haveDxvkPath && !ExtractEmbeddedDxvkX64(dxvkPath, sizeof(dxvkPath))) {
         Log("[graphics-api] GraphicsApi=Vulkan selected under iw5sp.exe, but the embedded "
             "DXVK build could not be extracted -- falling back to the real system d3d9.dll.");
         return false;

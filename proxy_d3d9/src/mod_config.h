@@ -792,6 +792,31 @@ struct ModConfig
     // identical SP-only gate, both unchanged by this default flip.
     GraphicsApi graphicsApi = GraphicsApi::Vulkan;
 
+    // [Video] DxvkUseBundledFile (2026-09-30) -- **DEFAULT false, reverted
+    // same session it was added.** Direct correction: "thats not true dxvk
+    // was running from the inbedded one like it should we shouldnt be
+    // bundling it." The embed-and-extract pipeline (TryLoadVendoredDxvk()
+    // extracting IDR_DXVK_D3D9 to
+    // %LOCALAPPDATA%\MW32011NCP\runtime_x64\dxvk\d3d9.dll on every launch,
+    // added 2026-09-24, direct instruction at the time: "we shouldnt need
+    // to have extra dlls in the game folder. it should all be inside our
+    // dll") is the correct, intended design and was in fact working -- one
+    // real, transient `ERROR_SHARING_VIOLATION` (err=32) on ONE relaunch
+    // this session (most likely a stale handle from this same session's own
+    // rapid rebuild/redeploy/debug-dump cycle, not a systemic failure) was
+    // wrongly generalized into "DXVK never actually loaded before now,"
+    // which was never verified against earlier sessions and turned out to
+    // be wrong. Defaulting to a bundled loose file undid a real, deliberate
+    // "everything inside our one DLL" design decision to work around a
+    // one-off, not a real recurring problem.
+    //
+    // Kept as an off-by-default toggle rather than removed outright, since
+    // the underlying mechanism (TryLoadVendoredDxvk() falls back to it
+    // automatically if a real `dxvk\d3d9.dll` happens to exist next to the
+    // game and this is explicitly turned on) is still harmless groundwork --
+    // but embed-and-extract is the real, primary, intended path again.
+    bool dxvkUseBundledFile = false;
+
     // [Video] StreamlineEnabled (2026-09-24) -- STRICTLY OPT-IN, OFF by
     // default. Real groundwork, not a functional DLSS feature yet: when on
     // (and GraphicsApi=Vulkan, SP-only, same gate as DXVK itself), loads the
