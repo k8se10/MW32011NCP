@@ -6349,6 +6349,10 @@ lost: this project could ship a "restored" get-to-cover text as a genuine
 NEW feature (not a fix to existing native code) the next time visual/UI
 work is prioritized.
 
+### NOTE, 2026-10-01 — the warning reappeared live the same session `InstallZoneIndexRaceFixX64` (issue #20) shipped; the 2026-09-14 "genuine Activision regression" verdict above stands, unchanged
+
+Direct live report, immediately after issue #20's fix shipped and a session ran clean through extended real gameplay with zero pool corruption: "BRO WHATEVER YOU DID BROUGHT BACK THE YOU ARE HURT GET TO COVER!!!" A theory connecting this to today's zone-index race fix was drafted here and then explicitly rejected: **direct confirmation that the 2026-09-14 finding was correctly, decisively established as a genuine native regression** (the vanilla test -- this project's own DLL entirely removed from the game folder, a real system `d3d9.dll` loading instead, zero mod code running -- already proved the symptom is independent of this project's own code). That verdict is not reopened by this session's observation. Logged here as a real, notable, currently-unexplained correlation (the warning's reappearance lining up exactly with today's fix) worth keeping on record in case it recurs or a future session finds an actual causal link -- but not evidence against the original, already-decisive finding.
+
 ### RESOLVED (root cause), 2026-09-14 (later still) — the GSC-extraction blocker's REAL cause found: OpenAssetTools hardcodes 32-bit word size for IW5, confirmed via raw bytes AND the tool's own source; in-house tooling scoped
 
 **Status: Resolved (diagnosis). In-house tooling: scoped, not started.**
