@@ -12797,6 +12797,152 @@ void __fastcall Hook_ImagePoolInitX64(void* headAddrPtr, int count)
     }
 }
 
+// ---- REAL ROOT CAUSE, confirmed (2026-09-30) -- an unsynchronized native data race
+// between the background "database" (zone-streaming) thread and the main thread's own
+// asset registration, on the single global zone-index `_DAT_140c7573c` -- see
+// known_issues_x64.md's own dedicated entry for the full decompiled evidence trail.
+// Summary of what was proven, not guessed:
+//   - `FUN_1400a8090` (the database thread's real per-zone-load worker, confirmed via
+//     its own fatal-error string "Failed to create database thread" traced back from
+//     the thread that spawns it) WRITES `_DAT_140c7573c` (the "current zone index"
+//     global) TWICE, unconditionally, with ZERO lock held -- neither the reader/writer
+//     lock `FindOrLoadAsset` uses (`DAT_140c5cee8`/`DAT_140c5ceec`) nor any other.
+//   - `FUN_1400a69d0` (the real asset-registration path every `FindOrLoadAsset` call
+//     reaches, already the subject of this whole investigation) READS
+//     `_DAT_140c7573c` three times on the MAIN thread to tag a newly-registered
+//     asset's own "which zone owns me" byte field -- also with no lock protecting this
+//     specific read against the database thread's own concurrent writes.
+//   - The ONE mechanism that looks like real synchronization between these two
+//     threads -- `DAT_142005940`, a real Win32 event `FindOrLoadAsset`'s own retry loop
+//     polls via `WaitForSingleObject(..., 0)` -- is created
+//     `CreateEventA(NULL, TRUE, TRUE, NULL)` (manual-reset, INITIALLY SIGNALED) and is
+//     never Set/Reset again anywhere in the whole binary (confirmed via a full xref
+//     search, 5 total references, all either the one-time creation write or plain
+//     reads) -- it is permanently signaled by construction and provides zero real
+//     mutual exclusion for this specific race.
+// A mistagged "which zone owns me" byte is exactly the kind of bug that would, later,
+// cause a real zone-unload sweep (`FUN_1400a7d40`, already confirmed to use the
+// SAME lock `FindOrLoadAsset` does) to release an object that a DIFFERENT, still-live
+// zone still actually owns -- a genuine double-release, unifying this finding with the
+// destroy-callback double-release mechanism this feature's own `Hook_ImageDestroyX64`
+// guard was already built to catch (see that function's own header comment) but which
+// this session never independently caught firing -- because the actual double-release
+// this specific bug produces happens through the native zone-unload path, not through
+// a second, direct call to the destroy callback on an object already known to be free.
+//
+// This is genuine, pre-existing NATIVE ENGINE behavior -- present since before this
+// project's `ImagePoolRealExpansion` ever existed, confirmed unrelated to any commit
+// in this project's own history (bisected separately). It is NOT specific to images;
+// every one of the 46 real asset types registered through `FUN_1400a69d0` is exposed
+// to the identical race. It is volume/timing-dependent (the actual race window is a
+// handful of instructions wide), which is exactly why it was never noticed before this
+// project started processing enough concurrent zone-load + registration volume (via
+// `ImagePoolRealExpansion` letting far more than 4448 images load, and the
+// texture-upscale-cache pipeline's own substitution work stretching out individual
+// load times) to make the window land often enough to observe.
+//
+// Real fix: make the write and the read mutually exclusive ourselves, with a lock this
+// project owns, since the native code's own intended mechanism (the always-signaled
+// event) doesn't actually do this. Hooks the ONLY confirmed writer
+// (`FUN_1400a8090`) and the ONLY consumer whose read of this global feeds directly into
+// asset-pool registration (`FUN_1400a69d0`) to acquire a shared CRITICAL_SECTION around
+// the real call -- never touches the call's own arguments/return value, purely adds
+// mutual exclusion around whatever native code already does. Matches this project's own
+// established "install once, never uninstall, log unconditionally" pattern.
+constexpr const char* kZoneLoadWorkerSignature =
+    "48 89 5C 24 18 55 57 41 56 48 81 EC 20 01 00 00 44 8B F2 4C 8D 05 ?? ?? ?? ?? "
+    "48 8B E9 4C 8B C9 BA 00 01 00 00"; // FUN_1400a8090's own real prologue --
+    // the one wildcarded span is a real RIP-relative LEA displacement (a format-string
+    // pointer), the same wildcard class this project's other signatures already treat
+    // as safe to mask.
+constexpr const char* kAssetRegisterSignature =
+    "40 53 55 56 57 41 54 41 56 48 83 EC 38 48 8B 02 4C 8B E2 48 63 E9 "
+    "48 8D 4C 24 20 89 6C 24 20 48 89 44 24 28"; // FUN_1400a69d0's own real prologue.
+
+CRITICAL_SECTION g_zoneIndexRaceLockX64;
+bool g_zoneIndexRaceLockInitX64 = false;
+
+using ZoneLoadWorkerFnX64 = long long(__fastcall*)(long long param1, uint32_t param2);
+using AssetRegisterFnX64 = void*(__fastcall*)(uint32_t param1, void* param2);
+ZoneLoadWorkerFnX64 g_realZoneLoadWorkerX64 = nullptr;
+AssetRegisterFnX64 g_realAssetRegisterX64 = nullptr;
+
+long long __fastcall Hook_ZoneLoadWorkerX64(long long param1, uint32_t param2)
+{
+    EnterCriticalSection(&g_zoneIndexRaceLockX64);
+    long long result = g_realZoneLoadWorkerX64(param1, param2);
+    LeaveCriticalSection(&g_zoneIndexRaceLockX64);
+    return result;
+}
+
+void* __fastcall Hook_AssetRegisterX64(uint32_t param1, void* param2)
+{
+    EnterCriticalSection(&g_zoneIndexRaceLockX64);
+    void* result = g_realAssetRegisterX64(param1, param2);
+    LeaveCriticalSection(&g_zoneIndexRaceLockX64);
+    return result;
+}
+
+void InstallZoneIndexRaceFixX64()
+{
+    if (!g_zoneIndexRaceLockInitX64) {
+        InitializeCriticalSection(&g_zoneIndexRaceLockX64);
+        g_zoneIndexRaceLockInitX64 = true;
+    }
+
+    SigScan::Result writerResult = SigScan::FindPatternInMainModule(kZoneLoadWorkerSignature);
+    if (!writerResult.found) {
+        LogFromController("[x64-zone-race-fix] FATAL: zone-load-worker signature did not resolve -- "
+            "the real native zone-index race stays fully unprotected this session.");
+        return;
+    }
+    SigScan::Result readerResult = SigScan::FindPatternInMainModule(kAssetRegisterSignature);
+    if (!readerResult.found) {
+        LogFromController("[x64-zone-race-fix] FATAL: asset-register signature did not resolve -- "
+            "the real native zone-index race stays fully unprotected this session.");
+        return;
+    }
+
+    void* writerTarget = reinterpret_cast<void*>(writerResult.address);
+    MH_STATUS writerCreate = MH_CreateHook(writerTarget, reinterpret_cast<void*>(&Hook_ZoneLoadWorkerX64),
+                                            reinterpret_cast<void**>(&g_realZoneLoadWorkerX64));
+    if (writerCreate != MH_OK) {
+        char buf[240];
+        sprintf_s(buf, "[x64-zone-race-fix] FATAL: MH_CreateHook failed for the zone-load worker @ 0x%llX (status=%d)",
+            static_cast<unsigned long long>(writerResult.address), static_cast<int>(writerCreate));
+        LogFromController(buf);
+        return;
+    }
+    void* readerTarget = reinterpret_cast<void*>(readerResult.address);
+    MH_STATUS readerCreate = MH_CreateHook(readerTarget, reinterpret_cast<void*>(&Hook_AssetRegisterX64),
+                                            reinterpret_cast<void**>(&g_realAssetRegisterX64));
+    if (readerCreate != MH_OK) {
+        char buf[240];
+        sprintf_s(buf, "[x64-zone-race-fix] FATAL: MH_CreateHook failed for asset-register @ 0x%llX (status=%d)",
+            static_cast<unsigned long long>(readerResult.address), static_cast<int>(readerCreate));
+        LogFromController(buf);
+        MH_RemoveHook(writerTarget); // don't leave a half-installed pair active
+        return;
+    }
+
+    MH_STATUS writerEnable = MH_EnableHook(writerTarget);
+    MH_STATUS readerEnable = MH_EnableHook(readerTarget);
+    if (writerEnable != MH_OK || readerEnable != MH_OK) {
+        char buf[260];
+        sprintf_s(buf, "[x64-zone-race-fix] FATAL: MH_EnableHook failed (writer status=%d, reader status=%d)",
+            static_cast<int>(writerEnable), static_cast<int>(readerEnable));
+        LogFromController(buf);
+        return;
+    }
+
+    char buf[280];
+    sprintf_s(buf, "[x64-zone-race-fix] installed -- zone-load worker @ 0x%llX, asset-register @ 0x%llX, "
+        "now mutually exclusive via a dedicated lock (closes the real native zone-index race on "
+        "_DAT_140c7573c, see this hook's own header comment for the full finding).",
+        static_cast<unsigned long long>(writerResult.address), static_cast<unsigned long long>(readerResult.address));
+    LogFromController(buf);
+}
+
 void InstallImagePoolExpandHookX64()
 {
     HMODULE mainModule = GetModuleHandleA(nullptr);

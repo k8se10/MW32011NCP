@@ -58,6 +58,11 @@ void InstallImagePoolExpandHookX64(); // defined in analog_input_hooks_x64.cpp -
     // unless [Experimental] ImagePoolRealExpansion=1 (default OFF -- see that
     // function's own header comment for the real, honestly-documented residual
     // risk this config gate exists for).
+void InstallZoneIndexRaceFixX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-09-30, real fix for a confirmed native engine data race (unsynchronized
+    // zone-index writes on the database/zone-streaming thread racing the main
+    // thread's own asset-registration reads of the same global) -- see that
+    // function's own header comment for the full decompiled finding.
 extern "C" void ResolveImageLoadTriggerX64_Exported(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, proactive level-load texture preload -- resolves the real
     // native "force-load this image now" function (FUN_1401b9760). The queue/
@@ -1035,6 +1040,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // see known_issues_x64.md issue #13). Always installs; actual
                 // expansion inert unless [Experimental] ImagePoolRealExpansion=1
                 // (default OFF).
+            InstallZoneIndexRaceFixX64(); // 2026-09-30, real fix for the confirmed
+                // native data race on _DAT_140c7573c (the database/zone-streaming
+                // thread's own unsynchronized zone-index writes racing the main
+                // thread's asset-registration reads of the same global) -- see that
+                // function's own header comment (analog_input_hooks_x64.cpp) for the
+                // full decompiled evidence trail. Always installs, unconditional --
+                // this fixes genuine native engine behavior present for every asset
+                // type, not something gated behind an experimental toggle.
             TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
                 // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
                 // own header comment. Starts a background thread only when the on-disk
