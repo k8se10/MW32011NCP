@@ -61,3 +61,13 @@
 // resource at startup (texture_upscale_worker.cpp's own LoadPendingManifest),
 // never written to disk at all.
 #define IDR_TEXTURE_BASEMAP  115
+
+// Standalone TextureCacheBuilder.exe (2026-10-01) -- embedded so it can be
+// extracted straight into the game's own install directory on every mod
+// init (texture_cache_builder_extract_x64.cpp), rather than requiring a
+// player to separately find/download/copy it. Same gated-embed pattern as
+// the DXVK/NVIDIA binaries above: only defined when the tool's own build
+// output actually exists locally (MW3NCP_EMBED_TEXTURE_CACHE_BUILDER,
+// proxy_d3d9.vcxproj), so CI/a fresh clone without it built yet simply
+// skips embedding rather than failing the build.
+#define IDR_TEXTURE_CACHE_BUILDER_EXE 116

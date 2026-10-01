@@ -1,3 +1,13 @@
 #include "resource.h"
 
 IDR_TEXTURE_BASEMAP RCDATA "..\\..\\proxy_d3d9\\bundled_data\\texture_names_basemap.txt"
+
+// Real-ESRGAN model weights -- see resource.h's own IDR_REALESRGAN_BIN
+// comment. Gated: rc.exe hard-fails the whole build if either source file
+// doesn't exist, and these are real, gitignored, locally-vendored binaries
+// (proxy_d3d9/third_party/realesrgan_models/.gitignore), same situation as
+// proxy_d3d9's own DXVK/NVIDIA embeds.
+#ifdef MW3NCP_EMBED_REALESRGAN_MODEL
+IDR_REALESRGAN_BIN   RCDATA "..\\..\\proxy_d3d9\\third_party\\realesrgan_models\\realesrgan-x4plus.bin"
+IDR_REALESRGAN_PARAM RCDATA "..\\..\\proxy_d3d9\\third_party\\realesrgan_models\\realesrgan-x4plus.param"
+#endif

@@ -397,6 +397,83 @@ namespace
         if (lastSlash) *(lastSlash + 1) = '\0';
     }
 
+    // Self-extracts this exe's own embedded Real-ESRGAN model weights to a
+    // private, per-user AppData location (2026-10-01, direct instruction:
+    // "whatever can be hidden from user or not neccesary to user like the
+    // models should be in the appdata") -- NOT next to this exe (which lives
+    // in the game's own install directory, visible to the player), same
+    // "implementation detail, not player-facing" treatment
+    // dxvk_streamline_extract_x64.cpp already gives the DXVK/Streamline
+    // binaries. Idempotent (skip-if-already-extracted) since this is a
+    // real, static, ~33MB vendored asset of this tool itself, not prone to
+    // going stale the way a third-party SDK could.
+    //
+    // Falls back to realesrgan_models\ next to this exe (the OLD location,
+    // still produced by this project's own dev-build DeployBuilderAssets
+    // target) if the embedded resource isn't present in this build at all
+    // (MW3NCP_EMBED_REALESRGAN_MODEL gate, a fresh clone without the real
+    // model files vendored locally yet) -- matches every other embedded-
+    // resource fallback already established in this project.
+    bool EnsureModelsExtracted(char* outModelDir, size_t outModelDirSize)
+    {
+        char localAppData[MAX_PATH];
+        DWORD len = GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+        if (len > 0 && len < MAX_PATH) {
+            char modelDir[MAX_PATH];
+            sprintf_s(modelDir, "%s\\MW32011NCP\\texture_cache_builder\\realesrgan_models\\", localAppData);
+
+            char binPath[MAX_PATH], paramPath[MAX_PATH];
+            sprintf_s(binPath, "%srealesrgan-x4plus.bin", modelDir);
+            sprintf_s(paramPath, "%srealesrgan-x4plus.param", modelDir);
+
+            if (GetFileAttributesA(binPath) != INVALID_FILE_ATTRIBUTES &&
+                GetFileAttributesA(paramPath) != INVALID_FILE_ATTRIBUTES) {
+                strncpy_s(outModelDir, outModelDirSize, modelDir, _TRUNCATE);
+                return true; // already extracted a prior run
+            }
+
+            HMODULE selfModule = nullptr;
+            GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                reinterpret_cast<LPCSTR>(&EnsureModelsExtracted), &selfModule);
+            HRSRC binRes = FindResourceA(selfModule, MAKEINTRESOURCEA(IDR_REALESRGAN_BIN), RT_RCDATA);
+            HRSRC paramRes = FindResourceA(selfModule, MAKEINTRESOURCEA(IDR_REALESRGAN_PARAM), RT_RCDATA);
+            if (binRes && paramRes) {
+                char parentDir[MAX_PATH];
+                sprintf_s(parentDir, "%s\\MW32011NCP", localAppData);
+                CreateDirectoryA(parentDir, nullptr);
+                sprintf_s(parentDir, "%s\\MW32011NCP\\texture_cache_builder", localAppData);
+                CreateDirectoryA(parentDir, nullptr);
+                CreateDirectoryA(modelDir, nullptr);
+
+                auto extractOne = [&](HRSRC res, const char* destPath) -> bool {
+                    HGLOBAL resData = LoadResource(selfModule, res);
+                    if (!resData) return false;
+                    void* pData = LockResource(resData);
+                    DWORD size = SizeofResource(selfModule, res);
+                    if (!pData || size == 0) return false;
+                    FILE* f = nullptr;
+                    if (fopen_s(&f, destPath, "wb") != 0 || !f) return false;
+                    size_t written = fwrite(pData, 1, size, f);
+                    fclose(f);
+                    return written == size;
+                };
+
+                if (extractOne(binRes, binPath) && extractOne(paramRes, paramPath)) {
+                    LogFromController("[builder] extracted embedded Real-ESRGAN model to AppData.");
+                    strncpy_s(outModelDir, outModelDirSize, modelDir, _TRUNCATE);
+                    return true;
+                }
+                LogFromController("[builder] failed to extract the embedded Real-ESRGAN model.");
+            }
+        }
+
+        // Fallback: the old, next-to-exe location (dev builds / a build
+        // without the model embedded) -- TextureUpscaleNcnn::EnsureModelLoaded's
+        // own default behavior when passed nullptr.
+        outModelDir[0] = '\0';
+        return false;
+    }
+
     // Processes every real, raw .iwi capture sitting in the staging folder
     // (<gameDir>\texture_capture_staging\, written by the live mod's own
     // TextureCaptureStaging::WriteRawCapture -- see that header's own
@@ -530,10 +607,14 @@ namespace
             return 0;
         }
 
+        char extractedModelDir[MAX_PATH] = {};
+        bool haveExtracted = EnsureModelsExtracted(extractedModelDir, sizeof(extractedModelDir));
+
         LogFromController("[builder] loading Real-ESRGAN model...");
-        if (!TextureUpscaleNcnn::EnsureModelLoaded()) {
-            LogFromController("[builder] FATAL: Real-ESRGAN model failed to load -- is realesrgan_models\\ "
-                "present next to this exe?");
+        if (!TextureUpscaleNcnn::EnsureModelLoaded(haveExtracted ? extractedModelDir : nullptr)) {
+            LogFromController("[builder] FATAL: Real-ESRGAN model failed to load. This copy of "
+                "TextureCacheBuilder.exe doesn't have the model embedded -- rebuild the mod with "
+                "the model files vendored, or place realesrgan_models\\ next to this exe manually.");
             PostMessageA(g_mainWnd, WM_APP_DONE, 0, 0);
             return 0;
         }
@@ -729,8 +810,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         "It processes texture_capture_staging\\ (filled by the mod's own safe, organic capture "
         "during real gameplay) and writes into texture_upscale_cache\\, the same folder the live "
         "mod reads from.");
-    AppendLog("Requires realesrgan_models\\ next to this exe. Play a session first so there's "
-        "something staged to process.");
+    AppendLog("The Real-ESRGAN model is bundled inside this exe -- nothing else to download or "
+        "place manually. Play a session first so there's something staged to process.");
 
     ShowWindow(g_mainWnd, nCmdShow);
     UpdateWindow(g_mainWnd);

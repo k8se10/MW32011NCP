@@ -154,3 +154,14 @@ IDR_NGX_DLSS      RCDATA "third_party\\streamline\\bin\\x64\\nvngx_dlss.dll"
 // file" rationale. Always committed/available (unlike the conditional
 // NVIDIA/DXVK block above), so no #ifdef gate needed here.
 IDR_TEXTURE_BASEMAP RCDATA "bundled_data\\texture_names_basemap.txt"
+
+// Standalone TextureCacheBuilder.exe (2026-10-01) -- see resource.h's own
+// IDR_TEXTURE_CACHE_BUILDER_EXE comment. Gated the same way as the
+// DXVK/NVIDIA block above: only embedded when the tool's own x64 Release
+// build output actually exists locally (built via
+// tools\texture_cache_builder\TextureCacheBuilder.vcxproj), so a fresh
+// clone/CI build that hasn't built it yet simply skips embedding instead
+// of failing (rc.exe hard-fails the whole build on a missing source file).
+#ifdef MW3NCP_EMBED_TEXTURE_CACHE_BUILDER
+IDR_TEXTURE_CACHE_BUILDER_EXE RCDATA "..\\tools\\texture_cache_builder\\x64\\Release\\TextureCacheBuilder.exe"
+#endif

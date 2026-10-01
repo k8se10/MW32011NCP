@@ -44,6 +44,15 @@
 
   <PropertyGroup Label="UserMacros" />
 
+  <!-- Gated embed of the real Real-ESRGAN model weights (2026-10-01, "zero
+       manual setup") : see resource.h's own IDR_REALESRGAN_BIN comment.
+       Only defined when the real, gitignored model files are actually
+       vendored locally, same precedent as proxy_d3d9's own
+       HaveEmbeddedNvidiaDxvkBinaries. -->
+  <PropertyGroup>
+    <HaveRealesrganModel Condition="Exists('..\..\proxy_d3d9\third_party\realesrgan_models\realesrgan-x4plus.bin') and Exists('..\..\proxy_d3d9\third_party\realesrgan_models\realesrgan-x4plus.param')">true</HaveRealesrganModel>
+  </PropertyGroup>
+
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -55,6 +64,9 @@
            not re-vendored. -->
       <AdditionalIncludeDirectories>..\..\proxy_d3d9\third_party\ncnn\include\ncnn;..\..\dxvk\include\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions Condition="'$(HaveRealesrganModel)'=='true'">MW3NCP_EMBED_REALESRGAN_MODEL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <AdditionalLibraryDirectories>..\..\proxy_d3d9\third_party\ncnn\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -107,16 +119,16 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 
-  <!-- Deploys the real Real-ESRGAN model files AND this exe's own real
-       build output directly into the live game install directory (the
-       same absolute path proxy_d3d9.vcxproj's own OutDir already uses) :
-       this tool is meant to run FROM that directory (reads
-       texture_capture_staging\, writes texture_upscale_cache\, both
-       already real, live paths relative to the game's own install root :
-       see main.cpp's own header comment), so deploying it there on every
-       build (same convention as DeployDxvk/DeployTextureUpscaleAssets/
-       DeployPrecacheTool in proxy_d3d9.vcxproj) means it's always the
-       current build, with zero manual copy step. -->
+  <!-- Deploys this exe's own real build output directly into the live game
+       install directory (the same absolute path proxy_d3d9.vcxproj's own
+       OutDir already uses), for local dev testing only : the real,
+       shipped path a player gets this exe through is proxy_d3d9's own
+       embed-and-extract (resource.h's own IDR_TEXTURE_CACHE_BUILDER_EXE),
+       not this copy. Also deploys a LOOSE realesrgan_models\ copy as a dev-
+       only fallback for the pre-2026-10-01 next-to-exe model path (now
+       superseded by this exe's own self-extraction to AppData, see
+       main.cpp's EnsureModelsExtracted) : harmless to keep, never read
+       unless the embedded extraction path somehow fails. -->
   <Target Name="DeployBuilderAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
     <PropertyGroup>
       <GameInstallDir>D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3\</GameInstallDir>

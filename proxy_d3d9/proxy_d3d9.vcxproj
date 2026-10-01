@@ -88,6 +88,12 @@
        needed for this; pure build-graph gating. -->
   <PropertyGroup>
     <HaveEmbeddedNvidiaDxvkBinaries Condition="Exists('..\dxvk\build_win64\src\d3d9\d3d9.dll') and Exists('third_party\streamline\bin\x64\sl.interposer.dll') and Exists('third_party\streamline\bin\x64\sl.common.dll') and Exists('third_party\streamline\bin\x64\sl.dlss.dll') and Exists('third_party\streamline\bin\x64\nvngx_dlss.dll')">true</HaveEmbeddedNvidiaDxvkBinaries>
+    <!-- 2026-10-01: same gated-embed pattern, for TextureCacheBuilder.exe
+         (resource.h's own IDR_TEXTURE_CACHE_BUILDER_EXE comment). Build
+         tools\texture_cache_builder\TextureCacheBuilder.vcxproj (x64
+         Release) BEFORE this project for the embed to take effect : same
+         "build the dependency first" relationship the DXVK fork already has. -->
+    <HaveTextureCacheBuilderExe Condition="Exists('..\tools\texture_cache_builder\x64\Release\TextureCacheBuilder.exe')">true</HaveTextureCacheBuilderExe>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
@@ -101,6 +107,7 @@
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions Condition="'$(HaveEmbeddedNvidiaDxvkBinaries)'=='true'">MW3NCP_EMBED_NVIDIA_DXVK=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(HaveTextureCacheBuilderExe)'=='true'">MW3NCP_EMBED_TEXTURE_CACHE_BUILDER=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -268,6 +275,7 @@
     <ClCompile Include="src\texture_precache_orchestrator.cpp" />
     <ClCompile Include="src\texture_viewport_capture.cpp" />
     <ClCompile Include="src\texture_capture_staging.cpp" />
+    <ClCompile Include="src\texture_cache_builder_extract_x64.cpp" />
     <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />

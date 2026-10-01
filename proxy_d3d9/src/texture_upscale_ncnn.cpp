@@ -205,22 +205,28 @@ namespace
     }
 }
 
-bool EnsureModelLoaded()
+bool EnsureModelLoaded(const char* modelDirOverride)
 {
     ScopedSrwLock lock(&g_netLock);
     if (g_modelLoaded) return true;
 
-    // Real model location, relative to the deployed d3d9.dll -- deployed
-    // automatically by proxy_d3d9.vcxproj's DeployTextureUpscaleAssets
-    // target (mirrors the DXVK binary's own DeployDxvk target).
-    char exeDir[MAX_PATH];
-    GetModuleFileNameA(nullptr, exeDir, MAX_PATH);
-    char* lastSlash = strrchr(exeDir, '\\');
-    if (lastSlash) *(lastSlash + 1) = '\0';
+    char modelDir[MAX_PATH];
+    if (modelDirOverride) {
+        strncpy_s(modelDir, modelDirOverride, _TRUNCATE);
+    } else {
+        // Real model location, relative to the deployed d3d9.dll -- deployed
+        // automatically by proxy_d3d9.vcxproj's DeployTextureUpscaleAssets
+        // target (mirrors the DXVK binary's own DeployDxvk target).
+        char exeDir[MAX_PATH];
+        GetModuleFileNameA(nullptr, exeDir, MAX_PATH);
+        char* lastSlash = strrchr(exeDir, '\\');
+        if (lastSlash) *(lastSlash + 1) = '\0';
+        sprintf_s(modelDir, "%srealesrgan_models\\", exeDir);
+    }
 
     char paramPath[MAX_PATH], modelPath[MAX_PATH];
-    sprintf_s(paramPath, "%srealesrgan_models\\realesrgan-x4plus.param", exeDir);
-    sprintf_s(modelPath, "%srealesrgan_models\\realesrgan-x4plus.bin", exeDir);
+    sprintf_s(paramPath, "%srealesrgan-x4plus.param", modelDir);
+    sprintf_s(modelPath, "%srealesrgan-x4plus.bin", modelDir);
 
     g_net = new ncnn::Net(); // deliberately leaked, never delete'd -- see this
         // file's own header comment above g_net's declaration for the real

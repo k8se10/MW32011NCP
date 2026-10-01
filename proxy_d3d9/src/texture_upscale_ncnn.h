@@ -12,13 +12,20 @@
 // for a background cache-population thread, not a real-time path.
 namespace TextureUpscaleNcnn
 {
-    // Loads the real vendored Real-ESRGAN model (realesrgan-x4plus.bin/.param,
-    // proxy_d3d9/third_party/realesrgan_models/) once. Safe to call multiple
-    // times (idempotent) -- returns true if already loaded or if this call
-    // successfully loads it. Must be called from a background thread, never
-    // from any hook's own call path -- model load + first inference involve
-    // real, slow GPU/shader-compile work.
-    bool EnsureModelLoaded();
+    // Loads the real vendored Real-ESRGAN model (realesrgan-x4plus.bin/.param)
+    // once. Safe to call multiple times (idempotent) -- returns true if
+    // already loaded or if this call successfully loads it. Must be called
+    // from a background thread, never from any hook's own call path -- model
+    // load + first inference involve real, slow GPU/shader-compile work.
+    //
+    // By default, reads from realesrgan_models\ relative to the calling
+    // process's own exe path (proxy_d3d9's own live usage -- deployed there
+    // by DeployTextureUpscaleAssets). `modelDirOverride`, when non-null, is
+    // used instead verbatim (must end in a path separator) -- added
+    // 2026-10-01 for TextureCacheBuilder.exe's own self-extracted-to-AppData
+    // model, so this shared file needed no other change to support a second,
+    // independent caller with a different real model location.
+    bool EnsureModelLoaded(const char* modelDirOverride = nullptr);
 
     // Runs the real Real-ESRGAN 4x upscale on an RGBA8 input buffer
     // (width*height*4 bytes), returning a newly malloc'd RGBA8 output buffer

@@ -67,6 +67,11 @@ void InstallSuppressImproperQuitCheckX64(); // defined in analog_input_hooks_x64
     // 2026-10-01, suppresses the real native CoD/IW-engine "did not exit
     // properly, run in Safe Mode?" dialog -- see that function's own header
     // comment for the full decompiled finding.
+void ExtractTextureCacheBuilderIfNeededX64(); // defined in
+    // texture_cache_builder_extract_x64.cpp -- 2026-10-01, extracts the
+    // embedded TextureCacheBuilder.exe into the game's own install
+    // directory on every mod init, so a player never has to find/download/
+    // copy it themselves. SP/MP-agnostic (see that file's own comment).
 extern "C" void ResolveImageLoadTriggerX64_Exported(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, proactive level-load texture preload -- resolves the real
     // native "force-load this image now" function (FUN_1401b9760). The queue/
@@ -996,6 +1001,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
         // here unconditionally, before ANY hook-installing code path (this SP/MP
         // branch, and LoadPlugins() below) can possibly run first.
         MH_Initialize();
+
+        ExtractTextureCacheBuilderIfNeededX64(); // 2026-10-01 -- unconditional,
+            // SP/MP-agnostic (just a file write, no engine interaction at all).
+            // See that function's own header comment.
 
         if (detectedExe == GameExecutable::SP) {
             Log("proxy_d3d9 init OK — analog movement/look hooks installing.");
