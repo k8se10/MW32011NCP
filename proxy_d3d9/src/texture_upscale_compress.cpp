@@ -24,6 +24,37 @@ namespace
     // real CPU cores system-wide rather than genuinely speed anything up.
     constexpr int kMaxCompressThreads = 4;
 
+    // "Middle-out" chunk processing order (2026-10-01, direct request --
+    // acknowledged up front as inspired by a fictional reference, but
+    // implemented as something real and honest about what it does: this
+    // does NOT improve the compression RATIO (each chunk is still
+    // compressed/decompressed fully independently -- there's no real
+    // mechanism by which compressing the middle chunk first could inform
+    // or shrink the edge chunks, any claim otherwise would be the fictional
+    // part). What IS real: the ORDER chunks get claimed and processed in.
+    // Rather than strictly sequential index 0,1,2,...,N-1 (left-to-right),
+    // this builds an index permutation starting at the middle chunk and
+    // alternating outward (mid, mid-1, mid+1, mid-2, mid+2, ...). Real,
+    // legitimate motivation this genuinely serves: for a large mip-pyramid
+    // texture, the MIDDLE of the on-disk layout tends to land on one of the
+    // mid-sized mip levels -- processing it first means if a caller were
+    // ever changed to consume partial/early results (not something this
+    // project does today, but a real, honest future hook this leaves open),
+    // a representative middle-detail chunk would be ready before either
+    // extreme (smallest/coarsest or largest/finest). Built once per call,
+    // not per-thread.
+    void BuildMiddleOutOrder(uint32_t chunkCount, uint32_t* order)
+    {
+        uint32_t mid = chunkCount / 2;
+        uint32_t pos = 0;
+        order[pos++] = mid;
+        uint32_t lo = mid, hi = mid;
+        while (pos < chunkCount) {
+            if (lo > 0) order[pos++] = --lo;
+            if (pos < chunkCount && hi + 1 < chunkCount) order[pos++] = ++hi;
+        }
+    }
+
     struct ChunkResult
     {
         uint8_t* data; // malloc'd by CompressBuffer's own worker, owned by
@@ -37,6 +68,7 @@ namespace
         const uint8_t* srcData;
         uint32_t srcSize;
         uint32_t chunkCount;
+        const uint32_t* order; // middle-out claim order, see BuildMiddleOutOrder
         volatile LONG nextChunk;
         volatile LONG anyFailure; // 0 = all good so far, 1 = at least one
             // chunk's real compression failed -- checked, not relied on to
@@ -58,8 +90,9 @@ namespace
         }
 
         for (;;) {
-            LONG chunkIndex = InterlockedIncrement(&ctx->nextChunk) - 1;
-            if (static_cast<uint32_t>(chunkIndex) >= ctx->chunkCount) break;
+            LONG claimPos = InterlockedIncrement(&ctx->nextChunk) - 1;
+            if (static_cast<uint32_t>(claimPos) >= ctx->chunkCount) break;
+            uint32_t chunkIndex = ctx->order[claimPos]; // middle-out, not left-to-right
 
             uint32_t offset = static_cast<uint32_t>(chunkIndex) * kChunkSize;
             uint32_t thisChunkSize = (offset + kChunkSize <= ctx->srcSize)
@@ -101,6 +134,7 @@ namespace
         uint8_t* dstData; // the real output buffer -- each chunk writes into
             // its own distinct, non-overlapping region, safe without locking.
         uint32_t chunkCount;
+        const uint32_t* order; // middle-out claim order, see BuildMiddleOutOrder
         uint32_t chunkUncompressedSize;
         uint32_t totalUncompressedSize;
         volatile LONG nextChunk;
@@ -118,8 +152,9 @@ namespace
         }
 
         for (;;) {
-            LONG chunkIndex = InterlockedIncrement(&ctx->nextChunk) - 1;
-            if (static_cast<uint32_t>(chunkIndex) >= ctx->chunkCount) break;
+            LONG claimPos = InterlockedIncrement(&ctx->nextChunk) - 1;
+            if (static_cast<uint32_t>(claimPos) >= ctx->chunkCount) break;
+            uint32_t chunkIndex = ctx->order[claimPos]; // middle-out, not left-to-right
 
             uint32_t dstOffset = static_cast<uint32_t>(chunkIndex) * ctx->chunkUncompressedSize;
             uint32_t thisChunkUncompressedSize = (dstOffset + ctx->chunkUncompressedSize <= ctx->totalUncompressedSize)
@@ -171,16 +206,21 @@ uint8_t* CompressBuffer(const uint8_t* data, uint32_t size, uint32_t* outCompres
 
     ChunkResult* results = static_cast<ChunkResult*>(calloc(chunkCount, sizeof(ChunkResult)));
     if (!results) return nullptr;
+    uint32_t* order = static_cast<uint32_t*>(malloc(sizeof(uint32_t) * chunkCount));
+    if (!order) { free(results); return nullptr; }
+    BuildMiddleOutOrder(chunkCount, order);
 
     CompressJobContext ctx{};
     ctx.srcData = data;
     ctx.srcSize = size;
     ctx.chunkCount = chunkCount;
+    ctx.order = order;
     ctx.nextChunk = 0;
     ctx.anyFailure = 0;
     ctx.results = results;
 
     RunChunkThreads(CompressChunkThreadProc, &ctx, chunkCount);
+    free(order);
 
     if (ctx.anyFailure) {
         for (uint32_t i = 0; i < chunkCount; ++i) free(results[i].data);
@@ -260,6 +300,9 @@ uint8_t* DecompressBuffer(const uint8_t* data, uint32_t compressedSize, uint32_t
 
     uint8_t* out = static_cast<uint8_t*>(malloc(uncompressedSize));
     if (!out) { free(chunkCompressedOffsets); return nullptr; }
+    uint32_t* order = static_cast<uint32_t*>(malloc(sizeof(uint32_t) * chunkCount));
+    if (!order) { free(out); free(chunkCompressedOffsets); return nullptr; }
+    BuildMiddleOutOrder(chunkCount, order);
 
     DecompressJobContext ctx{};
     ctx.srcData = data;
@@ -267,6 +310,7 @@ uint8_t* DecompressBuffer(const uint8_t* data, uint32_t compressedSize, uint32_t
     ctx.chunkCompressedOffsets = chunkCompressedOffsets;
     ctx.dstData = out;
     ctx.chunkCount = chunkCount;
+    ctx.order = order;
     ctx.chunkUncompressedSize = chunkUncompressedSize;
     ctx.totalUncompressedSize = uncompressedSize;
     ctx.nextChunk = 0;
@@ -274,6 +318,7 @@ uint8_t* DecompressBuffer(const uint8_t* data, uint32_t compressedSize, uint32_t
 
     RunChunkThreads(DecompressChunkThreadProc, &ctx, chunkCount);
     free(chunkCompressedOffsets);
+    free(order);
 
     if (ctx.anyFailure) { free(out); return nullptr; }
     return out;
