@@ -398,8 +398,20 @@
          instead of needing the same extensive playtime to rediscover it. See
          texture_upscale_worker.cpp's own LoadPendingManifest for how this is
          merged with the live, per-session pending_manifest.txt at startup. -->
+    <!-- texture_names_basemap.txt is no longer copied as a loose file here
+         (2026-10-01): a real live incident found it missing from the
+         deployed cache directory (externally deleted along with the rest of
+         texture_upscale_cache\) while several subsequent builds silently
+         never re-copied it, since this Copy task's own SkipUnchangedFiles
+         state didn't notice the destination had been removed out from
+         under it. Now embedded directly into d3d9.dll as an RCDATA
+         resource (proxy_d3d9.rc, IDR_TEXTURE_BASEMAP) and read from there
+         at startup, matching this project's own established convention
+         for every other bundled asset (fonts, button glyphs, the DXVK fork
+         binary): removes this entire class of silent loose file deletion
+         risk outright, the same reasoning that already justified embedding
+         those other assets. -->
     <MakeDir Directories="$(OutDir)texture_upscale_cache" Condition="!Exists('$(OutDir)texture_upscale_cache')" />
-    <Copy SourceFiles="bundled_data\texture_names_basemap.txt" DestinationFolder="$(OutDir)texture_upscale_cache\" SkipUnchangedFiles="true" />
   </Target>
 
   <!-- 2026-09-28: ships a real, already-built Unlinker.exe (tools/iw5oat's own

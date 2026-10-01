@@ -9,6 +9,7 @@
 #include "texture_upscale_iwi_writer.h"
 #include "texture_upscale_ncnn.h"
 #include "texture_upscale_cache.h"
+#include "../resource.h" // IDR_TEXTURE_BASEMAP -- see LoadNamesFromEmbeddedBasemap
 #include "mod_config.h" // g_modConfig.textureUpscaleWorkerThreads -- see
     // EnsureWorkerStarted's own comment on the real thread-count read.
 #include "overlay_hud.h" // ShowOverlayMessageUntilDismissed -- the one-time
@@ -291,6 +292,51 @@ namespace
         return loadedCount;
     }
 
+    // Loads the bundled texture-name basemap directly from this DLL's own
+    // embedded RCDATA resource (2026-10-01, replaces a loose copied file --
+    // see resource.h's own IDR_TEXTURE_BASEMAP comment for the full "why"
+    // and the real live incident that motivated it: a deleted cache
+    // directory silently lost the basemap, and several subsequent builds
+    // never re-copied it, since nothing ever checks a loose file's own
+    // continued existence at runtime). Never touches disk -- parses
+    // newline-separated names straight out of the resource's own in-memory
+    // bytes, same line-parsing semantics as LoadNamesFromFile above (CR/LF
+    // trim, skip empty lines) minus the FILE* plumbing.
+    int LoadNamesFromEmbeddedBasemap()
+    {
+        HMODULE selfModule = nullptr;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+            reinterpret_cast<LPCSTR>(&LoadNamesFromEmbeddedBasemap), &selfModule);
+        HRSRC res = FindResourceA(selfModule, MAKEINTRESOURCEA(IDR_TEXTURE_BASEMAP), RT_RCDATA);
+        if (!res) return 0; // real, expected case for a dev build without the
+            // resource embedded yet -- not an error, same as a missing file
+            // was before.
+        HGLOBAL resData = LoadResource(selfModule, res);
+        if (!resData) return 0;
+        const char* data = static_cast<const char*>(LockResource(resData));
+        DWORD size = SizeofResource(selfModule, res);
+        if (!data || size == 0) return 0;
+
+        int loadedCount = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i <= size; ++i) {
+            if (i == size || data[i] == '\n' || data[i] == '\r') {
+                size_t lineLen = i - lineStart;
+                if (lineLen > 0 && lineLen < 256) {
+                    CarriedOverNode* node = static_cast<CarriedOverNode*>(malloc(sizeof(CarriedOverNode)));
+                    if (!node) break; // real OOM -- stop loading, keep whatever's already loaded
+                    memcpy(node->name, data + lineStart, lineLen);
+                    node->name[lineLen] = '\0';
+                    node->next = g_carriedOverHead;
+                    g_carriedOverHead = node;
+                    ++loadedCount;
+                }
+                lineStart = i + 1;
+            }
+        }
+        return loadedCount;
+    }
+
     // Called exactly once, from InitWorkerOnceCallback below, before any real
     // queuing can happen -- loads TWO sources into g_carriedOverHead, both
     // best-effort priority hints, never critical state (a partially-written
@@ -323,11 +369,9 @@ namespace
     //    last refreshed).
     void LoadPendingManifest()
     {
-        char basemapPath[MAX_PATH];
-        int basemapCount = 0;
-        if (BuildManifestPath(basemapPath, sizeof(basemapPath), "texture_names_basemap.txt")) {
-            basemapCount = LoadNamesFromFile(basemapPath);
-        }
+        int basemapCount = LoadNamesFromEmbeddedBasemap(); // 2026-10-01: embedded
+            // resource, never a loose file -- see that function's own header
+            // comment.
 
         char pendingPath[MAX_PATH];
         int pendingCount = 0;

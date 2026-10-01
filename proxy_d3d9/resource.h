@@ -49,3 +49,15 @@
 #define IDR_SL_COMMON        112
 #define IDR_SL_DLSS          113
 #define IDR_NGX_DLSS         114
+
+// Session-continuity texture-name basemap (2026-10-01, moved from a loose
+// copied file to an embedded resource) -- same "it should all be inside our
+// dll" reasoning as the DXVK/Streamline binaries above: a loose file sitting
+// in texture_upscale_cache\ is one external deletion away from silently
+// vanishing with no in-game indication (a real live incident: deleted along
+// with the rest of that directory, then never re-copied by several
+// subsequent builds, running an entire session on live-discovery-only
+// coverage instead of the full known-texture list). Read directly from this
+// resource at startup (texture_upscale_worker.cpp's own LoadPendingManifest),
+// never written to disk at all.
+#define IDR_TEXTURE_BASEMAP  115
