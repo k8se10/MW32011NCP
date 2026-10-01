@@ -38,7 +38,29 @@ uint8_t* EncodeIwi8(uint16_t width, uint16_t height, uint16_t depth, Format form
                      const MipLevel* mipsLargestFirst, int mipCount, uint32_t* outSize)
 {
     if (outSize) *outSize = 0;
-    if (!mipsLargestFirst || mipCount <= 0 || mipCount > kMaxPicmipEntries) return nullptr;
+    // Real fix (2026-10-01): mipCount is NOT capped at kMaxPicmipEntries (4).
+    // That cap was a real, live-confirmed bug -- it made this encoder only
+    // ever able to produce a TRUNCATED mip chain (at most 4 levels), which a
+    // caller's own "generate the full real pyramid" change then collided
+    // with: the native engine independently computes how many real mip
+    // levels a texture of a given width/height SHOULD have (standard
+    // complete-mipmap-chain convention, matching 0 passed to D3D9's own
+    // CreateTexture) and tries to LockRect every one of them regardless of
+    // how many we actually created -- a texture capped at 4 real levels but
+    // expected to have far more (e.g. 13 for a 4096x4096 texture) crashed/
+    // corrupted with D3DERR_INVALIDCALL on the out-of-range Level indices.
+    // The REST of this function was already correct for mipCount > 4 (see
+    // the fileSizeForPicmip accumulation loop below, which already guards
+    // `arrIdx < kMaxPicmipEntries` per-entry, matching the real official
+    // IwiWriter8.cpp's own `currentMipLevel < extent_v<fileSizeForPicmip>`
+    // guard -- it only ever recorded a checkpoint for the top/largest 4
+    // levels, same real semantics either way) -- this was the one actual
+    // blocker. kMaxRealMipLevels below is a generous, non-format-mandated
+    // array-sizing bound (not a real native limit, unlike kMaxPicmipEntries
+    // itself), comfortably covering any texture size this pipeline could
+    // ever produce.
+    constexpr int kMaxRealMipLevels = 24;
+    if (!mipsLargestFirst || mipCount <= 0 || mipCount > kMaxRealMipLevels) return nullptr;
     if (width == 0 || height == 0 || depth == 0) return nullptr;
 
     uint32_t totalMipBytes = 0;

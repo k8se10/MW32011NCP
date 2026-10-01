@@ -657,30 +657,34 @@ namespace
         const uint32_t actualW = (freeFinalRgba || job.scaleMultiplier == 4) ? finalW : netOutW;
         const uint32_t actualH = (freeFinalRgba || job.scaleMultiplier == 4) ? finalH : netOutH;
 
-        // Real mip chain, not a single forced-full-resolution level (2026-10-01).
-        // Direct diagnosis: the native engine's own real picmip/priority-based
-        // streaming system (r_picmip, 4 real tiers: 0=Extra..3=Low -- see
-        // re_notes/iw5sp.md's "picmip" findings) can only pick a SMALLER amount
-        // of texture data to actually load/keep resident if the IWI file we
-        // hand it actually CONTAINS smaller mips to choose from, via its own
-        // fileSizeForPicmip[4] tiering (already correctly computed by
-        // EncodeIwi8 -- the bug was purely that this caller always passed
-        // mipCount=1). Shipping only a single always-full-resolution level
-        // forced every touched texture to stay fully resident regardless of
-        // the native engine's own actual current priority for it -- the real
-        // cause behind a live D3DERR_OUTOFVIDEOMEMORY (Create2DTexture
-        // failure, "mtl_truck_cab_nml" 4096x4096 DXT5) once enough distinct
-        // textures were touched in one session. kMaxPicmipEntries (4) is a
-        // real, fixed native format limit (RawIwiHeader::fileSizeForPicmip's
-        // own array size) -- not a tunable choice -- and happens to exactly
-        // match r_picmip's own real 0-3 range, one IWI mip level per real
-        // in-engine picmip tier. Each level is a simple 2x2 box-filter
-        // halving of the previous one (matching this file's own existing
-        // box-filter convention above), stopping once a next level would
-        // drop below a 4px floor (a safe, conservative margin for
-        // block-compressed formats, which this project's DXT codec already
-        // handles via its own pad-to-multiple-of-4 convention at this size).
-        constexpr int kMaxMipLevels = 4;
+        // Real, FULL mip pyramid, not a single forced-full-resolution level
+        // and NOT capped at 4 (2026-10-01, second pass). Direct diagnosis of
+        // a real live crash/corruption: the native engine independently
+        // computes how many real mip levels a texture of a given width/
+        // height SHOULD have (standard "complete mipmap chain" convention,
+        // same as passing Levels=0 to D3D9's own CreateTexture) and tries to
+        // LockRect every one of them regardless of how many levels the
+        // texture was actually created with. An earlier version of this
+        // change capped the chain at 4 levels (wrongly reasoning from
+        // RawIwiHeader::fileSizeForPicmip's own fixed 4-slot array) -- for a
+        // 4096x4096 upscaled texture the real expected chain is 13 levels,
+        // so the native engine tried to lock levels far past what we'd
+        // created, crashing with D3DERR_INVALIDCALL (confirmed live,
+        // hr=0x8876086C, Level=11/13) and visibly corrupting text/UI
+        // textures. EncodeIwi8 (texture_upscale_iwi_writer.cpp) was already
+        // correct for mipCount > 4 -- it only ever records a
+        // fileSizeForPicmip CHECKPOINT for the top/largest 4 levels (matching
+        // the real official IwiWriter8.cpp's own guard), but still writes
+        // every real level's actual data to the file regardless of count;
+        // the only real blocker was its own now-removed mipCount>4
+        // rejection. Each level here is a simple 2x2 box-filter halving of
+        // the previous one, continuing all the way down to 1x1 -- a genuine
+        // complete pyramid, matching what the native engine's own
+        // independent size-based expectation actually needs regardless of
+        // texture size.
+        constexpr int kMaxMipLevels = 16; // generous array-sizing bound, not a
+            // real format limit -- comfortably covers any texture size this
+            // pipeline could ever produce (log2(32768)+1 = 16).
         TextureUpscaleIwi::MipLevel mips[kMaxMipLevels];
         uint8_t* mipsOwned[kMaxMipLevels] = {}; // real, non-const malloc'd
             // pointers for freeing below -- MipLevel::data is const uint8_t*,
@@ -703,21 +707,33 @@ namespace
             mips[mipCount].size = compSize;
             mipsOwned[mipCount] = comp;
 
-            const uint32_t nextW = curW / 2, nextH = curH / 2;
-            if (mipCount + 1 >= kMaxMipLevels || nextW < 4 || nextH < 4) {
+            // Real full-pyramid termination: stop once THIS level was
+            // already 1x1 (nothing smaller to generate), or the array bound
+            // is reached. Never floor out early at 4px -- that was the
+            // exact mistake that caused the native mismatch above.
+            if (mipCount + 1 >= kMaxMipLevels || (curW <= 1 && curH <= 1)) {
                 ++mipCount;
                 break;
             }
 
+            const uint32_t nextW = curW > 1 ? curW / 2 : 1;
+            const uint32_t nextH = curH > 1 ? curH / 2 : 1;
             uint8_t* half = static_cast<uint8_t*>(malloc(static_cast<size_t>(nextW) * nextH * 4));
             if (!half) { ++mipCount; break; } // degrade: ship the levels
                 // already encoded rather than losing the whole job.
             for (uint32_t y = 0; y < nextH; ++y) {
                 for (uint32_t x = 0; x < nextW; ++x) {
-                    const uint8_t* p0 = curRgba + (static_cast<size_t>(y * 2) * curW + x * 2) * 4;
-                    const uint8_t* p1 = p0 + 4;
-                    const uint8_t* p2 = curRgba + (static_cast<size_t>(y * 2 + 1) * curW + x * 2) * 4;
-                    const uint8_t* p3 = p2 + 4;
+                    // Real box-filter sample, clamped to the real source
+                    // bounds -- handles the odd-dimension case (curW or curH
+                    // not evenly divisible by 2, e.g. stepping 3->1 or
+                    // walking off a 1-pixel-wide source axis) by reusing the
+                    // last valid row/column instead of reading out of bounds.
+                    uint32_t sx0 = x * 2, sx1 = (sx0 + 1 < curW) ? sx0 + 1 : sx0;
+                    uint32_t sy0 = y * 2, sy1 = (sy0 + 1 < curH) ? sy0 + 1 : sy0;
+                    const uint8_t* p0 = curRgba + (static_cast<size_t>(sy0) * curW + sx0) * 4;
+                    const uint8_t* p1 = curRgba + (static_cast<size_t>(sy0) * curW + sx1) * 4;
+                    const uint8_t* p2 = curRgba + (static_cast<size_t>(sy1) * curW + sx0) * 4;
+                    const uint8_t* p3 = curRgba + (static_cast<size_t>(sy1) * curW + sx1) * 4;
                     uint8_t* d = half + (static_cast<size_t>(y) * nextW + x) * 4;
                     d[0] = static_cast<uint8_t>((p0[0] + p1[0] + p2[0] + p3[0]) / 4);
                     d[1] = static_cast<uint8_t>((p0[1] + p1[1] + p2[1] + p3[1]) / 4);

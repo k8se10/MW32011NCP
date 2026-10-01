@@ -59,10 +59,19 @@ namespace TextureUpscaleIwi
     // this project's own non-STL, malloc-based shipped-code convention --
     // asset_capture.cpp's own WriteDdsFile precedent). Caller owns and must
     // free() the returned buffer. Returns nullptr (outSize left at 0) on any
-    // invalid input (mipCount <= 0, mipCount > 4 -- this format's own real
-    // fileSizeForPicmip table only has 4 slots, matching the real writer's own
-    // `currentMipLevel < extent_v<fileSizeForPicmip>` guard -- a null mip
-    // buffer, or width/height/depth that don't fit uint16_t).
+    // invalid input (mipCount <= 0 or > 24, a generous array-sizing bound --
+    // NOT the real fileSizeForPicmip[4] limit, see below; a null mip buffer,
+    // or width/height/depth that don't fit uint16_t).
+    //
+    // mipCount MAY exceed 4 (fixed 2026-10-01, a real live-confirmed bug --
+    // a texture shipped with fewer real mip levels than the native engine's
+    // own "complete mipmap chain" size calculation expects crashes/corrupts
+    // with D3DERR_INVALIDCALL on the out-of-range LockRect level indices).
+    // fileSizeForPicmip itself still only ever gets 4 real entries, matching
+    // the real official IwiWriter8.cpp's own `currentMipLevel <
+    // extent_v<fileSizeForPicmip>` guard -- only the top/largest 4 levels
+    // get a checkpoint; every level is still written to the file, checkpoint
+    // or not.
     //
     // `mipsLargestFirst` must be ordered largest-mip-first (index 0 = the full
     // real resolution, matching this feature's own natural "we just upscaled
