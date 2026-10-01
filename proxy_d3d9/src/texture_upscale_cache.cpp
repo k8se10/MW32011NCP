@@ -9,6 +9,8 @@
     // real correctness validation below.
 #include "texture_upscale_iwi_writer.h" // TextureUpscaleIwi::Format -- same
     // format enum below.
+#include "texture_upscale_compress.h" // real lossless on-disk compression
+    // (2026-10-01) -- see that header's own comment for the full rationale.
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
 
@@ -179,6 +181,25 @@ namespace
         uint32_t declaredTotal = *reinterpret_cast<const uint32_t*>(data + 0x10);
         return declaredTotal == size;
     }
+
+    // Real, minimal on-disk wrapper for the compressed cache format
+    // (2026-10-01) -- precedes the real LZMS-compressed IWI bytes in every
+    // file this feature writes from here on. `magic` lets a reader tell a
+    // genuinely new-format file from a stale pre-compression one left over
+    // from before this change (treated as corrupt/miss, same as any other
+    // validation failure -- forces a clean recapture rather than trying to
+    // read compressed bytes as if they were raw IWI data). `uncompressedSize`
+    // is required up front by DecompressBuffer's own real contract (the
+    // Windows Compression API needs to know the real target size before
+    // decompressing, not just "big enough").
+#pragma pack(push, 1)
+    struct CompressedCacheHeader
+    {
+        char magic[4]; // "MWC1"
+        uint32_t uncompressedSize;
+    };
+#pragma pack(pop)
+    static_assert(sizeof(CompressedCacheHeader) == 8, "CompressedCacheHeader must be exactly 8 bytes");
 }
 
 uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, uint32_t* outSize)
@@ -189,9 +210,47 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
     char path[MAX_PATH];
     if (!BuildCacheFilePath(imageName, scaleMultiplier, path, sizeof(path))) return nullptr;
 
+    uint32_t rawSize = 0;
+    uint8_t* raw = ReadWholeFile(path, &rawSize);
+    if (!raw) return nullptr;
+
+    // Real decompression step (2026-10-01) -- every file this feature
+    // writes now starts with CompressedCacheHeader; a file too small to
+    // hold one, or with the wrong magic (a stale pre-compression file left
+    // over from before this change, or genuine corruption), is treated
+    // exactly like any other validation failure below -- deleted, forcing a
+    // clean recapture rather than trying to interpret compressed bytes as
+    // raw IWI data.
+    if (rawSize <= sizeof(CompressedCacheHeader)) {
+        free(raw);
+        DeleteFileA(path);
+        return nullptr;
+    }
+    const CompressedCacheHeader* hdr = reinterpret_cast<const CompressedCacheHeader*>(raw);
+    if (hdr->magic[0] != 'M' || hdr->magic[1] != 'W' || hdr->magic[2] != 'C' || hdr->magic[3] != '1') {
+        free(raw);
+        DeleteFileA(path);
+        return nullptr;
+    }
     uint32_t size = 0;
-    uint8_t* data = ReadWholeFile(path, &size);
-    if (!data) return nullptr;
+    uint8_t* data = TextureUpscaleCompress::DecompressBuffer(
+        raw + sizeof(CompressedCacheHeader),
+        rawSize - static_cast<uint32_t>(sizeof(CompressedCacheHeader)),
+        hdr->uncompressedSize);
+    free(raw);
+    if (!data) {
+        // Real decompression failure -- a genuinely corrupt/truncated
+        // compressed blob. Same "delete, force a clean recapture" handling
+        // as every other corruption case in this function.
+        char buf[600];
+        sprintf_s(buf, "[texture-upscale-cache] CORRUPT cache file detected and deleted (decompression "
+            "failed): '%.256s' -- will be treated as a miss and recaptured/regenerated the next time "
+            "this image is loaded.", path);
+        LogFromController(buf);
+        DeleteFileA(path);
+        return nullptr;
+    }
+    size = hdr->uncompressedSize;
 
     if (!ValidateCachedIwi(data, size)) {
         // Real, live-confirmed crash (2026-09-30, FAIL_FAST_INVALID_ARG via
