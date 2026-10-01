@@ -1,0 +1,7 @@
+# Real build output -- MSBuild's own intermediate dir (named after the
+# project GUID) and the real output dir, including the deployed
+# realesrgan_models\ copy (33MB+ binary, already tracked at its real source
+# location, proxy_d3d9/third_party/realesrgan_models/).
+x64/
+TextureC.*/
+*.log

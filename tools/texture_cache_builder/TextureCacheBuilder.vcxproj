@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <!-- Standalone, out-of-process ESRGAN texture-cache builder (2026-10-01).
+       Reuses proxy_d3d9's own pipeline source files directly (zero copies,
+       zero forks : see main.cpp's own header comment for the full "why"):
+       texture_upscale_ncnn/dxt_codec/iwi_writer/compress/cache.cpp, compiled
+       as-is. A real, standalone GUI application (ConfigurationType=
+       Application, SubSystem=Windows), never injected into or loaded by the
+       game : run once as a prerequisite step before playing. -->
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{A3F1E2D4-7B6C-4A5D-9E8F-1C2B3A4D5E6F}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <RootNamespace>TextureCacheBuilder</RootNamespace>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Debug'">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Release'">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup Label="UserMacros" />
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- ncnn/glslang/SPIRV vendored from proxy_d3d9/third_party/ncnn, same
+           real build/CRT-matching story as proxy_d3d9.vcxproj's own comment
+           (third_party/ncnn/README.md) : reused here via relative paths,
+           not re-vendored. -->
+      <AdditionalIncludeDirectories>..\..\proxy_d3d9\third_party\ncnn\include\ncnn;..\..\dxvk\include\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalLibraryDirectories>..\..\proxy_d3d9\third_party\ncnn\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>comctl32.lib;ncnn.lib;glslang.lib;SPIRV.lib;glslang-default-resource-limits.lib;MachineIndependent.lib;GenericCodeGen.lib;OSDependent.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <!-- Reused as-is from proxy_d3d9 : see main.cpp's own header comment. -->
+    <ClCompile Include="..\..\proxy_d3d9\src\texture_upscale_ncnn.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\texture_upscale_dxt_codec.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\texture_upscale_iwi_writer.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\texture_upscale_compress.cpp" />
+    <ClCompile Include="..\..\proxy_d3d9\src\texture_upscale_cache.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_ncnn.h" />
+    <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_dxt_codec.h" />
+    <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_iwi_writer.h" />
+    <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_compress.h" />
+    <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_cache.h" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <!-- Deploys the real Real-ESRGAN model files next to this exe's own build
+       output, same source as proxy_d3d9's own DeployTextureUpscaleAssets
+       target : so this tool is self-sufficient even on a machine that's
+       never built the main mod. Unlinker.exe (precache_tools\) and the
+       target game's own zone\ files are NOT copied here : this exe is
+       meant to be deployed INTO the real game install directory (see
+       main.cpp's own header comment), where both already live. -->
+  <Target Name="DeployBuilderAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <ItemGroup>
+      <RealesrganModelFiles Include="..\..\proxy_d3d9\third_party\realesrgan_models\*.bin;..\..\proxy_d3d9\third_party\realesrgan_models\*.param" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)realesrgan_models" Condition="!Exists('$(OutDir)realesrgan_models')" />
+    <Copy SourceFiles="@(RealesrganModelFiles)" DestinationFolder="$(OutDir)realesrgan_models\" Condition="'@(RealesrganModelFiles)' != ''" />
+  </Target>
+</Project>
