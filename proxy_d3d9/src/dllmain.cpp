@@ -63,6 +63,10 @@ void InstallZoneIndexRaceFixX64(); // defined in analog_input_hooks_x64.cpp --
     // zone-index writes on the database/zone-streaming thread racing the main
     // thread's own asset-registration reads of the same global) -- see that
     // function's own header comment for the full decompiled finding.
+void InstallSuppressImproperQuitCheckX64(); // defined in analog_input_hooks_x64.cpp --
+    // 2026-10-01, suppresses the real native CoD/IW-engine "did not exit
+    // properly, run in Safe Mode?" dialog -- see that function's own header
+    // comment for the full decompiled finding.
 extern "C" void ResolveImageLoadTriggerX64_Exported(); // defined in analog_input_hooks_x64.cpp --
     // 2026-09-29, proactive level-load texture preload -- resolves the real
     // native "force-load this image now" function (FUN_1401b9760). The queue/
@@ -1048,6 +1052,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // full decompiled evidence trail. Always installs, unconditional --
                 // this fixes genuine native engine behavior present for every asset
                 // type, not something gated behind an experimental toggle.
+            InstallSuppressImproperQuitCheckX64(); // 2026-10-01, suppresses the real
+                // native "did not exit properly, run in Safe Mode?" dialog (a CoD/IW-
+                // engine feature since CoD4, not a Windows one) -- see that function's
+                // own header comment (analog_input_hooks_x64.cpp) for the full
+                // decompiled trail. Always installs, unconditional -- clicking Yes on
+                // that dialog resets real settings via safemode.cfg, something this
+                // project's own crash history this session made far more likely to
+                // actually happen.
             TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
                 // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
                 // own header comment. Starts a background thread only when the on-disk

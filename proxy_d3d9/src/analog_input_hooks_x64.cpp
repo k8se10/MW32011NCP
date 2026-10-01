@@ -12943,6 +12943,66 @@ void* __fastcall Hook_AssetRegisterX64(uint32_t param1, void* param2)
     return g_realAssetRegisterX64(param1, param2);
 }
 
+// Real native "did not exit properly, run in Safe Mode?" suppression
+// (2026-10-01, direct instruction: "we need to change / replace the windows
+// native run mw3 in safe mode modal (as safe mode fucks up settings)" --
+// corrected from an initial wrong Windows-PCA theory: "its a cod thing not
+// windows, every pc cod has had it since cod 4"). Real, disassembly-confirmed
+// mechanism, traced end to end via Ghidra: the game writes a lock file
+// containing its own PID at launch; on a later launch, FUN_1402edf30 checks
+// whether that lock file still exists with a DIFFERENT (stale) PID --
+// meaning the previous session never got a chance to clean it up, i.e. it
+// crashed. If so, it shows the real native "WIN_IMPROPER_QUIT_TITLE"/
+// "WIN_IMPROPER_QUIT_BODY" dialog; clicking Yes calls a one-line setter
+// (DAT_141efbeb8 = 1) that a later startup step reads to `exec safemode.cfg`,
+// resetting real settings to safe defaults. Given this project's own
+// extensive crash history this session, that stale lock file has been
+// present on effectively every subsequent launch.
+//
+// Fixed by hooking FUN_1402edf30 itself and always taking the exact same
+// "everything is fine" path the function's own real early-out already uses
+// when no lock-file path was ever set (`if (DAT_14279d288 == '\0') return
+// 1;`) -- never reads the lock file, never shows the dialog, never reaches
+// the safe-mode-flag setter at all. SP-only per this project's own standing
+// per-exe signature-verification policy (resolved/verified against
+// iw5sp.exe only).
+using ImproperQuitCheckFnX64 = long long(__fastcall*)();
+ImproperQuitCheckFnX64 g_realImproperQuitCheckX64 = nullptr;
+
+long long __fastcall Hook_SuppressImproperQuitCheckX64()
+{
+    return 1; // same return value as the real native "all clear" path
+}
+
+void InstallSuppressImproperQuitCheckX64()
+{
+    constexpr const char* kImproperQuitCheckSignature =
+        "40 55 48 8D AC 24 F0 FC FF FF 48 81 EC 10 04 00 00 80 3D ?? ?? ?? ?? 00 "
+        "75 0E B8 01 00 00 00 48 81 C4 10 04 00 00 5D C3";
+    SigScan::Result r = SigScan::FindPatternInMainModule(kImproperQuitCheckSignature);
+    if (!r.found) {
+        LogFromController("[x64-safemode-suppress] FATAL: improper-quit-check signature did not "
+            "resolve -- the native 'did not exit properly, run in Safe Mode?' dialog may still "
+            "appear after a crash, and clicking Yes would still reset real settings via "
+            "safemode.cfg.");
+        return;
+    }
+    void* target = reinterpret_cast<void*>(r.address);
+    MH_STATUS s = MH_CreateHook(target, reinterpret_cast<void*>(&Hook_SuppressImproperQuitCheckX64),
+        reinterpret_cast<void**>(&g_realImproperQuitCheckX64));
+    char buf[400];
+    sprintf_s(buf, "[x64-safemode-suppress] MH_CreateHook(improper-quit-check @ 0x%llX) = %d",
+        static_cast<unsigned long long>(r.address), static_cast<int>(s));
+    LogFromController(buf);
+    if (s == MH_OK) {
+        MH_STATUS e = MH_EnableHook(target);
+        sprintf_s(buf, "[x64-safemode-suppress] MH_EnableHook = %d -- native 'did not exit "
+            "properly' dialog and its Safe Mode trigger (exec safemode.cfg, which resets real "
+            "settings) are now permanently suppressed.", static_cast<int>(e));
+        LogFromController(buf);
+    }
+}
+
 void InstallZoneIndexRaceFixX64()
 {
     SigScan::Result writerResult = SigScan::FindPatternInMainModule(kZoneLoadWorkerSignature);
