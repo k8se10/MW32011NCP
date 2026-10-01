@@ -22,7 +22,21 @@ namespace
     // (configurable up to 16 concurrently, textureUpscaleWorkerThreads), so
     // spawning a large additional thread count per call would oversubscribe
     // real CPU cores system-wide rather than genuinely speed anything up.
-    constexpr int kMaxCompressThreads = 4;
+    // Reduced from 4 to 2 (2026-10-01) after a live crash in an entirely
+    // unrelated subsystem (bink2w64.dll, the game's own vendored video
+    // codec -- crashed on its own background video-decode thread during
+    // main-menu intro playback, null-pointer-style read, zero mod code
+    // anywhere in the stack). Not provably caused by this feature, but a
+    // real, plausible contributing factor: this project's own
+    // textureUpscaleWorkerThreads can run up to 16 concurrent worker
+    // threads, each of which could spawn up to kMaxCompressThreads more --
+    // real resource-diag logs from the same session already showed system
+    // RAM at 92% load with ~2GB free during heavy caching, real evidence of
+    // severe system-wide pressure before this crash. Halved as a
+    // conservative mitigation (still genuinely multi-threaded) rather than
+    // a confirmed fix for a bug in third-party code this project has no
+    // source for and can't patch directly.
+    constexpr int kMaxCompressThreads = 2;
 
     // "Middle-out" chunk processing order (2026-10-01, direct request --
     // acknowledged up front as inspired by a fictional reference, but
