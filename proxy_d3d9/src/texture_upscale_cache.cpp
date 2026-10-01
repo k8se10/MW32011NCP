@@ -158,9 +158,26 @@ namespace
         uint16_t width = *reinterpret_cast<const uint16_t*>(data + 0x0A);
         uint16_t height = *reinterpret_cast<const uint16_t*>(data + 0x0C);
         if (width == 0 || height == 0) return false;
-        uint32_t expectedTotal = kIwiHeaderSize +
-            TextureUpscaleDxt::CompressedSize(width, height, TextureUpscaleDxt::BlockFormat::BC3);
-        return expectedTotal == size;
+        // Real fix (2026-10-01): this used to assume every cache file was
+        // always exactly ONE mip level (true before the worker started
+        // generating real mip chains -- see texture_upscale_worker.cpp's own
+        // "Real mip chain" change) and recomputed an expected size from
+        // width/height alone. Once the worker began shipping 1-4 real mip
+        // levels, that single-level assumption made EVERY freshly-written
+        // file read back smaller than its own real size, so this validator
+        // flagged every one of them as corrupt and deleted them on the spot
+        // -- a real, self-inflicted "all textures fail" regression, not a
+        // genuine corruption. Fixed by trusting the header's own
+        // fileSizeForPicmip[0] field instead of re-deriving an expected size
+        // independently -- EncodeIwi8 already guarantees that field equals
+        // the real total file size (version header + header + every mip
+        // present), by construction, regardless of how many levels a given
+        // file actually has. Byte offset 0x10 = 4 (version tag) + 4 (flags)
+        // + 1 (format) + 1 (unused) + 6 (dimensions[3]) = the first
+        // fileSizeForPicmip entry, matching RawIwiHeader's real, disassembly-
+        // confirmed field order (see texture_upscale_iwi_writer.cpp).
+        uint32_t declaredTotal = *reinterpret_cast<const uint32_t*>(data + 0x10);
+        return declaredTotal == size;
     }
 }
 
