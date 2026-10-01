@@ -1069,10 +1069,26 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved)
                 // that dialog resets real settings via safemode.cfg, something this
                 // project's own crash history this session made far more likely to
                 // actually happen.
-            TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // 2026-09-28 -- bulk
-                // first-run texture pre-cache pass, see texture_precache_orchestrator.cpp's
-                // own header comment. Starts a background thread only when the on-disk
-                // marker is stale/missing; a no-op on every other launch.
+            // TexturePrecacheOrchestrator::EnsurePrecacheStarted(); // DISABLED 2026-10-01
+                // -- live-reported instability on every video "apply settings" (resolution
+                // change triggers a full device recreation, confirmed in proxy_d3d9.log:
+                // "[overlay-hud] device recreated (no Reset() call seen)"), landing right on
+                // top of this orchestrator's own live, in-process, unthrottled Real-ESRGAN
+                // upscale work -- [frame-benchmark] logged a 2+ SECOND frame stall
+                // immediately after one such device-recreation event with precache jobs
+                // actively queuing/upscaling. This orchestrator was always the exact risk
+                // class this session's own staging-folder pivot (texture_capture_staging.h)
+                // was built to eliminate (live in-process GPU/CPU work during real
+                // gameplay) -- it was left running by oversight, not a considered decision,
+                // after that pivot landed. It's also still built on the same Unlinker-based
+                // zone extraction already confirmed unreliable for TextureCacheBuilder's own
+                // now-corrected design (see that tool's main.cpp header comment). Fully
+                // superseded: organic capture (staging) + the standalone, out-of-process
+                // TextureCacheBuilder.exe (now auto-extracted into the game install
+                // directory, see texture_cache_builder_extract_x64.cpp) cover the same
+                // ground with zero live-session risk. Not deleted outright in case a
+                // targeted, properly-gated (menu-only, not mid-gameplay) revival is ever
+                // wanted -- see texture_precache_orchestrator.cpp's own header comment.
 #else
             InstallAnalogInputHooks(); // task #5 -- see analog_input_hooks.cpp
 #endif
