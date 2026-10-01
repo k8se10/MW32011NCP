@@ -1020,13 +1020,29 @@ struct ModConfig
     // ever relying on the extra capacity in play.
     bool imagePoolRealExpansionEnabled = false;
 
-    // [Experimental] ImagePoolExtraCapacity (2026-09-29) -- how many EXTRA
-    // image-pool objects to add on top of the real, confirmed native count
-    // (4448) when ImagePoolRealExpansion is on. Each extra object costs
-    // exactly 40 real bytes (kImagePoolObjectStrideX64), committed once via
-    // VirtualAlloc at startup -- the default more than doubles real
-    // capacity for a trivial, one-time ~174KB.
-    int imagePoolExtraCapacity = 4000;
+    // [Experimental] ImagePoolExtraCapacity (2026-09-29, raised to the real
+    // clamp ceiling 2026-10-01) -- how many EXTRA image-pool objects to add
+    // on top of the real, confirmed native count (4448) when
+    // ImagePoolRealExpansion is on. Each extra object costs exactly 40 real
+    // bytes (kImagePoolObjectStrideX64), committed once via VirtualAlloc at
+    // startup. Raised from the original 4000 (8448 total) to the real clamp
+    // ceiling (100000, ~104448 total, ~4.1MB one-time commit -- still
+    // trivial) after a live session hit the native "Exceeded limit of 4448"
+    // dialog again with the expanded pool's own 8896-slot ceiling, not
+    // corruption: this project's own texture-upscale-cache pipeline can
+    // legitimately touch thousands of distinct image names in one heavy
+    // session (e.g. a full cache rebuild), a real volume profile ordinary
+    // gameplay never produces. Same proven-safe in-place contiguous-array
+    // mechanism as before (one VirtualAlloc, one head-pointer swap,
+    // self-checked at construction) -- just sized generously rather than
+    // inventing new, riskier architecture (a genuinely separate/disjoint
+    // overflow allocator was considered and rejected: this project's own
+    // history already shows handing the engine a pointer outside the
+    // original contiguous pool range caused a full system crash once,
+    // ImagePoolOverflowFallback, 2026-09-29 -- staying within one
+    // contiguous buffer at the real head pointer avoids that risk class
+    // entirely, regardless of how large that buffer is).
+    int imagePoolExtraCapacity = 100000;
 
     // [Video] MaxMemoryUsagePercentForProactiveFeatures (2026-09-29,
     // promoted from [Experimental] 2026-10-01) --

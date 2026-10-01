@@ -1856,7 +1856,7 @@ void LoadModConfig()
     ReadBool(path, "Experimental", "ImagePoolRealExpansion", g_modConfig.imagePoolRealExpansionEnabled);
     {
         int v = GetPrivateProfileIntA("Experimental", "ImagePoolExtraCapacity", g_modConfig.imagePoolExtraCapacity, path);
-        ClampIntSetting("Experimental", "ImagePoolExtraCapacity", v, 0, 100000, 4000);
+        ClampIntSetting("Experimental", "ImagePoolExtraCapacity", v, 0, 100000, 100000);
         g_modConfig.imagePoolExtraCapacity = v;
     }
     {
