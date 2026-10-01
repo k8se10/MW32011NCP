@@ -647,29 +647,107 @@ namespace
             // of the requested 2x/3x) rather than losing the job entirely.
         }
 
-        uint32_t compressedSize = 0;
-        uint8_t* compressed = TextureUpscaleDxt::EncodeFromRGBA(finalRgba,
-            (freeFinalRgba || job.scaleMultiplier == 4) ? finalW : netOutW,
-            (freeFinalRgba || job.scaleMultiplier == 4) ? finalH : netOutH,
-            encodeFmt, &compressedSize);
+        // Real base-level dimensions for whatever finalRgba actually holds --
+        // on the box-filter malloc-failure degrade path above, finalRgba is
+        // still the full netOutW x netOutH 4x result even though finalW/
+        // finalH name the originally-REQUESTED smaller size. Resolved once,
+        // here, and used consistently below for both the DXT encode and the
+        // IWI header, rather than the two previously disagreeing (a latent,
+        // harmless-in-practice mismatch this change incidentally closes).
+        const uint32_t actualW = (freeFinalRgba || job.scaleMultiplier == 4) ? finalW : netOutW;
+        const uint32_t actualH = (freeFinalRgba || job.scaleMultiplier == 4) ? finalH : netOutH;
+
+        // Real mip chain, not a single forced-full-resolution level (2026-10-01).
+        // Direct diagnosis: the native engine's own real picmip/priority-based
+        // streaming system (r_picmip, 4 real tiers: 0=Extra..3=Low -- see
+        // re_notes/iw5sp.md's "picmip" findings) can only pick a SMALLER amount
+        // of texture data to actually load/keep resident if the IWI file we
+        // hand it actually CONTAINS smaller mips to choose from, via its own
+        // fileSizeForPicmip[4] tiering (already correctly computed by
+        // EncodeIwi8 -- the bug was purely that this caller always passed
+        // mipCount=1). Shipping only a single always-full-resolution level
+        // forced every touched texture to stay fully resident regardless of
+        // the native engine's own actual current priority for it -- the real
+        // cause behind a live D3DERR_OUTOFVIDEOMEMORY (Create2DTexture
+        // failure, "mtl_truck_cab_nml" 4096x4096 DXT5) once enough distinct
+        // textures were touched in one session. kMaxPicmipEntries (4) is a
+        // real, fixed native format limit (RawIwiHeader::fileSizeForPicmip's
+        // own array size) -- not a tunable choice -- and happens to exactly
+        // match r_picmip's own real 0-3 range, one IWI mip level per real
+        // in-engine picmip tier. Each level is a simple 2x2 box-filter
+        // halving of the previous one (matching this file's own existing
+        // box-filter convention above), stopping once a next level would
+        // drop below a 4px floor (a safe, conservative margin for
+        // block-compressed formats, which this project's DXT codec already
+        // handles via its own pad-to-multiple-of-4 convention at this size).
+        constexpr int kMaxMipLevels = 4;
+        TextureUpscaleIwi::MipLevel mips[kMaxMipLevels];
+        uint8_t* mipsOwned[kMaxMipLevels] = {}; // real, non-const malloc'd
+            // pointers for freeing below -- MipLevel::data is const uint8_t*,
+            // matching EncodeIwi8's own read-only contract.
+        int mipCount = 0;
+        uint32_t curW = actualW, curH = actualH;
+        const uint8_t* curRgba = finalRgba;
+        uint8_t* curOwnedRgba = nullptr; // non-null once curRgba points at a
+            // buffer THIS loop malloc'd (levels 1+), owned until replaced/freed
+            // below -- level 0 (finalRgba) is owned by the existing cleanup
+            // further down, never freed by this loop.
+
+        for (; mipCount < kMaxMipLevels; ++mipCount) {
+            uint32_t compSize = 0;
+            uint8_t* comp = TextureUpscaleDxt::EncodeFromRGBA(curRgba, curW, curH, encodeFmt, &compSize);
+            if (!comp) break; // keep whatever levels already encoded (mipCount
+                // levels so far); a mid-chain encode failure still ships a
+                // real, valid, just-shorter mip chain rather than nothing.
+            mips[mipCount].data = comp;
+            mips[mipCount].size = compSize;
+            mipsOwned[mipCount] = comp;
+
+            const uint32_t nextW = curW / 2, nextH = curH / 2;
+            if (mipCount + 1 >= kMaxMipLevels || nextW < 4 || nextH < 4) {
+                ++mipCount;
+                break;
+            }
+
+            uint8_t* half = static_cast<uint8_t*>(malloc(static_cast<size_t>(nextW) * nextH * 4));
+            if (!half) { ++mipCount; break; } // degrade: ship the levels
+                // already encoded rather than losing the whole job.
+            for (uint32_t y = 0; y < nextH; ++y) {
+                for (uint32_t x = 0; x < nextW; ++x) {
+                    const uint8_t* p0 = curRgba + (static_cast<size_t>(y * 2) * curW + x * 2) * 4;
+                    const uint8_t* p1 = p0 + 4;
+                    const uint8_t* p2 = curRgba + (static_cast<size_t>(y * 2 + 1) * curW + x * 2) * 4;
+                    const uint8_t* p3 = p2 + 4;
+                    uint8_t* d = half + (static_cast<size_t>(y) * nextW + x) * 4;
+                    d[0] = static_cast<uint8_t>((p0[0] + p1[0] + p2[0] + p3[0]) / 4);
+                    d[1] = static_cast<uint8_t>((p0[1] + p1[1] + p2[1] + p3[1]) / 4);
+                    d[2] = static_cast<uint8_t>((p0[2] + p1[2] + p2[2] + p3[2]) / 4);
+                    d[3] = static_cast<uint8_t>((p0[3] + p1[3] + p2[3] + p3[3]) / 4);
+                }
+            }
+
+            if (curOwnedRgba) free(curOwnedRgba);
+            curRgba = half;
+            curOwnedRgba = half;
+            curW = nextW; curH = nextH;
+        }
+        if (curOwnedRgba) free(curOwnedRgba);
+
         free(netOut);
         if (freeFinalRgba) free(finalRgba);
 
-        if (!compressed) {
+        if (mipCount == 0) {
             char buf[300];
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': EncodeFromRGBA failed", job.name);
             LogFromController(buf);
             return;
         }
 
-        TextureUpscaleIwi::MipLevel mip;
-        mip.data = compressed;
-        mip.size = compressedSize;
         uint32_t iwiSize = 0;
         uint8_t* iwi = TextureUpscaleIwi::EncodeIwi8(
-            static_cast<uint16_t>(finalW), static_cast<uint16_t>(finalH), 1,
-            iwiEncodeFmt, &mip, 1, &iwiSize);
-        free(compressed);
+            static_cast<uint16_t>(actualW), static_cast<uint16_t>(actualH), 1,
+            iwiEncodeFmt, mips, mipCount, &iwiSize);
+        for (int i = 0; i < mipCount; ++i) free(mipsOwned[i]);
         if (!iwi) {
             char buf[300];
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': EncodeIwi8 failed", job.name);
@@ -682,8 +760,8 @@ namespace
 
         char buf[300];
         if (stored) {
-            sprintf_s(buf, "[texture-upscale-worker] '%.200s': upscaled %ux%u -> %ux%u and cached (%u bytes)",
-                job.name, job.width, job.height, finalW, finalH, iwiSize);
+            sprintf_s(buf, "[texture-upscale-worker] '%.200s': upscaled %ux%u -> %ux%u and cached (%u bytes, %d real mip levels)",
+                job.name, job.width, job.height, actualW, actualH, iwiSize, mipCount);
             LogFromController(buf);
         } else {
             sprintf_s(buf, "[texture-upscale-worker] '%.200s': StoreUpscaledIwi failed", job.name);
