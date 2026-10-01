@@ -327,6 +327,47 @@ typedef HRESULT(WINAPI* TextureUnlockRect_t)(void* This, UINT Level);
 void* g_origCreateTexture = nullptr;
 bool g_hookInstalled = false;
 
+// ---- LockRect crash-safety hook (2026-10-01) -- see Hook_CreateTexture's own
+// install-site comment below for the full root-cause record.
+void* g_origTextureLockRectX64 = nullptr;
+bool g_lockRectHookInstalledX64 = false;
+
+HRESULT WINAPI Hook_TextureLockRectX64(void* This, UINT Level, D3dLockedRect* pLockedRect,
+                                        const RECT* pRect, DWORD Flags)
+{
+    HRESULT hr = reinterpret_cast<TextureLockRect_t>(g_origTextureLockRectX64)(
+        This, Level, pLockedRect, pRect, Flags);
+    if (FAILED(hr) && pLockedRect) {
+        // Real native caller (iw5sp.exe's own FUN_1401ba6d0/FUN_1401ba3c0)
+        // never checks this HRESULT -- it unconditionally memcpy's into
+        // pLockedRect->pBits regardless of what we return here. The only
+        // thing we control that actually prevents the crash is what ends up
+        // IN pLockedRect, not our own return value.
+        static uint8_t* s_lockRectScratchX64 = nullptr;
+        constexpr size_t kLockRectScratchSizeX64 = 64 * 1024 * 1024; // generous
+            // margin -- large enough for any real single locked-rect size this
+            // project's own texture-upscale-cache pipeline produces (a
+            // 4096x4096 DXT5 level is ~8MB; this is 8x that for real margin).
+        if (!s_lockRectScratchX64) s_lockRectScratchX64 = static_cast<uint8_t*>(malloc(kLockRectScratchSizeX64));
+        if (s_lockRectScratchX64) {
+            pLockedRect->pBits = s_lockRectScratchX64;
+            pLockedRect->Pitch = 4096; // plausible, safe generic row pitch --
+                // the real native row-copy loop walks dest by this pitch per
+                // row; any sane value keeps every real write inside our
+                // scratch buffer's own real bounds for every texture size
+                // this pipeline actually produces.
+            char buf[400];
+            sprintf_s(buf, "[x64-lockrect-guard] CRITICAL: real LockRect FAILED (hr=0x%08lX, Level=%u) but the "
+                "native caller never checks -- substituted a safe scratch buffer instead of letting it write "
+                "to uninitialized stack memory (see known_issues_x64.md issue for the full trail). This "
+                "texture's content will be wrong for this one load, not a crash.",
+                static_cast<unsigned long>(hr), Level);
+            LogFromController(buf);
+        }
+    }
+    return hr;
+}
+
 // ---- CreateTexture-storm caller-ID diagnostic (2026-09-23) -- see this file's own
 // header's big comment for the full rationale, including the real crash this
 // replaces the unsafe first attempt at (synchronous LogFromController inside the
@@ -570,6 +611,64 @@ HRESULT WINAPI Hook_CreateTexture(void* This, UINT Width, UINT Height, UINT Leve
     // comment. Unconditional, same safety shape as the two calls above.
     if (SUCCEEDED(hr) && ppTexture && *ppTexture) {
         TextureViewportCapture::OnCreateTexture(*ppTexture, Width, Height, Format);
+    }
+
+    // Real, unconditional crash-safety fix (2026-10-01), installed once from
+    // the first successfully-created texture's own shared vtable (same
+    // technique as every other vtable hook in this project -- a COM
+    // interface's vtable is shared across every instance of the same
+    // underlying implementation, so hooking it once via any live texture
+    // covers all of them). NOT gated behind any config flag -- this closes a
+    // real, live-confirmed native engine crash, not an opt-in feature.
+    //
+    // Root-caused via a live crash dump (WinDbg) cross-referenced against a
+    // fresh Ghidra decompile of the real native caller: iw5sp.exe's own
+    // texture row-copy helper (FUN_1401ba6d0 -> FUN_1401ba3c0) calls
+    // IDirect3DTexture9::LockRect (vtable slot 19, offset 0x98 -- matches
+    // this file's own already-confirmed kTextureLockRectVtableIndex) and
+    // NEVER checks the returned HRESULT before using the output
+    // D3DLOCKED_RECT's pBits/Pitch as a memcpy destination. If LockRect
+    // fails (plausible under real VRAM/memory pressure -- the exact
+    // scenario this project's own texture-upscale-cache pipeline can now
+    // create during a heavy session), pBits/Pitch are left as uninitialized
+    // stack garbage, and the subsequent memcpy writes to garbage --
+    // confirmed live: a real crash wrote 16 SIMD bytes to
+    // 0x00007ffc00000002, a classic leftover-stack-garbage shape (a
+    // plausible real high address prefix with a suspiciously small low
+    // dword), not a corrupted heap pointer. This is a genuine, pre-existing
+    // native engine bug (missing error-check on a vanilla D3D9 API call),
+    // not something introduced by this project's own code or by the
+    // tessellation work -- it simply never had a realistic chance to fire
+    // during ordinary vanilla gameplay, where LockRect essentially never
+    // fails. See re_notes/known_issues_x64.md for the full investigation
+    // trail (image-pool capacity raised, then this).
+    //
+    // We can't patch iw5sp.exe's own calling code (no source, compiled
+    // binary only) -- degrading safely here instead, the same "never crash,
+    // contain the damage" philosophy as this project's own image-pool
+    // guards: on a real LockRect failure, hand back a safe scratch buffer
+    // instead of leaving pBits as garbage. The texture's own content is
+    // wrong for that one load (a visual glitch, not ideal) -- infinitely
+    // better than a hard crash.
+    if (SUCCEEDED(hr) && ppTexture && *ppTexture && !g_lockRectHookInstalledX64) {
+        g_lockRectHookInstalledX64 = true; // set before the real MH_CreateHook
+            // call, not after -- this is a one-time install attempt regardless
+            // of whether it succeeds; a failed attempt should never retry on
+            // every subsequent texture creation.
+        void** texVtblForHook = *reinterpret_cast<void***>(*ppTexture);
+        void* realLockRect = texVtblForHook[kTextureLockRectVtableIndex];
+        MH_STATUS lrs = MH_CreateHook(realLockRect, reinterpret_cast<void*>(&Hook_TextureLockRectX64),
+            reinterpret_cast<void**>(&g_origTextureLockRectX64));
+        char lrbuf[300];
+        sprintf_s(lrbuf, "[x64-lockrect-guard] MH_CreateHook(LockRect @ %p) = %d", realLockRect, static_cast<int>(lrs));
+        LogFromController(lrbuf);
+        if (lrs == MH_OK) {
+            MH_STATUS lre = MH_EnableHook(realLockRect);
+            sprintf_s(lrbuf, "[x64-lockrect-guard] MH_EnableHook(LockRect) = %d -- real native missing-error-check crash "
+                "(iw5sp.exe's own FUN_1401ba6d0/FUN_1401ba3c0 row-copy helper) now degrades safely instead of crashing.",
+                static_cast<int>(lre));
+            LogFromController(lrbuf);
+        }
     }
 
     // Timer below starts AFTER the real call above, deliberately: that call's own
