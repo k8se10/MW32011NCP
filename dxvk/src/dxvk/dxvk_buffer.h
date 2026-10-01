@@ -301,6 +301,25 @@ namespace dxvk {
      * \returns Previous buffer allocation
      */
     Rc<DxvkResourceAllocation> assignStorage(Rc<DxvkResourceAllocation>&& slice) {
+      // MW32011NCP fork fix (2026-10-01): createBufferResource genuinely
+      // returns nullptr on a real allocation failure (dxvk_memory.cpp's own
+      // "If we can't get an allocation for a global buffer" path, which
+      // already logs via logMemoryError/logMemoryStats before returning) --
+      // this caller never checked for it before unconditionally dereferencing
+      // the result via getBufferInfo() below, turning a real, loggable OOM
+      // into a silent null-pointer access violation instead. Root-caused via
+      // a live crash during this project's texture-upscale-cache pipeline
+      // (hundreds of large AI-upscaled textures created in rapid succession,
+      // a volume/size profile vanilla D3D9 texture loading never produces),
+      // see MW32011NCP's own re_notes/known_issues_x64.md issue #20 for the
+      // full investigation trail. Throwing here instead of crashing gives the
+      // caller a real, catchable failure matching this file's own existing
+      // idiom (createBufferResource already throws DxvkError on a genuine
+      // vkCreateBuffer failure a few lines below its own nullptr path).
+      if (unlikely(!slice)) {
+        throw DxvkError("DxvkBuffer: Failed to allocate backing storage (out of memory)");
+      }
+
       Rc<DxvkResourceAllocation> result = std::move(m_storage);
 
       m_storage = std::move(slice);
