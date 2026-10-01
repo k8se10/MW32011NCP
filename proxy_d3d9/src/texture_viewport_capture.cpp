@@ -168,7 +168,8 @@ namespace
         if (!tightBuf) return;
 
         if (!TextureUpscaleWorker::QueueUpscaleJob(name, static_cast<int>(iwiFmt), width, height,
-                                                    tightBuf, static_cast<uint32_t>(tightSize), g_modConfig.textureRenderRes, "viewport")) {
+                                                    tightBuf, static_cast<uint32_t>(tightSize), g_modConfig.textureRenderRes,
+                                                    0 /* sourceMipCount unknown -- live-bound texture, no original file to parse */, "viewport")) {
             free(tightBuf); // already in flight, queue full, or invalid --
                 // QueueUpscaleJob logs the success case itself.
         }

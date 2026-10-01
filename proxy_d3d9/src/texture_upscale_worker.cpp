@@ -46,6 +46,9 @@ namespace
         uint8_t* compressedData; // malloc'd, owned by the queue until the worker frees it
         uint32_t compressedSize;
         int scaleMultiplier;
+        int sourceMipCount; // 0 = unknown (generate a full pyramid down to 1x1);
+            // otherwise the real source texture's own real mip count -- see
+            // QueueUpscaleJob's own header comment for the full rationale.
         PendingJob* next; // intrusive singly-linked FIFO node -- see the
             // queue-depth note below for why this replaced a fixed-capacity
             // ring buffer.
@@ -657,31 +660,42 @@ namespace
         const uint32_t actualW = (freeFinalRgba || job.scaleMultiplier == 4) ? finalW : netOutW;
         const uint32_t actualH = (freeFinalRgba || job.scaleMultiplier == 4) ? finalH : netOutH;
 
-        // Real, FULL mip pyramid, not a single forced-full-resolution level
-        // and NOT capped at 4 (2026-10-01, second pass). Direct diagnosis of
-        // a real live crash/corruption: the native engine independently
-        // computes how many real mip levels a texture of a given width/
-        // height SHOULD have (standard "complete mipmap chain" convention,
-        // same as passing Levels=0 to D3D9's own CreateTexture) and tries to
-        // LockRect every one of them regardless of how many levels the
-        // texture was actually created with. An earlier version of this
-        // change capped the chain at 4 levels (wrongly reasoning from
-        // RawIwiHeader::fileSizeForPicmip's own fixed 4-slot array) -- for a
-        // 4096x4096 upscaled texture the real expected chain is 13 levels,
-        // so the native engine tried to lock levels far past what we'd
-        // created, crashing with D3DERR_INVALIDCALL (confirmed live,
-        // hr=0x8876086C, Level=11/13) and visibly corrupting text/UI
-        // textures. EncodeIwi8 (texture_upscale_iwi_writer.cpp) was already
-        // correct for mipCount > 4 -- it only ever records a
-        // fileSizeForPicmip CHECKPOINT for the top/largest 4 levels (matching
-        // the real official IwiWriter8.cpp's own guard), but still writes
-        // every real level's actual data to the file regardless of count;
-        // the only real blocker was its own now-removed mipCount>4
-        // rejection. Each level here is a simple 2x2 box-filter halving of
-        // the previous one, continuing all the way down to 1x1 -- a genuine
-        // complete pyramid, matching what the native engine's own
-        // independent size-based expectation actually needs regardless of
-        // texture size.
+        // Real mip chain, matching the SOURCE texture's own real mip count
+        // (2026-10-01, third pass -- two earlier versions of this change
+        // were each wrong in opposite directions). First pass: a single
+        // forced-full-resolution level for every texture, which starved the
+        // native engine's own picmip/priority streaming of any smaller tier
+        // to fall back to (real cause of a live D3DERR_OUTOFVIDEOMEMORY).
+        // Second pass: capped every chain at exactly 4 levels (wrongly
+        // reasoning from RawIwiHeader::fileSizeForPicmip's own fixed 4-slot
+        // array) -- for a 4096x4096 upscaled texture the real expected chain
+        // is 13 levels, so the native engine tried to LockRect levels far
+        // past what we'd created, crashing with D3DERR_INVALIDCALL (hr=
+        // 0x8876086C, Level=11/13) and corrupting text/UI textures. A THIRD
+        // attempt then went to the opposite extreme (always a full pyramid
+        // down to 1x1 for every texture, regardless of the source's own real
+        // depth) and broke texture loading outright ("failed to load
+        // texture") for assets whose real native mip count is genuinely
+        // smaller than their theoretical full pyramid -- not every texture
+        // needs or has the same depth, and shipping MORE levels than the
+        // source ever had is just as wrong as shipping fewer than the
+        // native engine expects.
+        //
+        // The actual correct answer: match the real source texture's own
+        // real, on-disk mip count exactly (job.sourceMipCount, computed in
+        // QueueUpscaleJobFromIwiFile by walking the real captured file's own
+        // mip payload) -- correct by construction, since the native engine
+        // already successfully loads that exact original file with that
+        // exact count. Falls back to a full 1x1 pyramid only when the real
+        // count genuinely can't be determined (sourceMipCount == 0, e.g. a
+        // live-bound viewport capture with no original file to parse).
+        // EncodeIwi8 (texture_upscale_iwi_writer.cpp) was already correct
+        // for mipCount > 4 regardless of which of these policies is used --
+        // it only ever records a fileSizeForPicmip CHECKPOINT for the
+        // top/largest 4 levels (matching the real official IwiWriter8.cpp's
+        // own guard), but still writes every real level's actual data to
+        // the file regardless of count. Each level here is a simple 2x2
+        // box-filter halving of the previous one.
         constexpr int kMaxMipLevels = 16; // generous array-sizing bound, not a
             // real format limit -- comfortably covers any texture size this
             // pipeline could ever produce (log2(32768)+1 = 16).
@@ -707,11 +721,20 @@ namespace
             mips[mipCount].size = compSize;
             mipsOwned[mipCount] = comp;
 
-            // Real full-pyramid termination: stop once THIS level was
-            // already 1x1 (nothing smaller to generate), or the array bound
-            // is reached. Never floor out early at 4px -- that was the
-            // exact mistake that caused the native mismatch above.
-            if (mipCount + 1 >= kMaxMipLevels || (curW <= 1 && curH <= 1)) {
+            // Real termination (2026-10-01, second pass): match the REAL
+            // source texture's own real mip count when known
+            // (job.sourceMipCount > 0, computed in QueueUpscaleJobFromIwiFile
+            // by walking the real captured file's own mip payload) -- not
+            // every texture has the same real depth, and generating MORE
+            // levels than the source ever had is just as wrong as the
+            // earlier regression (generating FEWER than the native engine
+            // expects). When unknown (sourceMipCount == 0 -- e.g. a
+            // live-bound viewport capture with no original file to parse),
+            // fall back to a genuine complete pyramid down to 1x1, the
+            // safest default with no real source metadata to match against.
+            bool reachedKnownSourceCount = job.sourceMipCount > 0 && mipCount + 1 >= job.sourceMipCount;
+            bool reachedFullPyramid = curW <= 1 && curH <= 1;
+            if (mipCount + 1 >= kMaxMipLevels || reachedKnownSourceCount || reachedFullPyramid) {
                 ++mipCount;
                 break;
             }
@@ -935,11 +958,50 @@ bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, u
     }
     if (iwiFileSize < kIwiHeaderSize + baseMipSize) return false;
 
+    // Real source mip count (2026-10-01) -- walk the real mip payload
+    // (everything after the header) from the base (largest) level downward,
+    // halving dimensions each step and accumulating each level's real
+    // per-format compressed size, exactly matching this project's own
+    // writer-side halving convention (texture_upscale_worker.cpp's own
+    // ProcessJob) and the real on-disk smallest-first ordering. The running
+    // total reaching the real payload size (iwiFileSize - kIwiHeaderSize)
+    // tells us exactly how many real levels this specific source texture
+    // actually has -- not a generic formula, not an assumption, the real
+    // number the native engine itself already successfully loads for this
+    // exact file. Stops at 1x1 or a 64-level safety bound regardless (never
+    // an infinite loop on a corrupt/unexpected payload size); if the running
+    // total never exactly matches, the loop's own `break` on overshoot still
+    // leaves the best count found so far (closest, not wrong by construction
+    // -- a real payload that doesn't divide evenly is a format edge case,
+    // not a crash risk).
+    int sourceMipCount = 0;
+    {
+        const uint32_t realPayloadSize = iwiFileSize - kIwiHeaderSize;
+        uint32_t running = 0;
+        uint32_t lw = iwiWidth, lh = iwiHeight;
+        for (int i = 0; i < 64; ++i) {
+            uint32_t levelSize;
+            if (IwiFormatToBlockFormat(rawFormat, &blockFmt)) {
+                levelSize = TextureUpscaleDxt::CompressedSize(lw, lh, blockFmt);
+            } else {
+                levelSize = lw * lh * static_cast<uint32_t>(rawBpp);
+            }
+            if (running + levelSize > realPayloadSize) break; // overshoot --
+                // stop, keep whatever count was confirmed so far.
+            running += levelSize;
+            ++sourceMipCount;
+            if (running == realPayloadSize) break; // exact match -- done.
+            if (lw <= 1 && lh <= 1) break; // reached 1x1, nothing smaller possible.
+            lw = lw > 1 ? lw / 2 : 1;
+            lh = lh > 1 ? lh / 2 : 1;
+        }
+    }
+
     uint8_t* mipCopy = static_cast<uint8_t*>(malloc(baseMipSize));
     if (!mipCopy) return false;
     memcpy(mipCopy, iwiFileBytes + (iwiFileSize - baseMipSize), baseMipSize);
 
-    if (!QueueUpscaleJob(name, rawFormat, iwiWidth, iwiHeight, mipCopy, baseMipSize, scaleMultiplier, source)) {
+    if (!QueueUpscaleJob(name, rawFormat, iwiWidth, iwiHeight, mipCopy, baseMipSize, scaleMultiplier, sourceMipCount, source)) {
         free(mipCopy); // already in flight, queue full, or invalid args --
             // a normal, expected outcome, not an error (QueueUpscaleJob
             // logs the success case itself).
@@ -950,7 +1012,7 @@ bool QueueUpscaleJobFromIwiFile(const char* name, const uint8_t* iwiFileBytes, u
 
 bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t height,
                       const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier,
-                      const char* source)
+                      int sourceMipCount, const char* source)
 {
     if (!name || !compressedData || compressedSize == 0 || width == 0 || height == 0) return false;
 
@@ -1024,6 +1086,7 @@ bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t heig
         // declared contract.
     node->compressedSize = compressedSize;
     node->scaleMultiplier = scaleMultiplier;
+    node->sourceMipCount = sourceMipCount;
     node->next = nullptr;
 
     // Inserted in ascending pixel-count order, not appended FIFO (2026-09-29,

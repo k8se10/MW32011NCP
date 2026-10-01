@@ -49,9 +49,24 @@ namespace TextureUpscaleWorker
     // session can be checked to see which mechanism(s) are actually
     // contributing real captures, not just whether the pipeline as a whole
     // is working. Diagnostic only, never affects behavior.
+    // `sourceMipCount` (2026-10-01): the REAL number of mip levels the
+    // original source texture actually had on disk, when known (0 = unknown
+    // -- degrade to a full pyramid down to 1x1, the safest default when the
+    // caller has no way to determine the real count, e.g. a live-bound
+    // viewport-captured texture). Real, live-confirmed bug this closes:
+    // always generating a full 1x1-deep pyramid regardless of the source's
+    // own real mip count produced MORE levels than some textures' real
+    // native structure, which the native engine's own loader rejected
+    // outright ("failed to load texture") for at least some assets -- not
+    // every texture needs or has the same mip depth, and shipping more
+    // levels than the real source ever had is just as wrong as shipping
+    // fewer than the native engine expects (the earlier regression this
+    // project already fixed once). Matching the real source's own count
+    // exactly is correct by construction, since the native engine already
+    // successfully loads that exact original file with that exact count.
     bool QueueUpscaleJob(const char* name, int format, uint32_t width, uint32_t height,
                           const uint8_t* compressedData, uint32_t compressedSize, int scaleMultiplier,
-                          const char* source = "unknown");
+                          int sourceMipCount = 0, const char* source = "unknown");
 
     // Starts the background worker thread if not already running. Safe to
     // call repeatedly (idempotent) -- QueueUpscaleJob calls this internally,
