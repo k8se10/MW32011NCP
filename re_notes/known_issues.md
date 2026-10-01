@@ -65,7 +65,7 @@ issue's own section below; this is a scan aid, not a replacement.
 - [#30](#30-third-analog-input-channel-cmd0x3e0x3f-discovered--likely-unifying-root-cause-for-dpvmortarturret-2026-07-18-research-pass-task-25-refuted-for-predator-missile-guidance-specifically-2026-07-19--see-the-correction-near-the-end-of-this-entry) — Third analog-input channel (DPV/mortar/turret) — **Open** (data collection blocked)
 - [#31](#31-master-notifyonplayercommandnotifyoncommand-survey--two-distinct-builtins-found-squadmate-call-ins-real-failure-mode-identified-2026-07-18-research-pass) — Master `notifyonplayercommand`/`notifyoncommand` survey — **Resolved**
 - [#32](#32-console-look-input-likely-had-a-real-acceleration-ramp--this-projects-look-currently-has-none-2026-07-19-web-research-implemented-same-day--resolved-2026-07-20) — Console look-acceleration ramp — **Resolved**
-- [#33](#33-multiplayer-feasibility-research-2026-07-20--technical-re-vac-risk-and-a-real-cross-project-correction) — Multiplayer feasibility research (VAC risk) — **Investigating** (ongoing research entry, but a real policy decision was reached 2026-08-21 -- see the entry's own "Seventh pass": CVP denied, MP proceeds opt-in-only under a specific input-remapping-only methodology)
+- [#33](#33-multiplayer-feasibility-research-2026-07-20--technical-re-vac-risk-and-a-real-cross-project-correction) — Multiplayer feasibility research (VAC risk) — **Investigating** (ongoing research entry, but a real policy decision was reached 2026-08-21 -- see the entry's own "Seventh pass": CVP denied, MP proceeds opt-in-only under a specific input-remapping-only methodology; "Eighth pass", 2026-10-01: real public VAC source (danielkrupinski/VAC) reviewed directly -- none of its four documented detection modules scan the target game's own loaded-module list, consistent with this project's proxy-DLL architecture)
 - [#34](#34-glyph-patch-mechanism-test-injectfontglyphpatchtest-lbrba-still-not-visually-provable--wrong-font-targeted-corrected-no-safe-way-found-yet-to-actually-see-it-2026-07-21) — Glyph-patch mechanism test — **Resolved** (by supersession — #48/#50 shipped a different mechanism)
 - [#35](#35-bind-resolver-text-hook-fun_0061f6f0--log-only-first-pass-implemented-not-yet-live-tested-2026-07-21) — Bind-resolver text hook — **Investigating** (substitution half superseded by #48/#50; diagnostic half still open)
 - [#36](#36-local-splitscreen-co-op--user-roadmap-idea-not-yet-investigated-2026-07-21) — Local splitscreen co-op — **Roadmap Idea**
@@ -5842,6 +5842,60 @@ asserts an unrelated, fabricated claim — "1 month of retail MP testing, zero V
 supporting evidence anywhere in this project (no MP proxy-DLL code has ever existed in this repo's history; MP
 work has been static-RE-only per `re_notes/iw5mp.md`). That file's CVP-denial claim was independently confirmed
 true by the user directly (see above); its testing-history claim was not, and should not be treated as fact.
+
+### Eighth pass — a real public VAC reverse-engineering repo reviewed directly against this project's own architecture (2026-10-01)
+
+**User-supplied source, reviewed directly (not secondhand):** [danielkrupinski/VAC](https://github.com/danielkrupinski/VAC)
+("Source code of Valve Anti-Cheat obtained from disassembly of compiled modules") — both its README and its actual
+`.c`/`.h` source files were pulled and read, not just summarized from the repo description. This is the first time
+this project has reviewed real, disassembly-derived VAC source rather than secondhand research/forum claims.
+
+**What the four real, documented VAC modules actually do**, confirmed by reading the source directly:
+- **SystemInfo** — pure OS/hardware/volume fingerprinting, plus a check that VAC's *own* module's IAT hasn't been
+  hooked (self-integrity of VAC's own code, not a scan of the game process or third-party DLLs).
+- **ProcessHandleList** (`ProcessHandleList.c`) — calls `NtQuerySystemInformation(SystemHandleInformation)` to
+  enumerate **every open handle system-wide**, grouped by which process holds handles to which object types. This
+  is the real mechanism for detecting "some other process holds a suspicious handle into my game process" — the
+  classic way to catch an **external** tool that `OpenProcess`+`ReadProcessMemory`/`WriteProcessMemory`s into a
+  VAC-secured game (e.g. Cheat Engine, an external injector/trainer).
+- **ProcessMonitor** — reads a shared-memory object `steamservice.dll` itself maintains and checks that object's
+  own vtable pointers still point inside `steamservice.dll`'s own module range. Again VAC checking its *own*
+  internals, not the game's loaded-module list.
+- **ReadModules** (undocumented in the repo's own README — only found by reading the real file tree) — a small
+  utility: elevates to `SeDebugPrivilege` and does real on-disk file-identity lookups (volume serial number + file
+  index) via `GetFileInformationByHandle`, most plausibly to verify a system DLL on disk wasn't renamed/swapped,
+  not something scoped at third-party proxy DLLs.
+
+**What's conspicuously absent from everything actually reverse-engineered and published here:** no documented
+module enumerates the *target game's own loaded module list* and checks third-party DLLs' IATs/inline hooks.
+Every hook-detection technique found in this real source is scoped to VAC/Steam's **own** internal structures
+(its own module, `steamservice.dll`'s own vtable), not the game process broadly.
+
+**Direct read against this project's own specific architecture:** `MW32011NCP`'s main mod loads as a proxy
+`d3d9.dll` via the game's own normal Windows DLL search order — the game calls `LoadLibrary` on it itself as part
+of normal D3D9 init. No `OpenProcess`/`CreateRemoteThread`/`WriteProcessMemory` from an external process is
+involved at all — architecturally identical to ReShade/DXVK/Special K/RivaTuner, all of which load the same way.
+None of the four real techniques documented above would see it: `ProcessHandleList`'s system-wide handle
+enumeration specifically wouldn't trigger on a DLL the game loaded itself (there's no foreign process holding a
+suspicious handle to flag), and the other three modules don't touch the game's module list at all.
+
+The real risk surface this evidence *does* point at directly validates policies this project already has locked
+in, not a new finding: `ProcessHandleList` is exactly the mechanism that would catch an **external** tool (a live
+debugger, a memory-diff tool) holding a read/write handle into the game process while VAC is active — the same
+class of risk this project's own standing rules already treat as real (never attach x64dbg/an external memory
+tool to a live VAC-secured session; MP support stays opt-in-with-acknowledgment; the main mod's own GSC-VM
+read/trigger capability, per CLAUDE.md's 2026-09-16 reversal, operates in-process via real native calls, never an
+external handle into the process).
+
+**Honesty check, same standard as the rest of this issue:** this research is real and worth citing, but not
+current-state-proof — the repo's own newest documented module is dated by its author to ~January 2020, and VAC
+modules are streamed from Valve's own servers and can change at any time. This is the best real, source-level
+public evidence available as of this review, not a guarantee of what VAC's *current* modules do. A companion
+repo by the same author, `VAC-Bypass`, was found during this same pass but deliberately NOT reviewed in depth or
+pulled from — it's a working anti-cheat-evasion tool (tested against Cheat Engine attached to a live game
+process), a fundamentally different category from the pure-documentation repo above, and not relevant to this
+project's actual question ("does our architecture resemble something VAC's real checks would flag," not "how do
+we disable VAC's scanning").
 
 ---
 
