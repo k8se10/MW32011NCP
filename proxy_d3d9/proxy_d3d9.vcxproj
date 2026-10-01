@@ -267,6 +267,7 @@
     <ClCompile Include="src\texture_upscale_worker.cpp" />
     <ClCompile Include="src\texture_precache_orchestrator.cpp" />
     <ClCompile Include="src\texture_viewport_capture.cpp" />
+    <ClCompile Include="src\texture_capture_staging.cpp" />
     <ClCompile Include="src\vram_diag.cpp" />
     <ClCompile Include="src\frame_benchmark.cpp" />
     <ClCompile Include="src\plugin_loader.cpp" />
@@ -337,6 +338,7 @@
     <ClInclude Include="src\texture_upscale_worker.h" />
     <ClInclude Include="src\texture_precache_orchestrator.h" />
     <ClInclude Include="src\texture_viewport_capture.h" />
+    <ClInclude Include="src\texture_capture_staging.h" />
     <ClInclude Include="src\vram_diag.h" />
     <ClInclude Include="src\frame_benchmark.h" />
     <ClInclude Include="src\plugin_loader.h" />

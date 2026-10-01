@@ -10,8 +10,43 @@
 // prerequisite etxernal app for esgran caching" -- do the heavy lifting
 // (Real-ESRGAN upscaling, DXT re-encoding, compression, cache-file writing)
 // in a completely separate, standalone process that never touches
-// iw5sp.exe's own memory, threads, or native asset pool at all, run ONCE
-// before playing rather than live during a session.
+// iw5sp.exe's own memory, threads, or native asset pool at all.
+//
+// REVISED SAME DAY -- real, direct correction to this tool's first design:
+// the original version extracted textures itself by running the bundled
+// Unlinker.exe (tools/iw5oat's own OpenAssetTools fork) against every real
+// zone file. Direct correction: "oat fails on decompress tho that was the
+// whole issue, we want to leverage the games actual pipeline" -- Unlinker
+// has a long, already-documented history in this project of failing to
+// parse many real zone files (re_notes/x64_migration/fastfile_format_
+// research.md's many rounds chasing exactly this), so an extraction path
+// built on it inherits the same incomplete coverage the in-game bulk
+// precache orchestrator (TexturePrecacheOrchestrator) already has, for no
+// real benefit. Final, corrected architecture, per direct instruction ("id
+// rather us use the existing known asset list as base alone with
+// caputring also unknown assets in gameplay"):
+//   - The live mod's own SAFE organic capture paths (Hook_ImageFileLoadX64's
+//     load-time capture, and Hook_SetTexture's viewport capture) are the
+//     ONLY real asset-acquisition mechanism now -- they use the game's own
+//     real, always-correct native asset loader, naturally capture BOTH
+//     already-known and previously-unknown texture names as the player
+//     actually encounters them, and were never the source of the pool-
+//     exhaustion crash (only the proactive FORCING pump was). As of this
+//     revision they write raw, un-upscaled bytes to a plain staging folder
+//     (<gameDir>\texture_capture_staging\, see texture_capture_staging.h)
+//     instead of handing off to a live in-process upscale worker.
+//   - This tool's only job is to drain that staging folder: decode each
+//     staged raw capture, run it through the same real pipeline as before,
+//     and delete the staged file once cached. No Unlinker, no zone-file
+//     parsing, no dependency on which zones currently happen to load
+//     cleanly.
+//   - The bundled texture-name basemap (~17,000 real names, embedded via
+//     resource.h's own IDR_TEXTURE_BASEMAP, independent of proxy_d3d9's own
+//     embed) is used ONLY for real coverage-progress reporting ("X/17008
+//     known textures cached") -- never to force anything to load, matching
+//     the exact distinction the live mod's own ProactiveLevelTexturePreload
+//     feature already draws between "drives progress tracking" and "forces
+//     native pool registration."
 //
 // Architecture: reuses the exact same proven pipeline modules the live mod
 // already ships (texture_upscale_ncnn.cpp, texture_upscale_dxt_codec.cpp,
@@ -24,13 +59,13 @@
 // at all -- only the GENERATION side moves out-of-process.
 //
 // Deployment convention: this exe is meant to be dropped into the game's
-// own install directory (same place d3d9.dll and the bundled Unlinker.exe
-// already live), matching the existing in-game bulk-precache orchestrator's
-// own real convention (TexturePrecacheOrchestrator -- GetModuleFileNameA-
-// relative paths for everything: zone\english\, zone\dlc\,
-// precache_tools\Unlinker.exe, texture_upscale_cache\, realesrgan_models\).
-// Run once, as a real prerequisite step, before launching the game -- not
-// injected into it, not triggered by it.
+// own install directory (same place d3d9.dll lives), using the same
+// GetModuleFileNameA-relative-path convention every other part of this
+// project already follows. Run whenever convenient -- after a play session
+// that captured new textures, or between sessions -- not injected into the
+// game, not triggered by it, and no longer a "run once before playing"
+// prerequisite (organic capture populates the staging folder DURING real
+// play; this tool just processes whatever has accumulated there so far).
 
 #include <windows.h>
 #include <commctrl.h>
@@ -43,6 +78,7 @@
 #include "../../proxy_d3d9/src/texture_upscale_dxt_codec.h"
 #include "../../proxy_d3d9/src/texture_upscale_iwi_writer.h"
 #include "../../proxy_d3d9/src/texture_upscale_cache.h"
+#include "resource.h"
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -361,13 +397,15 @@ namespace
         if (lastSlash) *(lastSlash + 1) = '\0';
     }
 
-    // Recursively walks a directory for real .iwi files extracted by
-    // Unlinker, processing each one through the full pipeline above, then
-    // deletes it (bounds the scratch dump's own real disk footprint to
-    // roughly one zone at a time). Same real approach as
-    // TexturePrecacheOrchestrator::WalkAndQueueIwiFiles, adapted to call the
-    // pipeline directly instead of queueing to a live-session worker pool.
-    int WalkAndProcessIwiFiles(const char* dirPath, int scaleMultiplier)
+    // Processes every real, raw .iwi capture sitting in the staging folder
+    // (<gameDir>\texture_capture_staging\, written by the live mod's own
+    // TextureCaptureStaging::WriteRawCapture -- see that header's own
+    // comment) through the full pipeline above, deleting each staged file
+    // once handled (cached, or confirmed already up to date). Flat by
+    // construction (WriteRawCapture never creates subdirectories), but
+    // walked recursively anyway as a cheap safety net, same defensive shape
+    // as the prior Unlinker-output walk this replaces.
+    int WalkAndProcessStagingDir(const char* dirPath, int scaleMultiplier)
     {
         int processedCount = 0;
         char searchPattern[MAX_PATH];
@@ -381,8 +419,7 @@ namespace
             char fullPath[MAX_PATH];
             sprintf_s(fullPath, "%s\\%s", dirPath, findData.cFileName);
             if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                processedCount += WalkAndProcessIwiFiles(fullPath, scaleMultiplier);
-                RemoveDirectoryA(fullPath);
+                processedCount += WalkAndProcessStagingDir(fullPath, scaleMultiplier);
                 continue;
             }
             const char* ext = strrchr(findData.cFileName, '.');
@@ -420,6 +457,11 @@ namespace
                                 bool ok = ProcessOneTexture(assetName, format, width, height, sourceMipCount,
                                                              baseMipData, baseMipSize, scaleMultiplier);
                                 if (ok) ++processedCount; else InterlockedIncrement(&g_totalFailed);
+                            } else {
+                                char buf2[300];
+                                sprintf_s(buf2, "[builder] '%.200s': staged file failed to parse as a valid IWI -- skipping", assetName);
+                                LogFromController(buf2);
+                                InterlockedIncrement(&g_totalFailed);
                             }
                         }
                         free(buf);
@@ -435,52 +477,44 @@ namespace
         return processedCount;
     }
 
-    constexpr int kMaxZones = 256;
-    char g_zonePaths[kMaxZones][MAX_PATH];
-    char g_zoneNames[kMaxZones][128];
-    int g_zoneCount = 0;
-
-    void AddZonesFromDir(const char* dirPath)
+    // Real coverage-progress baseline against the bundled ~17,000-name
+    // basemap (resource.h's own IDR_TEXTURE_BASEMAP) -- PROGRESS REPORTING
+    // ONLY, never used to force anything to load or extract (see this
+    // file's own top header comment). Returns the real known-name count;
+    // *outAlreadyCached is how many of those already have a real cache
+    // entry for `scaleMultiplier` (a cheap GetFileAttributesA check per
+    // name via TextureUpscaleCache::CacheEntryExists, not a real read).
+    int CountBasemapCoverage(int scaleMultiplier, int* outAlreadyCached)
     {
-        char searchPattern[MAX_PATH];
-        sprintf_s(searchPattern, "%s\\*.ff", dirPath);
-        WIN32_FIND_DATAA findData;
-        HANDLE h = FindFirstFileA(searchPattern, &findData);
-        if (h == INVALID_HANDLE_VALUE) return;
-        do {
-            if (g_zoneCount >= kMaxZones) break;
-            if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-            sprintf_s(g_zonePaths[g_zoneCount], "%s\\%s", dirPath, findData.cFileName);
-            strncpy_s(g_zoneNames[g_zoneCount], findData.cFileName, _TRUNCATE);
-            char* dot = strrchr(g_zoneNames[g_zoneCount], '.');
-            if (dot) *dot = '\0';
-            ++g_zoneCount;
-        } while (FindNextFileA(h, &findData));
-        FindClose(h);
-    }
+        *outAlreadyCached = 0;
+        HMODULE selfModule = nullptr;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+            reinterpret_cast<LPCSTR>(&CountBasemapCoverage), &selfModule);
+        HRSRC res = FindResourceA(selfModule, MAKEINTRESOURCEA(IDR_TEXTURE_BASEMAP), RT_RCDATA);
+        if (!res) return 0; // not embedded in this build -- progress just won't show a known-total
+        HGLOBAL resData = LoadResource(selfModule, res);
+        if (!resData) return 0;
+        const char* data = static_cast<const char*>(LockResource(resData));
+        DWORD size = SizeofResource(selfModule, res);
+        if (!data || size == 0) return 0;
 
-    bool RunUnlinkerForZone(const char* unlinkerPath, const char* zonePath, const char* outputFolderPattern)
-    {
-        char cmdLine[2048];
-        sprintf_s(cmdLine, "\"%s\" --include-assets image --image-format IWI --output-folder \"%s\" \"%s\"",
-            unlinkerPath, outputFolderPattern, zonePath);
-
-        STARTUPINFOA si{};
-        si.cb = sizeof(si);
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi{};
-        if (!CreateProcessA(nullptr, cmdLine, nullptr, nullptr, FALSE,
-                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-            return false;
+        int knownCount = 0, alreadyCached = 0;
+        size_t lineStart = 0;
+        char name[256];
+        for (DWORD i = 0; i <= size; ++i) {
+            if (i == size || data[i] == '\n' || data[i] == '\r') {
+                size_t lineLen = i - lineStart;
+                if (lineLen > 0 && lineLen < sizeof(name)) {
+                    memcpy(name, data + lineStart, lineLen);
+                    name[lineLen] = '\0';
+                    ++knownCount;
+                    if (TextureUpscaleCache::CacheEntryExists(name, scaleMultiplier)) ++alreadyCached;
+                }
+                lineStart = i + 1;
+            }
         }
-        constexpr DWORD kZoneTimeoutMs = 5 * 60 * 1000;
-        DWORD waitResult = WaitForSingleObject(pi.hProcess, kZoneTimeoutMs);
-        bool completed = (waitResult == WAIT_OBJECT_0);
-        if (!completed) TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        return completed;
+        *outAlreadyCached = alreadyCached;
+        return knownCount;
     }
 
     int g_scaleMultiplier = 4;
@@ -508,66 +542,66 @@ namespace
         char exeDir[MAX_PATH];
         GetExeDir(exeDir, sizeof(exeDir));
 
-        char unlinkerPath[MAX_PATH];
-        sprintf_s(unlinkerPath, "%sprecache_tools\\Unlinker.exe", exeDir);
-        if (GetFileAttributesA(unlinkerPath) == INVALID_FILE_ATTRIBUTES) {
-            LogFromController("[builder] FATAL: precache_tools\\Unlinker.exe not found next to this exe.");
+        char stagingDir[MAX_PATH];
+        sprintf_s(stagingDir, "%stexture_capture_staging", exeDir);
+        if (GetFileAttributesA(stagingDir) == INVALID_FILE_ATTRIBUTES) {
+            LogFromController("[builder] Nothing staged yet (texture_capture_staging\\ doesn't exist). "
+                "Play a session with the mod first -- organic capture populates this folder as you play; "
+                "run this tool again once it has.");
             PostMessageA(g_mainWnd, WM_APP_DONE, 0, 0);
             return 0;
         }
 
-        char englishZoneDir[MAX_PATH], dlcZoneDir[MAX_PATH];
-        sprintf_s(englishZoneDir, "%szone\\english", exeDir);
-        sprintf_s(dlcZoneDir, "%szone\\dlc", exeDir);
-        AddZonesFromDir(englishZoneDir);
-        AddZonesFromDir(dlcZoneDir);
+        // Real coverage baseline against the bundled known-name list --
+        // reporting only, see CountBasemapCoverage's own comment.
+        int alreadyCached = 0;
+        int knownTotal = CountBasemapCoverage(g_scaleMultiplier, &alreadyCached);
+        if (knownTotal > 0) {
+            char cbuf[256];
+            sprintf_s(cbuf, "[builder] known-texture coverage so far: %d/%d (%.1f%%) at %dx scale.",
+                alreadyCached, knownTotal, 100.0 * alreadyCached / knownTotal, g_scaleMultiplier);
+            LogFromController(cbuf);
+        }
 
-        if (g_zoneCount == 0) {
-            LogFromController("[builder] FATAL: no zone files found under zone\\english\\ or zone\\dlc\\ -- "
-                "is this exe running from inside the real game install directory?");
+        LogFromController("[builder] scanning texture_capture_staging\\ ...");
+        int stagedCount = 0;
+        {
+            char searchPattern[MAX_PATH];
+            sprintf_s(searchPattern, "%s\\*.iwi", stagingDir);
+            WIN32_FIND_DATAA fd;
+            HANDLE h = FindFirstFileA(searchPattern, &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                do { ++stagedCount; } while (FindNextFileA(h, &fd));
+                FindClose(h);
+            }
+        }
+        if (stagedCount == 0) {
+            LogFromController("[builder] no newly staged captures to process right now. "
+                "Play more, or re-run later -- nothing to do.");
             PostMessageA(g_mainWnd, WM_APP_DONE, 0, 0);
             return 0;
         }
 
         char buf[256];
-        sprintf_s(buf, "[builder] %d zone file(s) found, scale=%dx. Starting.", g_zoneCount, g_scaleMultiplier);
+        sprintf_s(buf, "[builder] %d staged capture(s) found, scale=%dx. Starting.", stagedCount, g_scaleMultiplier);
         LogFromController(buf);
-        g_totalQueued = g_zoneCount;
+        g_totalQueued = stagedCount;
         PostProgress();
 
-        char scratchRoot[MAX_PATH];
-        sprintf_s(scratchRoot, "%sbuilder_scratch", exeDir);
-        CreateDirectoryA(scratchRoot, nullptr);
+        int newlyCachedThisRun = WalkAndProcessStagingDir(stagingDir, g_scaleMultiplier);
 
-        for (int i = 0; i < g_zoneCount && !g_cancelRequested; ++i) {
-            char zoneScratchDir[MAX_PATH];
-            sprintf_s(zoneScratchDir, "%s\\%s", scratchRoot, g_zoneNames[i]);
-            char outputPattern[MAX_PATH];
-            sprintf_s(outputPattern, "%s\\?game?\\?zone?", zoneScratchDir);
-
-            char zbuf[300];
-            sprintf_s(zbuf, "[builder] zone %d/%d: %s", i + 1, g_zoneCount, g_zoneNames[i]);
-            LogFromController(zbuf);
-
-            bool ranOk = RunUnlinkerForZone(unlinkerPath, g_zonePaths[i], outputPattern);
-            if (!ranOk) {
-                sprintf_s(zbuf, "[builder] zone %d/%d: Unlinker timed out/failed to run", i + 1, g_zoneCount);
-                LogFromController(zbuf);
-            }
-            int processedThisZone = WalkAndProcessIwiFiles(zoneScratchDir, g_scaleMultiplier);
-            RemoveDirectoryA(zoneScratchDir);
-
-            sprintf_s(zbuf, "[builder] zone %d/%d complete: %d texture(s) newly cached this zone "
-                "(%ld total cached, %ld already up to date, %ld failed so far)",
-                i + 1, g_zoneCount, processedThisZone, g_totalCached, g_totalSkippedExisting, g_totalFailed);
-            LogFromController(zbuf);
-        }
-        RemoveDirectoryA(scratchRoot);
-
-        sprintf_s(buf, "[builder] DONE. %ld newly cached, %ld already up to date, %ld failed.%s",
-            g_totalCached, g_totalSkippedExisting, g_totalFailed,
+        sprintf_s(buf, "[builder] DONE. %d newly cached (%ld total cached, %ld already up to date, %ld failed).%s",
+            newlyCachedThisRun, g_totalCached, g_totalSkippedExisting, g_totalFailed,
             g_cancelRequested ? " (cancelled)" : "");
         LogFromController(buf);
+
+        if (knownTotal > 0) {
+            alreadyCached = 0;
+            CountBasemapCoverage(g_scaleMultiplier, &alreadyCached);
+            sprintf_s(buf, "[builder] known-texture coverage now: %d/%d (%.1f%%) at %dx scale.",
+                alreadyCached, knownTotal, 100.0 * alreadyCached / knownTotal, g_scaleMultiplier);
+            LogFromController(buf);
+        }
 
         PostMessageA(g_mainWnd, WM_APP_DONE, 0, 0);
         return 0;
@@ -593,7 +627,7 @@ namespace
             SendMessageA(g_progressBar, PBM_SETPOS, processed, 0);
         }
         char buf[300];
-        sprintf_s(buf, "Zones processed: %ld / %ld  |  Cached: %ld  |  Already up to date: %ld  |  Failed: %ld",
+        sprintf_s(buf, "Staged captures processed: %ld / %ld  |  Cached: %ld  |  Already up to date: %ld  |  Failed: %ld",
             processed, queued, g_totalCached, g_totalSkippedExisting, g_totalFailed);
         SetWindowTextA(g_statusLabel, buf);
     }
@@ -644,7 +678,7 @@ namespace
                     CreateThread(nullptr, 0, BuildThreadProc, nullptr, 0, nullptr);
                 } else {
                     g_cancelRequested = 1;
-                    AppendLog("[builder] cancel requested -- finishing current zone...");
+                    AppendLog("[builder] cancel requested -- finishing current texture...");
                 }
             }
             return 0;
@@ -692,8 +726,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
         nullptr, nullptr, hInstance, nullptr);
 
     AppendLog("Run this from inside the real game install directory (same folder as d3d9.dll). "
-        "It writes into texture_upscale_cache\\, the same folder the live mod reads from.");
-    AppendLog("Requires precache_tools\\Unlinker.exe and realesrgan_models\\ next to this exe.");
+        "It processes texture_capture_staging\\ (filled by the mod's own safe, organic capture "
+        "during real gameplay) and writes into texture_upscale_cache\\, the same folder the live "
+        "mod reads from.");
+    AppendLog("Requires realesrgan_models\\ next to this exe. Play a session first so there's "
+        "something staged to process.");
 
     ShowWindow(g_mainWnd, nCmdShow);
     UpdateWindow(g_mainWnd);

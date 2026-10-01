@@ -96,22 +96,38 @@
     <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_iwi_writer.h" />
     <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_compress.h" />
     <ClInclude Include="..\..\proxy_d3d9\src\texture_upscale_cache.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Own, independent embed of the same bundled texture-name basemap :
+         see resource.h's own header comment: used here purely for coverage
+         progress reporting, never a build/runtime dependency on proxy_d3d9. -->
+    <ResourceCompile Include="resource.rc" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 
-  <!-- Deploys the real Real-ESRGAN model files next to this exe's own build
-       output, same source as proxy_d3d9's own DeployTextureUpscaleAssets
-       target : so this tool is self-sufficient even on a machine that's
-       never built the main mod. Unlinker.exe (precache_tools\) and the
-       target game's own zone\ files are NOT copied here : this exe is
-       meant to be deployed INTO the real game install directory (see
-       main.cpp's own header comment), where both already live. -->
+  <!-- Deploys the real Real-ESRGAN model files AND this exe's own real
+       build output directly into the live game install directory (the
+       same absolute path proxy_d3d9.vcxproj's own OutDir already uses) :
+       this tool is meant to run FROM that directory (reads
+       texture_capture_staging\, writes texture_upscale_cache\, both
+       already real, live paths relative to the game's own install root :
+       see main.cpp's own header comment), so deploying it there on every
+       build (same convention as DeployDxvk/DeployTextureUpscaleAssets/
+       DeployPrecacheTool in proxy_d3d9.vcxproj) means it's always the
+       current build, with zero manual copy step. -->
   <Target Name="DeployBuilderAssets" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <PropertyGroup>
+      <GameInstallDir>D:\SteamLibrary\steamapps\common\Call of Duty Modern Warfare 3\</GameInstallDir>
+    </PropertyGroup>
     <ItemGroup>
       <RealesrganModelFiles Include="..\..\proxy_d3d9\third_party\realesrgan_models\*.bin;..\..\proxy_d3d9\third_party\realesrgan_models\*.param" />
     </ItemGroup>
     <MakeDir Directories="$(OutDir)realesrgan_models" Condition="!Exists('$(OutDir)realesrgan_models')" />
     <Copy SourceFiles="@(RealesrganModelFiles)" DestinationFolder="$(OutDir)realesrgan_models\" Condition="'@(RealesrganModelFiles)' != ''" />
+    <Copy SourceFiles="$(OutDir)TextureCacheBuilder.exe" DestinationFolder="$(GameInstallDir)" SkipUnchangedFiles="true" Condition="Exists('$(GameInstallDir)')" />
+    <MakeDir Directories="$(GameInstallDir)realesrgan_models" Condition="Exists('$(GameInstallDir)') AND !Exists('$(GameInstallDir)realesrgan_models')" />
+    <Copy SourceFiles="@(RealesrganModelFiles)" DestinationFolder="$(GameInstallDir)realesrgan_models\" SkipUnchangedFiles="true" Condition="'@(RealesrganModelFiles)' != '' AND Exists('$(GameInstallDir)')" />
   </Target>
 </Project>

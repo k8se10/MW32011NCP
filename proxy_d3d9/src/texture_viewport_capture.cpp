@@ -8,6 +8,8 @@
 #include "texture_upscale_worker.h"
 #include "texture_upscale_cache.h"
 #include "texture_upscale_iwi_writer.h"
+#include "texture_capture_staging.h" // WriteRawCapture -- 2026-10-01, see that
+    // header's own comment; replaces this file's prior live QueueUpscaleJob hand-off.
 #include "../third_party/minhook/include/MinHook.h"
 
 extern void LogFromController(const char* msg); // defined in dllmain.cpp
@@ -167,11 +169,22 @@ namespace
         unlockRect(texture, 0);
         if (!tightBuf) return;
 
-        if (!TextureUpscaleWorker::QueueUpscaleJob(name, static_cast<int>(iwiFmt), width, height,
-                                                    tightBuf, static_cast<uint32_t>(tightSize), g_modConfig.textureRenderRes,
-                                                    0 /* sourceMipCount unknown -- live-bound texture, no original file to parse */, "viewport")) {
-            free(tightBuf); // already in flight, queue full, or invalid --
-                // QueueUpscaleJob logs the success case itself.
+        // Stage, don't live-upscale (2026-10-01) -- same pivot as
+        // Hook_ImageFileLoadX64's own capture path (see
+        // texture_capture_staging.h's header comment for the full "why").
+        // This capture only ever has the single, currently-bound mip level
+        // (no original file to walk for a real mip count), so build a
+        // minimal, valid, single-mip-level real IWI-v8 file in memory and
+        // stage that -- TextureCacheBuilder's own normal mip-chain logic
+        // (sourceMipCount==1) handles a single-level source correctly.
+        TextureUpscaleIwi::MipLevel mip{ tightBuf, static_cast<uint32_t>(tightSize) };
+        uint32_t iwiSize = 0;
+        uint8_t* iwiBuf = TextureUpscaleIwi::EncodeIwi8(static_cast<uint16_t>(width), static_cast<uint16_t>(height),
+                                                         1, iwiFmt, &mip, 1, &iwiSize);
+        free(tightBuf);
+        if (iwiBuf) {
+            TextureCaptureStaging::WriteRawCapture(name, iwiBuf, iwiSize);
+            free(iwiBuf);
         }
     }
 

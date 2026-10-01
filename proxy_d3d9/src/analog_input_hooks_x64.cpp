@@ -101,6 +101,8 @@
                      // cache-population wiring, see the capture logic in the same two hooks.
 #include "texture_viewport_capture.h" // SetCurrentlyLoadingName/ClearCurrentlyLoadingName --
                      // 2026-09-29, the third capture path, see that header's own comment.
+#include "texture_capture_staging.h" // WriteRawCapture -- 2026-10-01, replaces the live
+                     // in-process ncnn hand-off; see that header's own comment.
 #include "texture_upscale_dxt_codec.h" // TextureUpscaleDxt::CompressedSize -- 2026-09-29,
                      // [x64-capture-outcome] diagnostic only, see Hook_ImageFileLoadX64.
 
@@ -14171,11 +14173,19 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
                     }
                 }
             }
-            // Shared parse-and-queue (2026-09-28) -- same real IWI-v8
-            // header-parse + base-mip-extraction logic the bulk pre-cache
-            // orchestrator also uses (texture_upscale_worker.h), factored
-            // out to a single implementation once both callers existed.
-            TextureUpscaleWorker::QueueUpscaleJobFromIwiFile(cap.name, cap.buffer, cap.size, g_modConfig.textureRenderRes, "loadtime");
+            // Stage raw capture for the standalone TextureCacheBuilder tool
+            // (2026-10-01) -- REPLACES the prior live in-process ncnn
+            // hand-off (QueueUpscaleJobFromIwiFile). That hand-off drove
+            // real, heavy GPU/CPU upscale work inside the game process
+            // itself, which this session's own crash chain (pool
+            // exhaustion, OOM, native LockRect failures) traced back to as
+            // the real risk -- not the capture itself, which already uses
+            // the game's own real, correct asset loader. Writing the
+            // already-captured raw bytes to a plain staging folder is a
+            // small, synchronous, already-in-memory-to-disk copy; all real
+            // upscale/compress/cache work now happens fully out-of-process,
+            // on the player's own schedule, via TextureCacheBuilder.exe.
+            TextureCaptureStaging::WriteRawCapture(cap.name, cap.buffer, cap.size);
         }
         free(cap.buffer);
         cap.buffer = nullptr;

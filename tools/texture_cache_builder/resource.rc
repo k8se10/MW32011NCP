@@ -1,0 +1,3 @@
+#include "resource.h"
+
+IDR_TEXTURE_BASEMAP RCDATA "..\\..\\proxy_d3d9\\bundled_data\\texture_names_basemap.txt"
