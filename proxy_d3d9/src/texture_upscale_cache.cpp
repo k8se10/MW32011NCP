@@ -255,6 +255,19 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
         raw + sizeof(CompressedCacheHeader),
         rawSize - static_cast<uint32_t>(sizeof(CompressedCacheHeader)),
         hdr->uncompressedSize);
+    // Real, live-confirmed crash (2026-10-01): `hdr` points INTO `raw`'s own
+    // memory -- freeing raw here, before reading hdr->uncompressedSize below,
+    // was a genuine use-after-free. Depending on whether the freed memory
+    // got reused immediately (far more likely under this project's own
+    // heavy concurrent worker/compression-thread allocation churn), this
+    // either silently read back garbage (explaining intermittent tiny/
+    // corrupt cache files logged with a nonsensical byte count) or hard-
+    // crashed reading unmapped memory (WinDbg-confirmed: access violation
+    // at this exact line, inside TryLoadCachedUpscaledIwi, called from
+    // WorkerThreadProc's own post-write verification read). Captured into a
+    // real local BEFORE freeing raw -- the fix is simply ordering, not a
+    // new allocation.
+    uint32_t realUncompressedSize = hdr->uncompressedSize;
     free(raw);
     if (!data) {
         // Real decompression failure -- a genuinely corrupt/truncated
@@ -268,7 +281,7 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
         DeleteFileA(path);
         return nullptr;
     }
-    size = hdr->uncompressedSize;
+    size = realUncompressedSize;
 
     if (!ValidateCachedIwi(data, size)) {
         // Real, live-confirmed crash (2026-09-30, FAIL_FAST_INVALID_ARG via
