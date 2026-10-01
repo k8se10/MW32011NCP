@@ -221,13 +221,31 @@ uint8_t* TryLoadCachedUpscaledIwi(const char* imageName, int scaleMultiplier, ui
     // exactly like any other validation failure below -- deleted, forcing a
     // clean recapture rather than trying to interpret compressed bytes as
     // raw IWI data.
+    // Both failure paths below log explicitly (2026-10-01 fix): the original
+    // version of this check deleted a mismatched file completely silently,
+    // which is exactly why a real format mismatch between this function and
+    // StoreUpscaledIwi's own write side (same day, same feature) went
+    // unnoticed in the log for an entire test session -- 38 real "upscaled
+    // ... and cached" completions, 0 real files surviving on disk, and
+    // nothing in the log to explain why. Never leave a cache-eviction path
+    // silent again.
     if (rawSize <= sizeof(CompressedCacheHeader)) {
+        char buf[600];
+        sprintf_s(buf, "[texture-upscale-cache] CORRUPT cache file detected and deleted (too small for "
+            "even the compression header, %u bytes): '%.256s' -- will be treated as a miss and "
+            "recaptured/regenerated the next time this image is loaded.", rawSize, path);
+        LogFromController(buf);
         free(raw);
         DeleteFileA(path);
         return nullptr;
     }
     const CompressedCacheHeader* hdr = reinterpret_cast<const CompressedCacheHeader*>(raw);
     if (hdr->magic[0] != 'M' || hdr->magic[1] != 'W' || hdr->magic[2] != 'C' || hdr->magic[3] != '1') {
+        char buf[600];
+        sprintf_s(buf, "[texture-upscale-cache] CORRUPT cache file detected and deleted (wrong magic -- "
+            "either a stale pre-compression file or genuine corruption): '%.256s' -- will be treated as "
+            "a miss and recaptured/regenerated the next time this image is loaded.", path);
+        LogFromController(buf);
         free(raw);
         DeleteFileA(path);
         return nullptr;
@@ -297,6 +315,29 @@ bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t*
     char path[MAX_PATH];
     if (!BuildCacheFilePath(imageName, scaleMultiplier, path, sizeof(path))) return false;
 
+    // Real fix (2026-10-01): this previously wrote iwiData raw while the
+    // READ side (TryLoadCachedUpscaledIwi) had already been switched to
+    // require the new CompressedCacheHeader-wrapped format -- a real,
+    // self-inflicted format mismatch that made EVERY freshly-written file
+    // fail its own magic-byte check the instant ProcessJob's own
+    // post-write verification read it back, silently deleting it (that
+    // specific failure path logs nothing, which is why this stayed hidden
+    // until the on-disk file count was checked directly: 38 logged
+    // "upscaled ... and cached" completions, 0 real files on disk).
+    // Compress here, actually writing what the reader now expects.
+    uint32_t compressedSize = 0;
+    uint8_t* compressed = TextureUpscaleCompress::CompressBuffer(iwiData, iwiSize, &compressedSize);
+    if (!compressed) {
+        char buf[600];
+        sprintf_s(buf, "[texture-upscale-cache] FAILED to compress '%.256s' (%u bytes)", path, iwiSize);
+        LogFromController(buf);
+        return false;
+    }
+
+    CompressedCacheHeader hdr{};
+    hdr.magic[0] = 'M'; hdr.magic[1] = 'W'; hdr.magic[2] = 'C'; hdr.magic[3] = '1';
+    hdr.uncompressedSize = iwiSize;
+
     // Write to a temp file then rename into place -- avoids a reader (the
     // synchronous TryLoadCachedUpscaledIwi above, called from the real
     // engine's own image-load hot path) ever observing a partially-written
@@ -317,13 +358,17 @@ bool StoreUpscaledIwi(const char* imageName, int scaleMultiplier, const uint8_t*
         char buf[600];
         sprintf_s(buf, "[texture-upscale-cache] FAILED to open '%.256s' for write", tempPath);
         LogFromController(buf);
+        free(compressed);
         return false;
     }
-    size_t written = fwrite(iwiData, 1, iwiSize, f);
+    size_t written = fwrite(&hdr, 1, sizeof(hdr), f);
+    written += fwrite(compressed, 1, compressedSize, f);
     fclose(f);
-    if (written != iwiSize) {
+    free(compressed);
+    size_t expectedWritten = sizeof(hdr) + compressedSize;
+    if (written != expectedWritten) {
         char buf[600];
-        sprintf_s(buf, "[texture-upscale-cache] FAILED to write '%.256s' -- wrote %zu of %u bytes", tempPath, written, iwiSize);
+        sprintf_s(buf, "[texture-upscale-cache] FAILED to write '%.256s' -- wrote %zu of %zu bytes", tempPath, written, expectedWritten);
         LogFromController(buf);
         DeleteFileA(tempPath);
         return false;
