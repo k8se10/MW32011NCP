@@ -13931,7 +13931,22 @@ long long __fastcall Hook_ImageFileLoadX64(long long param_1, void* param_2)
 
     bool wantsUpscale = name && g_modConfig.textureRenderRes > 1;
     if (!cacheBuffer && wantsUpscale) {
-        cacheBuffer = TextureUpscaleCache::TryLoadCachedUpscaledIwi(name, g_modConfig.textureRenderRes, &cacheSize);
+        // Real memory-safety gate (2026-10-01): IsMemorySafeToContinueX64
+        // already throttles NEW upscale-generation work (the worker thread,
+        // the proactive fetch pump) but was never checked here, in the
+        // SERVING path -- handing an already-cached, already-upscaled
+        // texture back to the native engine during a real asset load. A
+        // session with a large pre-built cache could still serve dozens of
+        // 4096x4096+ textures back-to-back with zero real-time VRAM check --
+        // a real root cause behind a live D3DERR_OUTOFVIDEOMEMORY
+        // (Create2DTexture failure, "mtl_truck_cab_nml" 4096x4096 DXT5).
+        // Degrade gracefully under real pressure: skip serving the cached
+        // upscale and let the native engine load the original, smaller
+        // texture bytes instead -- same "fall through to vanilla behavior"
+        // shape IsMemorySafeToContinueX64's other two call sites already use.
+        if (IsMemorySafeToContinueX64()) {
+            cacheBuffer = TextureUpscaleCache::TryLoadCachedUpscaledIwi(name, g_modConfig.textureRenderRes, &cacheSize);
+        }
     }
 
     // Real cache-population capture (2026-09-28) -- a genuine miss (no
